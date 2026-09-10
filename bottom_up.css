@@ -1,0 +1,170 @@
+body {
+ font-family: Arial, sans-serif;
+}
+.pagelayout {
+
+  display: grid;
+    grid-template-columns: 2fr 1fr;
+    grid-template-rows: 1fr 2fr;
+    column-gap: 1px;
+    row-gap: 5px;
+    align-items: start;
+    width: 60vw;
+}
+/* Player Interactive Space */
+.playerinteractivespace {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 95vh;
+  border-radius: 10px;
+  padding: 10px;
+  gap: 10px;
+  grid-column: 1;
+  grid-row: 1/3;
+}
+
+/* Resource Container */
+.resourcecontainer {
+  display: grid;
+    grid-template-columns: 1fr;
+  border: 1px solid #000;
+    border-radius: 10px;
+  padding: 10px;
+  background-color: #e8e7e7;
+}
+
+h3{
+    text-align: center;
+    font-size: 14px;
+    font-weight: bold;
+    margin: 5px;
+}
+
+/* Resources Columns */
+.resourcescolumns {
+  display: grid;
+    grid-template-columns: repeat(2, 1fr);
+  background-color: #ccc;
+  padding: 10px;
+  border: 1px solid #000;
+  border-radius: 10px;
+  text-align: center;
+}
+
+.buttonresource {
+    margin: 5px;
+    padding: 10px;
+    font-size: 14px;
+    font-weight: bold;
+    border: 1px solid #000;
+    background-color: #e3e3e3;
+    color: rgb(0, 0, 0);
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+
+/* Worker Container */
+.workercontainer {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-auto-rows: 1fr;
+  gap: 10px;
+  background-color: #7e7e7e;
+  padding: 10px;
+  border: 1px solid #000;
+  border-radius: 10px;
+  overflow-y: scroll;
+}
+
+.workercontainer p{
+    text-align: center;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+/* Grid containers inside workercontainer */
+.gridcontainers {
+  display: grid;
+  background-color: #ccc;
+  padding: 1px;
+  text-align: center;
+  border: 1px solid #000;
+  border-radius: 5px;
+  font-size: 14px;
+}
+
+/* Technology Container */
+.techcontainer {
+  grid-column: 2;
+  grid-row: 1;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  height: 30vh;
+  background-color: aliceblue;
+  border: 2px solid #000;
+  border-radius: 10px;
+  gap: 10px;
+  padding: 10px;
+  overflow-y: scroll;
+
+}
+
+/* Technology grid items */
+.techgrid {
+  
+  padding: 20px;
+  font-size: 14px;
+  text-align: center;
+ 
+  border-radius: 5px;
+}
+
+/* Game Log Section */
+.gamelog {
+    overflow-y:scroll;
+    height: 64vh;
+    border: 2px solid #000;
+    border-radius: 10px;
+    background-color: aliceblue;
+    grid-column: 2;
+    grid-row: 2;
+
+}
+.gamelogcontent {
+    padding: 10px;
+}
+
+/* turnend container */
+.turnendcontainer {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+    background-color: #ccc;
+  border : 1px solid #000;
+    border-radius: 10px;
+    padding: 5px;
+  height: 25vh;
+    width: 15vw;
+}
+
+.button {
+   padding: 10px 20px;
+   font-size: 1em;
+   margin: 5px;
+   cursor: pointer;
+}
+
+.button:hover {
+   background-color: #ddd;
+}
+
+.logheader {
+    border-bottom: 2px solid #000;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    font-weight: bold;
+    font-size: 18px;
+}

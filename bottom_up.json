@@ -1,0 +1,266 @@
+{ "landids": [
+   {
+    "landnumber": "land1",
+    "land type": "mountins",
+    "agancit lands": "land2, land5, land6",
+    "resources": "1000",
+    "type": "stone",
+    "special effect": "mine"
+
+    },
+
+{
+    "landnumber": "land2",
+    "land type": "plains",
+    "agancit lands": "land1, land6, land7",
+    "resources": "1000",
+    "type": "grain",
+    "special effect": "farm"
+
+},
+
+{
+    "landnumber": "land3",
+    "land type": "mountins",
+    "agancit lands": "land10, land11, land4"
+
+},
+
+{
+    "landnumber": "land4",
+    "land type": "mountins",
+    "agancit lands": "land3, land11, land12, land5"
+
+},
+
+{
+    "landnumber": "land5",
+    "land type": "forest",
+    "agancit lands": "land4, land12, land13, land6, land1",
+    "resources": "2000",
+    "type": "wood",
+    "special effect": "dense forest"
+
+},
+
+{
+    "landnumber": "land6",
+    "land type": "starting timbermellow forest",
+    "agancit lands": "land1, land2, land5, land13, land14, land7",
+    "resources": "1000",
+    "type": "timbermellow trees",
+    "special effect": "starting land, 250 timbermellows"
+    
+
+},
+
+{
+    "landnumber": "land7",
+    "land type": "river",
+    "agancit lands": "land2, land6, land14, land15",
+    "resources": "1000",
+    "type": "clay",
+    "special effect": "water way"
+
+
+},
+
+{
+    "landnumber": "land8",
+    "land type": "mountins",
+    "agancit lands": "land9, land17"
+
+},
+
+{
+    "landnumber": "land9",
+    "land type": "mountins",
+    "agancit lands": "land8, land17, land18, land10"
+
+},
+
+{
+    "landnumber": "land10",
+    "land type": "mountins",
+    "agancit lands": "land9, land18, land19, land11, land3"
+
+},
+
+{
+    "landnumber": "land11",
+    "land type": "mountins",
+    "agancit lands": "land3, land4, land10, land19, land20, land12"
+
+},
+
+{
+    "landnumber": "land12",
+    "land type": "mountins",
+    "agancit lands": "land4, land5, land11, land13, land20, land21"
+
+},
+
+{
+    "landnumber": "land13",
+    "land type": "mountins",
+    "agancit lands": "land5, land6, land12, land21, land22 ,land14",
+    "resources": "1000",
+    "type": "iron",
+    "special effect": "mine"
+
+},
+
+{
+    "landnumber": "land14",
+    "land type": "plains",
+    "agancit lands": "land6, land7, land13, land22, land23, land15",
+    "resources": "1000",
+    "type": "grain",
+    "special effect": "farm"
+
+},
+
+{
+    "landnumber": "land15",
+    "land type": "mountins",
+    "agancit lands": "land7, land16, land14, land23, land24"
+
+},
+
+{
+    "landnumber": "land16",
+    "land type": "mountins",
+    "agancit lands": "land15, land24, land25"
+
+},
+
+{
+    "landnumber": "land17",
+    "land type": "mountins",
+    "agancit lands": "land8, land9, land26, land18, land25"
+
+},
+
+{
+    "landnumber": "land18",
+    "land type": "mountins",
+    "agancit lands": "land9, land17, land27, land10, land26, land19"
+
+},
+
+{
+    "landnumber": "land19",
+    "land type": "mountins",
+    "agancit lands": "land10, land11, land18, land28, land20, land27"
+
+},
+
+{
+    "landnumber": "land20",
+    "land type": "mountins",
+    "agancit lands": "land11, land12, land19, land21, land28, land29"
+
+},
+
+{
+    "landnumber": "land21",
+    "land type": "mountins",
+    "agancit lands": "land12, land13, land20, land22, land29, land30"
+
+},
+
+{
+    "landnumber": "land22",
+    "land type": "mountins",
+    "agancit lands": "land13, land14, land21, land23, land31, land30"
+
+},
+
+{
+    "landnumber": "land23",
+    "land type": "mountins",
+    "agancit lands": "land14, land15, land22, land24, land32, land31"
+
+},
+
+{
+    "landnumber": "land24",
+    "land type": "mountins",
+    "agancit lands": "land16, land15, land25, land23, land33, land32"
+
+},
+
+{
+    "landnumber": "land25",
+    "land type": "mountins",
+    "agancit lands": "land16, land33, land24, land34"
+
+},
+
+{
+    "landnumber": "land26",
+    "land type": "mountins",
+    "agancit lands": "land17, land18, land27"
+
+},
+
+{
+    "landnumber": "land27",
+    "land type": "mountins",
+    "agancit lands": "land18, land19, land26, land28"
+
+},
+
+{
+    "landnumber": "land28",
+    "land type": "mountins",
+    "agancit lands": "land19, land20, land27, land29"
+
+},
+
+{
+    "landnumber": "land29",
+    "land type": "mountins",
+    "agancit lands": "land20, land21, land28, land30"
+
+},
+
+{
+    "landnumber": "land30",
+    "land type": "mountins",
+    "agancit lands": "land21, land22, land29, land31"
+},
+
+{
+    "landnumber": "land31",
+    "land type": "mountins",
+    "agancit lands": "land22, land23, land30, land32"
+},
+
+{
+    "landnumber": "land32",
+    "land type": "mountins",
+    "agancit lands": "land23, land24, land31, land33"
+},
+
+{
+    "landnumber": "land33",
+    "land type": "mountins",
+    "agancit lands": "land24, land32, land34, land25"
+},
+
+{
+    "landnumber": "land34",
+    "land type": "mountins",
+    "agancit lands": "land25,land33, land35"
+},
+
+{
+    "landnumber": "land35",
+    "land type": "mountins",
+    "agancit lands": "land34"
+}
+
+]
+
+}
