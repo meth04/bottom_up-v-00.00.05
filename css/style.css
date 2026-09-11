@@ -1,0 +1,838 @@
+/* bottom up — styling
+   A full-screen hand-drawn map with a RimWorld-style HUD floating over it:
+   square-cornered dark panels with a bright hairline edge, a colonist bar
+   across the top, the resource readout top-left, alerts and letters down
+   the right, the inspect pane bottom-left, and the command palette, the
+   clock and End turn in the bottom-right corner.
+   Plain CSS, no framework. */
+
+:root {
+  /* Panels */
+  --rw-bg:        rgba(23, 26, 30, 0.90);
+  --rw-bg-solid:  #1b1f24;
+  --rw-bg-deep:   rgba(12, 14, 17, 0.92);
+  --rw-edge:      rgba(163, 178, 194, 0.38);
+  --rw-edge-soft: rgba(163, 178, 194, 0.18);
+  --rw-inset:     inset 0 0 0 1px rgba(0, 0, 0, 0.65);
+  --rw-drop:      0 3px 14px rgba(0, 0, 0, 0.55);
+
+  /* Ink */
+  --rw-text:  #e2e6ea;
+  --rw-dim:   #98a3af;
+  --rw-faint: #6e7885;
+
+  /* Accents */
+  --rw-accent: #d9c07a;   /* tan — headings, hours, costs */
+  --rw-good:   #74c05f;
+  --rw-warn:   #ddaa3c;
+  --rw-bad:    #d95b4a;
+  --rw-select: #ffffff;
+
+  --gold: #f2c14e;        /* the player's border colour on the map */
+  --ink: #2b241e;
+
+  /* A little grain, so the panels aren't flat plastic */
+  --rw-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+* { box-sizing: border-box; }
+
+/* The hidden attribute must win over any display rule below. */
+[hidden] { display: none !important; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: "Arial Narrow", "Roboto Condensed", "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  color: var(--rw-text);
+  background: #12161a;
+}
+
+/* ---------------------------------------------------------------------- */
+/* The stage: the map fills the window, layers pan/zoom together          */
+/* ---------------------------------------------------------------------- */
+
+.stage {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #2b7ec0;
+  cursor: grab;
+  user-select: none;
+}
+
+.stage.is-dragging { cursor: grabbing; }
+
+.mapviewport {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  will-change: transform;
+}
+
+.maplayer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.maplayer--passive { pointer-events: none; }
+
+.hexgrid, .map-artwork, .map-effects, .map-settlements, .map-villagers { display: block; }
+
+/* ---------------------------------------------------------------------- */
+/* The RimWorld panel                                                     */
+/* ---------------------------------------------------------------------- */
+
+.rw-panel {
+  position: relative;
+  background: var(--rw-bg);
+  border: 1px solid var(--rw-edge);
+  box-shadow: var(--rw-inset), var(--rw-drop);
+  color: var(--rw-text);
+}
+
+/* the grain overlay */
+.rw-panel::after,
+.rw-tabs::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--rw-grain);
+  opacity: 0.035;
+  pointer-events: none;
+}
+
+.rw-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--rw-dim);
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--rw-edge-soft);
+}
+.rw-panel__head b { color: var(--rw-accent); font-variant-numeric: tabular-nums; }
+.rw-hint { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--rw-faint); }
+
+/* ---------------------------------------------------------------------- */
+/* Buttons                                                                */
+/* ---------------------------------------------------------------------- */
+
+.rw-btn {
+  font: inherit;
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  text-align: center;
+  color: var(--rw-text);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--rw-edge-soft);
+  border-radius: 0;
+  cursor: pointer;
+}
+.rw-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.18); border-color: var(--rw-edge); }
+.rw-btn:active:not(:disabled) { background: rgba(0, 0, 0, 0.35); }
+.rw-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.rw-btn--small { width: auto; padding: 3px 10px; font-size: 12px; }
+
+.rw-x {
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 5px;
+  color: var(--rw-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.rw-x:hover { color: #fff; background: rgba(255, 255, 255, 0.14); border-color: var(--rw-edge-soft); }
+
+.rw-check { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--rw-dim); cursor: pointer; }
+.rw-check--row { padding: 4px 2px; }
+.rw-check input { accent-color: #8a9bb0; }
+
+/* Gizmos — the square command buttons */
+.rw-gizmo {
+  font: inherit;
+  display: block;
+  position: relative;
+  width: 82px;
+  height: 80px;
+  padding: 6px 3px 14px;
+  text-align: center;
+  color: var(--rw-text);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--rw-edge-soft);
+  border-radius: 0;
+  cursor: pointer;
+  box-shadow: var(--rw-inset);
+  transition: background 0.08s;
+}
+.rw-gizmo:hover:not(:disabled) { background: rgba(255, 255, 255, 0.2); border-color: var(--rw-edge); }
+.rw-gizmo:active:not(:disabled) { background: rgba(0, 0, 0, 0.4); }
+.rw-gizmo:disabled { opacity: 0.34; cursor: not-allowed; filter: grayscale(0.7); }
+.rw-gizmo__icon { display: block; font-size: 30px; line-height: 1.15; }
+.rw-gizmo__label {
+  position: absolute;
+  left: 2px; right: 2px; bottom: 12px;
+  font-size: 10.5px;
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--rw-text);
+}
+.rw-gizmo__cost {
+  position: absolute;
+  left: 2px; right: 2px; bottom: 2px;
+  font-size: 9.5px;
+  white-space: nowrap;
+  color: var(--rw-accent);
+}
+.rw-gizmo--tech { width: 102px; }
+.rw-gizmo--danger { background: rgba(190, 62, 48, 0.3); border-color: rgba(230, 110, 95, 0.5); }
+.rw-gizmo--danger:hover:not(:disabled) { background: rgba(210, 72, 56, 0.5); }
+.rw-gizmo--go { background: rgba(94, 150, 74, 0.3); border-color: rgba(140, 200, 110, 0.5); }
+.rw-gizmo--go:hover:not(:disabled) { background: rgba(104, 168, 82, 0.5); }
+
+/* the little ×5 tacked onto the top corner of a gizmo */
+.rw-gizmowrap { position: relative; display: inline-block; }
+.rw-x5 {
+  font: inherit;
+  position: absolute;
+  right: -1px;
+  top: -1px;
+  width: 25px;
+  height: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--rw-text);
+  background: rgba(20, 24, 28, 0.92);
+  border: 1px solid var(--rw-edge-soft);
+  border-radius: 0;
+  cursor: pointer;
+}
+.rw-x5:hover:not(:disabled) { background: rgba(255, 255, 255, 0.24); border-color: var(--rw-edge); }
+.rw-x5:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ---------------------------------------------------------------------- */
+/* Colonist bar — top centre                                              */
+/* ---------------------------------------------------------------------- */
+
+.rw-colonistbar {
+  position: fixed;
+  top: 6px;
+  left: 250px;
+  right: 262px;
+  z-index: 12;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: flex-start;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.rw-pawn {
+  position: relative;
+  width: 50px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--rw-text);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.rw-pawn__name {
+  font-size: 10px;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 2px #000, 0 0 3px #000;
+}
+.rw-pawn__box {
+  position: relative;
+  height: 42px;
+  background: rgba(23, 26, 30, 0.78);
+  border: 1px solid var(--rw-edge-soft);
+  overflow: hidden;
+}
+.rw-pawn:hover .rw-pawn__box { border-color: var(--rw-select); }
+.rw-pawn--soldier .rw-pawn__box { background: rgba(46, 36, 28, 0.82); }
+.rw-pawn__box svg { display: block; width: 100%; height: 100%; }
+.rw-pawn__bar {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 4px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.rw-pawn__bar i { display: block; height: 100%; background: var(--rw-good); }
+.rw-pawn--hungry .rw-pawn__bar i { background: var(--rw-bad); }
+.rw-pawn__flags {
+  position: absolute;
+  top: 1px; right: 1px;
+  font-size: 10px;
+  line-height: 1;
+  text-shadow: 0 1px 2px #000;
+}
+.rw-pawn__more {
+  align-self: flex-end;
+  padding: 0 6px 12px;
+  font-size: 12px;
+  color: var(--rw-dim);
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Resource readout — top left                                            */
+/* ---------------------------------------------------------------------- */
+
+.rw-readout {
+  position: fixed;
+  top: 6px;
+  left: 6px;
+  z-index: 11;
+  width: 232px;
+  padding: 4px 6px;
+}
+
+.rw-readout__row {
+  display: grid;
+  grid-template-columns: 22px auto 1fr;
+  align-items: baseline;
+  gap: 0 6px;
+  padding: 2px 3px;
+  white-space: nowrap;
+}
+.rw-readout__row:hover { background: rgba(255, 255, 255, 0.07); }
+.rw-readout__row .rw-ico { font-size: 15px; text-align: center; }
+.rw-readout__row b { font-size: 16px; font-variant-numeric: tabular-nums; color: #fff; }
+.rw-readout__row small { font-size: 11px; color: var(--rw-dim); text-align: right; }
+.rw-readout__row small span { color: var(--rw-text); }
+.rw-readout__row--hours b { color: var(--rw-accent); }
+.rw-readout__sep { height: 1px; margin: 3px 2px; background: var(--rw-edge-soft); }
+
+/* a readout row the alerts want you to look at */
+.rw-flash { animation: rw-flash 0.45s ease-in-out 4; }
+@keyframes rw-flash {
+  0%, 100% { background: transparent; }
+  50% { background: rgba(217, 192, 122, 0.4); }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Right column — world view, learning helper, alerts, letters            */
+/* ---------------------------------------------------------------------- */
+
+.rw-rightcol {
+  position: fixed;
+  top: 6px;
+  right: 6px;
+  bottom: 252px;
+  width: 252px;
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  pointer-events: none;
+}
+.rw-rightcol > * { pointer-events: auto; }
+.rw-spacer { flex: 1 1 auto; min-height: 0; pointer-events: none; }
+
+.rw-world { padding: 0 0 2px; }
+.rw-world canvas { display: block; margin: 4px auto 0; cursor: pointer; }
+
+/* Learning helper — RimWorld's tutor box */
+.rw-tutor { padding: 0 0 6px; border-color: rgba(217, 192, 122, 0.55); }
+.rw-tutor .rw-panel__head { color: var(--rw-accent); background: rgba(217, 192, 122, 0.12); }
+.rw-tutor__lesson { margin: 6px 8px 0; font-size: 13.5px; font-weight: 700; color: #fff; }
+.rw-tutor p { margin: 3px 8px 6px; font-size: 12.5px; line-height: 1.4; color: var(--rw-text); }
+.rw-tutor__foot { display: flex; align-items: center; justify-content: space-between; margin: 0 8px; }
+
+/* Alerts */
+.rw-alerts { display: flex; flex-direction: column; align-items: stretch; gap: 2px; }
+
+.rw-alert {
+  font: inherit;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 7px;
+  color: var(--rw-text);
+  background: rgba(12, 14, 17, 0.82);
+  border: 1px solid var(--rw-edge-soft);
+  border-left-width: 4px;
+  border-radius: 0;
+  cursor: pointer;
+  font-size: 12px;
+}
+.rw-alert:hover { background: rgba(40, 46, 54, 0.95); border-color: var(--rw-edge); border-left-width: 4px; }
+.rw-alert__icon { font-size: 13px; line-height: 1; }
+.rw-alert--bad  { border-left-color: var(--rw-bad);  color: #ffd3cc; }
+.rw-alert--warn { border-left-color: var(--rw-warn); color: #ffe8bd; }
+.rw-alert--info { border-left-color: #7fa6cc; }
+.rw-alert--bad  { animation: rw-pulse 1.6s ease-in-out infinite; }
+@keyframes rw-pulse { 0%, 100% { border-left-color: var(--rw-bad); } 50% { border-left-color: #ff9a8c; } }
+
+/* Letters — what just happened */
+.toasts {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+}
+
+.toast {
+  padding: 5px 8px;
+  background: var(--rw-bg-deep);
+  border: 1px solid var(--rw-edge-soft);
+  border-left: 4px solid var(--rw-faint);
+  box-shadow: var(--rw-drop);
+  font-size: 12px;
+  line-height: 1.35;
+  animation: toast-in 0.22s ease-out, toast-out 0.5s ease-in 5.5s forwards;
+}
+.toast--good { border-left-color: var(--rw-good); }
+.toast--bad { border-left-color: var(--rw-bad); }
+.toast--turn { border-left-color: var(--rw-accent); color: var(--rw-accent); font-weight: 700; letter-spacing: 0.04em; }
+
+@keyframes toast-in { from { transform: translateX(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes toast-out { to { opacity: 0; } }
+
+/* ---------------------------------------------------------------------- */
+/* Inspect pane — bottom left                                             */
+/* ---------------------------------------------------------------------- */
+
+.rw-inspect {
+  position: fixed;
+  left: 6px;
+  bottom: 6px;
+  z-index: 11;
+  width: 430px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.rw-gizmorow { display: flex; gap: 3px; }
+
+.rw-inspectpane { width: 100%; padding: 7px 9px 8px; min-height: 104px; }
+
+.rw-tileinfo__name {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+}
+.rw-tileinfo__state { font-size: 12px; color: var(--rw-dim); margin-bottom: 5px; }
+.rw-tileinfo__state--claimed { color: var(--gold); }
+.rw-tileinfo__state--frontier { color: #a8d98c; }
+.rw-tileinfo__state--foreign { color: #f0928a; }
+.rw-tileinfo__empty { font-size: 12px; color: var(--rw-faint); }
+
+.rw-tileinfo .chip {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  vertical-align: baseline;
+}
+
+.bar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1px 8px;
+  font-size: 12px;
+  margin-top: 4px;
+}
+.bar small { color: var(--rw-faint); }
+.bar b { font-variant-numeric: tabular-nums; }
+.bar__track { grid-column: 1 / -1; height: 5px; background: rgba(0, 0, 0, 0.5); box-shadow: var(--rw-inset); }
+.bar__fill { height: 100%; background: var(--rw-good); }
+.bar__fill--finite { background: #c09a63; }
+
+.rw-reason { margin: 6px 0 0; font-size: 11.5px; line-height: 1.3; color: var(--rw-dim); min-height: 1.2em; }
+.rw-reason--blocked { color: #f0928a; }
+
+/* ---------------------------------------------------------------------- */
+/* Bottom right — palette, clock, End turn, tabs                          */
+/* ---------------------------------------------------------------------- */
+
+.rw-bottomright {
+  position: fixed;
+  right: 6px;
+  bottom: 6px;
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.rw-cmdrow { display: flex; align-items: flex-end; gap: 4px; }
+
+/* The palette */
+.rw-palette {
+  background: rgba(23, 26, 30, 0.96);
+  border: 1px solid var(--rw-edge);
+  box-shadow: var(--rw-inset), var(--rw-drop);
+}
+
+.rw-pane__head {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--rw-dim);
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--rw-edge-soft);
+}
+.rw-pane__head small {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--rw-faint);
+  margin-left: 6px;
+}
+.rw-pane__head small span { color: var(--rw-accent); }
+
+.rw-pane__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 6px;
+  max-width: 420px;
+}
+.rw-pane__body--menu { flex-direction: column; width: 190px; }
+.rw-pane__body--list { flex-direction: column; width: 272px; }
+.rw-pane--wide .rw-pane__body { max-width: none; }
+.rw-empty { margin: 6px 4px; font-size: 12px; color: var(--rw-faint); max-width: 260px; }
+
+/* Clock + End turn */
+.rw-globals {
+  width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rw-clock {
+  padding: 4px 8px;
+  text-align: center;
+  background: var(--rw-bg);
+  border: 1px solid var(--rw-edge);
+  box-shadow: var(--rw-inset), var(--rw-drop);
+}
+.rw-clock__turn { font-size: 12px; color: var(--rw-dim); }
+.rw-clock__turn b { color: #fff; font-variant-numeric: tabular-nums; }
+
+.season {
+  display: inline-block;
+  padding: 1px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.season--spring { background: #a8e08c; }
+.season--summer { background: #f2d77a; }
+.season--autumn { background: #eea86b; }
+.season--winter { background: #cfe0f2; }
+
+.rw-endturn {
+  font: inherit;
+  display: block;
+  width: 100%;
+  padding: 8px 6px 6px;
+  color: #fff;
+  background: linear-gradient(180deg, rgba(108, 160, 84, 0.95), rgba(62, 104, 48, 0.95));
+  border: 1px solid rgba(168, 214, 140, 0.6);
+  border-radius: 0;
+  box-shadow: var(--rw-inset), var(--rw-drop);
+  cursor: pointer;
+}
+.rw-endturn:hover { filter: brightness(1.15); }
+.rw-endturn:active { filter: brightness(0.9); }
+.rw-endturn__label { display: block; font-size: 19px; font-weight: 700; letter-spacing: 0.04em; line-height: 1; }
+.rw-endturn__food { display: block; margin-top: 3px; font-size: 11px; opacity: 0.92; }
+.rw-endturn--short { background: linear-gradient(180deg, rgba(190, 82, 66, 0.95), rgba(124, 44, 34, 0.95)); border-color: rgba(240, 146, 138, 0.6); }
+
+/* Tabs */
+.rw-tabs {
+  position: relative;
+  display: flex;
+  gap: 0;
+  background: var(--rw-bg);
+  border: 1px solid var(--rw-edge);
+  box-shadow: var(--rw-inset), var(--rw-drop);
+}
+
+.rw-tab {
+  font: inherit;
+  position: relative;
+  padding: 6px 13px 7px;
+  color: var(--rw-dim);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--rw-edge-soft);
+  border-radius: 0;
+  cursor: pointer;
+  letter-spacing: 0.03em;
+}
+.rw-tab:last-child { border-right: 0; }
+.rw-tab:hover { color: #fff; background: rgba(255, 255, 255, 0.12); }
+.rw-tab.is-open { color: #fff; background: rgba(255, 255, 255, 0.2); box-shadow: inset 0 -2px 0 var(--rw-accent); }
+.rw-tab__key {
+  display: block;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--rw-faint);
+  letter-spacing: 0.06em;
+}
+.rw-tab.is-open .rw-tab__key { color: var(--rw-accent); }
+.rw-tab--nudge { animation: rw-nudge 1.4s ease-in-out infinite; }
+@keyframes rw-nudge {
+  0%, 100% { box-shadow: inset 0 -2px 0 rgba(217, 192, 122, 0); }
+  50% { box-shadow: inset 0 -2px 0 rgba(217, 192, 122, 0.9); }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Villages list                                                          */
+/* ---------------------------------------------------------------------- */
+
+.villagelist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+
+.villagerow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 7px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.villagerow:hover { border-color: var(--rw-edge-soft); }
+.villagerow--unknown { opacity: 0.5; }
+.villagerow .chip { flex: none; display: inline-block; width: 11px; height: 11px; border: 1px solid rgba(0, 0, 0, 0.5); }
+.villagerow__name { overflow: hidden; text-overflow: ellipsis; }
+.villagerow__kind { flex: 1; font-size: 11px; color: var(--rw-faint); }
+.villagerow__tiles { font-variant-numeric: tabular-nums; }
+
+.rw-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 6px; font-size: 11px; color: var(--rw-dim); }
+.rw-legend span { display: inline-flex; align-items: center; gap: 4px; }
+
+.swatch { display: inline-block; width: 12px; height: 12px; background: #7bb661; border: 1px solid rgba(0, 0, 0, 0.5); }
+.swatch--claimed { border: 2px solid var(--gold); }
+.swatch--frontier { border: 2px dashed #fff; background: #8aa552; }
+.swatch--foreign { border: 2px solid #c0392b; background: #b45f52; }
+.swatch--hidden { background: #10151a; }
+
+/* ---------------------------------------------------------------------- */
+/* The history window                                                     */
+/* ---------------------------------------------------------------------- */
+
+.rw-window {
+  position: fixed;
+  left: 50%;
+  top: 70px;
+  transform: translateX(-50%);
+  width: min(720px, calc(100vw - 40px));
+  max-height: calc(100vh - 260px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 8px;
+  background: var(--rw-bg-deep);
+  border: 1px solid var(--rw-edge);
+  box-shadow: var(--rw-inset), 0 8px 40px rgba(0, 0, 0, 0.7);
+}
+.rw-window__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--rw-edge-soft);
+}
+.rw-window__head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--rw-dim);
+}
+.rw-window__head small { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--rw-faint); }
+
+.logentries { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 8px; font-size: 13px; }
+.logentry { padding: 4px 9px; border-left: 3px solid var(--rw-faint); background: rgba(255, 255, 255, 0.04); }
+.logentry--turn {
+  margin-top: 6px;
+  border-left-color: var(--rw-accent);
+  color: var(--rw-accent);
+  background: transparent;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.logentry--good { border-left-color: var(--rw-good); }
+.logentry--bad { border-left-color: var(--rw-bad); }
+
+/* ---------------------------------------------------------------------- */
+/* Tooltips                                                               */
+/* ---------------------------------------------------------------------- */
+
+.rw-tip {
+  position: fixed;
+  z-index: 40;
+  max-width: 280px;
+  padding: 6px 9px;
+  background: rgba(12, 14, 17, 0.97);
+  border: 1px solid var(--rw-edge);
+  box-shadow: var(--rw-inset), var(--rw-drop);
+  font-size: 12.5px;
+  line-height: 1.38;
+  color: var(--rw-text);
+  pointer-events: none;
+}
+.rw-tip__title { font-weight: 700; font-size: 13.5px; color: #fff; margin-bottom: 2px; }
+.rw-tip__cost { margin-top: 3px; color: var(--rw-accent); font-size: 12px; }
+.rw-tip__block { margin-top: 4px; color: #f0928a; font-size: 12px; }
+
+/* ---------------------------------------------------------------------- */
+/* Hex overlay                                                            */
+/* ---------------------------------------------------------------------- */
+
+.hex polygon { transition: fill-opacity 0.15s; }
+.hex:hover polygon { fill-opacity: 0.16; }
+.hex--hidden:hover polygon { fill-opacity: 0.75; }
+.hex--frontier polygon, .hex--seizable polygon { animation: frontier-march 1.2s linear infinite; }
+.hex-selection { animation: selection-pulse 1.4s ease-in-out infinite; }
+
+@keyframes frontier-march { to { stroke-dashoffset: -22; } }
+@keyframes selection-pulse { 0%, 100% { stroke-opacity: 1; } 50% { stroke-opacity: 0.5; } }
+
+/* ---------------------------------------------------------------------- */
+/* The world moves                                                        */
+/* ---------------------------------------------------------------------- */
+
+/* The ground itself stays still: animating thousands of sprites at once
+   means repainting the whole map every frame. Water, fire, sky and people
+   move instead. */
+
+.art-river-flow { animation: river-flow 2s linear infinite; }
+@keyframes river-flow { to { stroke-dashoffset: -36; } }
+
+.art-ripple { opacity: 0; animation: ripple 3s ease-out infinite; }
+@keyframes ripple {
+  0% { transform: scale(0.4); opacity: 0.8; }
+  100% { transform: scale(2.6); opacity: 0; }
+}
+
+.art-flame { animation: flame 0.5s ease-in-out infinite alternate; }
+@keyframes flame { from { transform: scale(1, 1); } to { transform: scale(0.85, 1.15); } }
+
+.art-village-label {
+  font: 700 12px "Arial Narrow", "Segoe UI", sans-serif;
+  letter-spacing: 0.04em;
+  fill: #fff;
+  stroke: rgba(0, 0, 0, 0.75);
+  stroke-width: 3px;
+  paint-order: stroke;
+  pointer-events: none;
+}
+
+.art-season-tint { transition: opacity 1.2s, fill 1.2s; }
+.stage.season--summer .art-season-tint { fill: #ffe7a0; opacity: 0.08; }
+.stage.season--autumn .art-season-tint { fill: #e08a2a; opacity: 0.16; }
+.stage.season--winter .art-season-tint { fill: #cfe0f2; opacity: 0.42; }
+
+/* Villagers */
+.villager__leg { transform-box: fill-box; transform-origin: top center; }
+.villager--walking .villager__leg--left { animation: leg-swing 0.36s ease-in-out infinite alternate; }
+.villager--walking .villager__leg--right { animation: leg-swing 0.36s ease-in-out infinite alternate-reverse; }
+@keyframes leg-swing { from { transform: rotate(-25deg); } to { transform: rotate(25deg); } }
+.villager--working .villager__body { transform-box: fill-box; transform-origin: bottom center; animation: work-bob 0.5s ease-in-out infinite alternate; }
+@keyframes work-bob { from { transform: translateY(0) rotate(-4deg); } to { transform: translateY(-2px) rotate(4deg); } }
+
+/* Effects layer */
+.fx-cloud { animation: cloud-drift linear infinite; }
+@keyframes cloud-drift { from { transform: translateX(-300px); } to { transform: translateX(var(--drift-width, 900px)); } }
+
+.fx-bird { animation: bird-fly linear infinite; }
+@keyframes bird-fly { from { transform: translateX(-90px); } to { transform: translateX(var(--drift-width, 900px)); } }
+.fx-bird__wing { transform-box: fill-box; transform-origin: center; animation: wing-flap 0.55s ease-in-out infinite alternate; }
+@keyframes wing-flap { from { transform: scaleY(1); } to { transform: scaleY(0.3); } }
+
+.fx-smoke { animation: smoke-rise 3.3s ease-out infinite; }
+@keyframes smoke-rise {
+  0% { transform: translateY(0) scale(0.6); opacity: 0; }
+  15% { opacity: 0.75; }
+  100% { transform: translateY(-60px) scale(1.9); opacity: 0; }
+}
+
+.fx-snow { display: none; animation: snow-fall linear infinite; }
+.map-effects[data-season="winter"] .fx-snow { display: block; }
+@keyframes snow-fall { to { transform: translateY(var(--fall-height, 1240px)); } }
+
+.fx-float {
+  font: 700 22px "Arial Narrow", "Segoe UI", sans-serif;
+  fill: #fff;
+  stroke: rgba(0, 0, 0, 0.75);
+  stroke-width: 4px;
+  paint-order: stroke;
+  animation: float-up 1.3s ease-out forwards;
+}
+.fx-float--good { fill: #b8f08c; }
+@keyframes float-up { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-44px); opacity: 0; } }
+
+.fx-burst { animation: burst 0.85s ease-out forwards; }
+@keyframes burst { from { transform: scale(0.3); opacity: 1; } to { transform: scale(3); opacity: 0; } }
+
+/* The motion switch — only the map stops; the HUD keeps its cues. */
+.stage.no-motion * { animation: none !important; }
+
+/* ---------------------------------------------------------------------- */
+/* Small screens                                                          */
+/* ---------------------------------------------------------------------- */
+
+@media (max-width: 1240px) {
+  .rw-pane__body { max-width: 330px; }
+  .rw-inspect { width: 360px; }
+}
+
+@media (max-width: 1040px) {
+  .rw-colonistbar { left: 6px; right: 6px; top: 150px; justify-content: flex-start; }
+  .rw-rightcol { width: 210px; }
+  .rw-world canvas { width: 100%; height: auto; }
+  .rw-inspect { width: 300px; }
+  .rw-tab { padding: 6px 8px 7px; font-size: 12px; }
+}
+
+@media (max-height: 760px) {
+  .rw-tutor { display: none; }
+}

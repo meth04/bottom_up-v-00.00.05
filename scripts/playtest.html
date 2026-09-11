@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<!--
+  playtest.html — an automated play-through of the core loop.
+
+  Open it in a browser while the dev server is running:
+
+      http://localhost:8080/scripts/playtest.html
+
+  It loads the game in the frame below on a fixed world seed, presses the
+  real buttons in a sensible order (gather → barns → humans → soldier →
+  explore → mapmaking → several turns) and prints PASS/FAIL lines
+  underneath. Every check is something a player would notice if it broke.
+  Add "#stop-after-explore" to the URL to leave the game sitting right after
+  the first expedition, for a look at the map.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>bottom up — playtest</title>
+<style>
+  body { margin: 0; font-family: Consolas, monospace; background: #efe7d6; }
+  iframe { width: 1440px; height: 900px; border: 0; display: block; }
+  pre { margin: 0; padding: 12px 16px; font-size: 13px; white-space: pre-wrap; }
+  .pass { color: #2f6b3a; } .fail { color: #b23a3a; font-weight: bold; }
+</style>
+</head>
+<body>
+<iframe id="game"></iframe>
+<pre id="out">running…</pre>
+<script>
+const PLAYTEST_SEED = 424242;
+const out = document.getElementById("out");
+const lines = [];
+function log(...parts) {
+  lines.push(parts.join(" "));
+  out.innerHTML = lines.map((line) => {
+    if (line.startsWith("PASS")) return `<span class="pass">${line}</span>`;
+    if (line.startsWith("FAIL")) return `<span class="fail">${line}</span>`;
+    return line;
+  }).join("\n");
+}
+function check(name, condition) { log((condition ? "PASS " : "FAIL ") + name); }
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// A fresh game on a known seed: no save must be waiting in localStorage.
+localStorage.removeItem("bottom_up.save.v1");
+const frame = document.getElementById("game");
+frame.src = `/?seed=${PLAYTEST_SEED}`;
+
+frame.onload = async function () {
+ try {
+  const w = frame.contentWindow;
+  // Top-level let/const in classic scripts aren't window properties, so
+  // game.js's numbers have to be read inside the frame's own scope.
+  const g = (expression) => w.eval(expression);
+  const errors = [];
+  w.onerror = (message) => errors.push(String(message));
+  await wait(1200);
+
+  const land = (types) => w.territoryAvailable(types);
+  const seasonText = () => w.document.getElementById("season").innerText;
+  const status = (label) => log("--- turn", g("turngame"), seasonText(), label || "", "| humans", g("humans"), "soldiers", g("human_army"), "food", g("timbermellow_count"), "wood", g("wood"), "barns", g("barn"), "hours", g("working_hours"));
+
+  log("--- start ---");
+  const map = g("hexMap");
+  const villages = w.villagesGet();
+  const startTile = map.getAllTiles().find((tile) => tile.isStartingTile);
+  log("seed", g("worldSeed"), "| tiles", map.getAllTiles().length, "| rivers", g("world").rivers.length, "| villages", villages.map((v) => `${v.name} (${v.kind})`).join(", "));
+  check("world generated on the requested seed", g("worldSeed") === PLAYTEST_SEED);
+  check("the world has a proper grid (400+ hexes)", map.getAllTiles().length >= 400);
+  check("at least one river", g("world").rivers.length >= 1);
+  check("several villages, one of them the garlock camp", villages.length >= 3 && villages.some((v) => v.kind === "garlock"));
+  check("every village owns its home", villages.every((v) => map.ownerOf(v.homeTileId) === v.id));
+  check("starts on one tile", w.territoryClaimedCount() === 1);
+  check("start tile has 250 timbermellow on land", land(["timbermellow"]) === 250);
+  check("start tile has 20 stone on land", land(["stone"]) === 20);
+  check("the start tile is drawn as the player's", w.document.querySelector(`[data-tile-id="${startTile.id}"]`).classList.contains("hex--claimed"));
+
+  // Turn 1: gather food all day.
+  for (let i = 0; i < 8; i++) w.find_timbermellow();
+  log("after 8 gathers: food", g("timbermellow_count"), "| land food", land(["timbermellow"]), "| hours", g("working_hours"));
+  check("gathering takes food off the land", land(["timbermellow"]) === 242 && g("timbermellow_count") === 8);
+  check("gather button greys out at 0 hours", w.document.getElementById("btn_find_timbermellow").disabled === true);
+
+  // Explore should be refused, for a reason the player can read.
+  const firstFrontier = map.getFrontierTiles()[0];
+  map.selectTile(firstFrontier.id);
+  let blocker = w.territoryExploreBlocker(firstFrontier.id);
+  log("explore blocker now:", blocker);
+  check("explore refused (not enough humans)", /humans/.test(blocker));
+  check("explore button disabled", w.document.getElementById("exploreButton").disabled === true);
+
+  w.end_turn(); status("(ate 2)");
+  check("the game autosaved at end of turn", localStorage.getItem("bottom_up.save.v1") !== null);
+
+  // Turn 2: wood for a barn, then food.
+  for (let i = 0; i < 4; i++) w.get_wood();
+  w.make_barn();
+  for (let i = 0; i < 3; i++) w.find_timbermellow();
+  check("built a second barn", g("barn") === 2);
+  w.end_turn(); status();
+
+  // Turn 3 (summer, 12 hours): another barn, more food.
+  for (let i = 0; i < 4; i++) w.get_wood();
+  w.make_barn();
+  for (let i = 0; i < 7; i++) w.find_timbermellow();
+  w.end_turn(); status();
+
+  // Turn 4: raise two humans, fill the barns.
+  w.make_human(); w.make_human();
+  check("raised humans to 4", g("humans") === 4);
+  w.timbermellow_5x(); w.timbermellow_5x();
+  w.end_turn(); status("(4 mouths to feed)");
+  check("nobody starved", g("humans") === 4);
+  check("autumn gives work hours (was a bug)", g("working_hours") > 0);
+
+  // Turn 5 (autumn, double gathering): train a soldier, stock up, explore next door.
+  w.apont_soldier();
+  w.timbermellow_5x();
+  status("(ready to explore?)");
+  const frontier = map.getFrontierTiles();
+  const target = frontier.find((tile) => tile.resources.stone) || frontier[0];
+  const targetResources = Object.assign({}, ...Object.keys(target.resources).map((type) => ({ [type]: target.resources[type].amount })));
+  map.selectTile(target.id);
+  blocker = w.territoryExploreBlocker(target.id);
+  log("exploring", target.id, target.terrainType, JSON.stringify(targetResources), "| blocker:", blocker === null ? "(none)" : blocker);
+  check("explore allowed", blocker === null);
+  const tilesBefore = w.territoryClaimedCount();
+  const foodBefore = g("timbermellow_count");
+  const stoneBefore = land(["stone"]);
+  w.explore();
+  log("after explore: tiles", w.territoryClaimedCount(), "food", g("timbermellow_count"), "| land stone", land(["stone"]));
+  check("explore claimed a tile", w.territoryClaimedCount() === tilesBefore + 1);
+  check("explore cost 10 food", g("timbermellow_count") === foodBefore - 10);
+  check("the new tile's stone joined the land", land(["stone"]) === stoneBefore + (targetResources.stone || 0));
+  await wait(1400);
+  check("new tile is claimed and drawn gold", w.document.querySelector(`[data-tile-id="${target.id}"]`).classList.contains("hex--claimed"));
+  check("a new frontier appeared beyond it", map.getFrontierTiles().length > 6);
+
+  if (location.hash === "#stop-after-explore") {
+    log("--- stopped after explore (#stop-after-explore) ---");
+    document.title = "PLAYTEST STOPPED";
+    return;
+  }
+
+  // Stone comes off the land too.
+  if (land(["stone"]) > 0) {
+    const before = land(["stone"]);
+    w.get_stone();
+    check("gathering stone takes it off the land", land(["stone"]) === before - 1 && g("stone") === 1);
+  }
+
+  // Hidden tiles stay hidden until mapmaking.
+  const farTile = map.getAllTiles().reduce((best, tile) => (w.hexDistance(tile, startTile) > w.hexDistance(best, startTile) ? tile : best), startTile);
+  check("far tile is hidden", map.isRevealed(farTile.id) === false);
+  w.territoryRevealMap();
+  check("mapmaking reveals far tile", map.isRevealed(farTile.id) === true);
+
+  // Several idle turns: the neighbours expand, the seasons turn.
+  const foreignBefore = map.getAllTiles().filter((tile) => tile.owner && tile.owner !== "player").length;
+  for (let i = 0; i < 8; i++) w.end_turn();
+  status("(idle)");
+  const foreignAfter = map.getAllTiles().filter((tile) => tile.owner && tile.owner !== "player").length;
+  log("other villages' tiles:", foreignBefore, "->", foreignAfter);
+  check("other villages expand over time", foreignAfter > foreignBefore);
+  check("autumn regrowth refilled the start tile", land(["timbermellow"]) >= 250 - 8);
+  check("season class updates", w.document.getElementById("season").className.indexOf("season--") >= 0);
+
+  const logText = w.document.getElementById("logentries").textContent;
+  check("log mentions garlocks, not orcs", !/\borc/i.test(logText));
+  check("log has turn headings", w.document.querySelector(".logentry--turn") !== null);
+  check("villages panel lists the villages", w.document.querySelectorAll("#villageList .villagerow").length === villages.length);
+
+  // Save/load round trip: the state that goes into the save must come back out.
+  const saved = JSON.parse(localStorage.getItem("bottom_up.save.v1"));
+  check("save remembers the seed and the turn", saved.seed === PLAYTEST_SEED && saved.game.turngame === g("turngame"));
+  check("save remembers who owns the explored tile", saved.map.tiles[target.id].owner === "player");
+
+  log("--- errors:", errors.length ? errors.join(" | ") : "none");
+  check("no JS errors", errors.length === 0);
+  const failed = lines.filter((line) => line.startsWith("FAIL")).length;
+  log(failed ? `=== ${failed} FAILED ===` : "=== ALL PASSED ===");
+  document.title = "PLAYTEST DONE";
+ } catch (error) {
+  log("HARNESS EXCEPTION:", error && error.message, "\n", error && error.stack);
+ }
+};
+</script>
+</body>
+</html>

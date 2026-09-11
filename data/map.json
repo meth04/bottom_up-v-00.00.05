@@ -1,0 +1,52 @@
+{
+  "_readme": "The world is generated from a seed (js/map/worldGen.js) in the style of Sếp's drawing, and painted by js/map/worldPainter.js. What you can change here: how big the world is, how many villages it has, what the player's home starts with, and what each kind of ground holds. Every amount is a first guess built on Sếp's one stated number ('lets say 250' per tile, ask.txt question 4).",
+
+  "world": {
+    "cols": 26,
+    "rows": 20,
+    "hexSize": 40,
+    "villageCount": 5
+  },
+
+  "startingTile": {
+    "resources": {
+      "timbermellow": { "amount": 250, "renewable": true },
+      "wood": { "amount": 100, "renewable": true },
+      "stone": { "amount": 20, "renewable": false }
+    }
+  },
+
+  "terrainDefaults": {
+    "timbermellowForest": {
+      "timbermellow": { "amount": 250, "renewable": true },
+      "wood": { "amount": 100, "renewable": true }
+    },
+    "flowerMeadow": {
+      "timbermellow": { "amount": 150, "renewable": true }
+    },
+    "forest": {
+      "wood": { "amount": 200, "renewable": true },
+      "timbermellow": { "amount": 60, "renewable": true }
+    },
+    "denseBush": {
+      "wood": { "amount": 250, "renewable": true },
+      "timbermellow": { "amount": 40, "renewable": true }
+    },
+    "plains": {
+      "grain": { "amount": 250, "renewable": true }
+    },
+    "overgrownHighlands": {
+      "grain": { "amount": 200, "renewable": true },
+      "stone": { "amount": 100, "renewable": false }
+    },
+    "rockyOutcrop": {
+      "stone": { "amount": 250, "renewable": false }
+    },
+    "mountains": {
+      "stone": { "amount": 250, "renewable": false }
+    },
+    "river": {
+      "clay": { "amount": 250, "renewable": false }
+    }
+  }
+}
