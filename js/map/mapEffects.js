@@ -30,13 +30,17 @@ class MapEffects {
     this.markerLayer = svgEl("g", { class: "fx-layer fx-layer--markers" });
     this.birdLayer = svgEl("g", { class: "fx-layer fx-layer--birds" });
     this.cloudLayer = svgEl("g", { class: "fx-layer fx-layer--clouds" });
+    this.petalLayer = svgEl("g", { class: "fx-layer fx-layer--petals" });
+    this.leafLayer = svgEl("g", { class: "fx-layer fx-layer--leaves" });
     this.snowLayer = svgEl("g", { class: "fx-layer fx-layer--snow" });
-    for (const layer of [this.smokeLayer, this.markerLayer, this.birdLayer, this.cloudLayer, this.snowLayer]) {
+    for (const layer of [this.smokeLayer, this.markerLayer, this.birdLayer, this.cloudLayer, this.petalLayer, this.leafLayer, this.snowLayer]) {
       this.svg.appendChild(layer);
     }
 
     this.drawClouds();
     this.drawBirds();
+    this.drawPetals();
+    this.drawLeaves();
     this.drawSnow();
 
     container.innerHTML = "";
@@ -105,6 +109,40 @@ class MapEffects {
       flake.style.animationDuration = `${9 + random() * 8}s`;
       flake.style.animationDelay = `${-random() * 16}s`;
       this.snowLayer.appendChild(flake);
+    }
+  }
+
+  drawPetals() {
+    const random = createRandom(19);
+    const count = Math.min(28, Math.round(this.width / 70));
+    for (let i = 0; i < count; i++) {
+      const petal = svgEl("circle", {
+        cx: random() * this.width, cy: -10,
+        r: 2.2 + random() * 1.5,
+        fill: "#fbcfe8", opacity: 0.85,
+        class: "fx-petal",
+      });
+      petal.style.animationDuration = `${11 + random() * 9}s`;
+      petal.style.animationDelay = `${-random() * 20}s`;
+      this.petalLayer.appendChild(petal);
+    }
+  }
+
+  drawLeaves() {
+    const random = createRandom(23);
+    const count = Math.min(28, Math.round(this.width / 70));
+    const colors = ["#d97706", "#dc2626", "#ea580c", "#f59e0b"];
+    for (let i = 0; i < count; i++) {
+      const leaf = svgEl("ellipse", {
+        cx: random() * this.width, cy: -10,
+        rx: 3.5, ry: 2,
+        fill: colors[Math.floor(random() * colors.length)],
+        opacity: 0.85,
+        class: "fx-leaf",
+      });
+      leaf.style.animationDuration = `${12 + random() * 8}s`;
+      leaf.style.animationDelay = `${-random() * 20}s`;
+      this.leafLayer.appendChild(leaf);
     }
   }
 

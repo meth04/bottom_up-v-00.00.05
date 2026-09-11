@@ -1,6 +1,6 @@
 // ui.js
 //
-// The RimWorld-style shell around the game: the colonist bar across the
+// The antique cartographer shell around the game: the colonist bar across the
 // top, the command palette and tabs in the bottom-right corner, the alert
 // list down the right, the learning helper, and the tooltips that explain
 // every button (including *why* a greyed-out one is greyed out).
@@ -8,8 +8,6 @@
 // Nothing in here touches the rules. It reads game.js's globals and the
 // map, and calls the same functions the buttons do. game.js calls
 // uiRefresh() at the end of update(); main.js calls it after the map loads.
-//
-// Written in the same plain-globals style as the rest of the game.
 
 // ---------------------------------------------------------------------------
 // The command palette and its tabs
@@ -29,7 +27,7 @@ function uiSetTab(name) {
   for (const pane of document.querySelectorAll(".rw-pane")) {
     pane.hidden = pane.dataset.pane !== name;
   }
-  palette.hidden = !name;
+  if (palette) palette.hidden = !name;
   for (const tab of document.querySelectorAll(".rw-tab")) {
     tab.classList.toggle("is-open", tab.dataset.tab === name);
     if (tab.dataset.tab === name) tab.classList.remove("rw-tab--nudge");
@@ -55,10 +53,6 @@ function uiPointAt(tabName, elementId) {
 // ---------------------------------------------------------------------------
 // Tooltips
 // ---------------------------------------------------------------------------
-//
-// Disabled buttons never fire mouse events, and a disabled button is exactly
-// the one you most want explained — so the hovered element is looked up from
-// the pointer position instead of from an event target.
 
 let uiTipTarget = null;
 let uiTipPending = false;
@@ -86,7 +80,7 @@ function uiUpdateTooltip() {
   for (const element of stack) {
     const owner = element.closest && element.closest("[data-tip-title]");
     if (owner) { found = owner; break; }
-    if (element.id === "mapstage") break;   // the map itself has no tooltip
+    if (element.id === "mapstage") break;
   }
   uiShowTooltip(found);
 }
@@ -109,7 +103,6 @@ function uiShowTooltip(element) {
       (block ? `<div class="rw-tip__block">${block}</div>` : "");
     tip.hidden = false;
   }
-  // Sit above-right of the pointer, and stay on screen.
   const box = tip.getBoundingClientRect();
   let x = uiPointer.x + 16;
   let y = uiPointer.y - box.height - 12;
@@ -138,11 +131,10 @@ function uiPawnName(index) {
   return UI_PAWN_NAMES[index % UI_PAWN_NAMES.length] + (index >= UI_PAWN_NAMES.length ? ` ${Math.floor(index / UI_PAWN_NAMES.length) + 1}` : "");
 }
 
-// A tiny head-and-shoulders, varied per villager so the bar reads as people.
 function uiPawnPortrait(index, soldier) {
   const skin = UI_SKIN[(index * 7 + 3) % UI_SKIN.length];
   const hair = UI_HAIR[(index * 5 + 1) % UI_HAIR.length];
-  const shirt = soldier ? "#6d5533" : UI_SHIRT[(index * 3) % UI_SHIRT.length];
+  const shirt = soldier ? "#5d6d84" : UI_SHIRT[(index * 3) % UI_SHIRT.length];
   return `
     <svg viewBox="0 0 40 42" aria-hidden="true">
       <path d="M6 42 q0-13 14-13 t14 13z" fill="${shirt}"/>
@@ -173,11 +165,12 @@ function uiRefreshColonists() {
   for (let index = 0; index < shown; index++) {
     const soldier = index >= humans;
     const noRoof = !soldier && index >= peoplecap;
-    const flags = (hungry ? "⚠" : "") + (noRoof && seasonchecker === 4 ? "❄" : noRoof ? "🌧" : "");
+    const flagSvg = (hungry ? `<span style="color:#b83928;" title="Hungry">⚠</span>` : "") +
+                    (noRoof && seasonchecker === 4 ? `<span style="color:#336699;" title="Freezing">❄</span>` : noRoof ? `<span style="color:#557799;" title="Roofless">🌧</span>` : "");
     const tipParts = [];
-    tipParts.push(soldier ? "A soldier. Does no work, but escorts expeditions, seizes land and defends the village." : "A villager. Every villager is 4 work hours in spring and autumn, 6 in summer, 2 in winter.");
-    if (hungry) tipParts.push("There is not enough in the barns to feed everyone this turn.");
-    if (noRoof) tipParts.push("No roof — this one dies of exposure if winter comes.");
+    tipParts.push(soldier ? "A soldier. Escorts expeditions, seizes land and defends the settlement." : "A settler. Each provides 4 work hours in spring/autumn, 6 in summer, 2 in winter.");
+    if (hungry) tipParts.push("Starving! There is not enough timbermellow in the barns.");
+    if (noRoof) tipParts.push("Exposed to elements! Lacks a roof for the coming winter.");
     html += `
       <button class="rw-pawn ${soldier ? "rw-pawn--soldier" : ""} ${hungry ? "rw-pawn--hungry" : ""}"
               onclick="uiFocusVillage()"
@@ -186,7 +179,7 @@ function uiRefreshColonists() {
         <div class="rw-pawn__name">${uiPawnName(index)}</div>
         <div class="rw-pawn__box">
           ${uiPawnPortrait(index, soldier)}
-          ${flags ? `<span class="rw-pawn__flags">${flags}</span>` : ""}
+          ${flagSvg ? `<span class="rw-pawn__flags">${flagSvg}</span>` : ""}
           <span class="rw-pawn__bar"><i style="width:${Math.round(fed * 100)}%"></i></span>
         </div>
       </button>`;
@@ -200,10 +193,8 @@ function uiFocusVillage() {
 }
 
 // ---------------------------------------------------------------------------
-// Alerts — the red and yellow lines down the right
+// Alerts
 // ---------------------------------------------------------------------------
-//
-// Each one names a problem and, when clicked, opens the tab that fixes it.
 
 function uiBuildAlerts() {
   const alerts = [];
@@ -214,7 +205,7 @@ function uiBuildAlerts() {
 
   if (timbermellow_count < mouths) {
     alerts.push({
-      level: "bad", icon: "☠",
+      level: "bad", icon: typeof getIcon === "function" ? getIcon("hungry") : "☠",
       text: `Starvation — ${mouths - timbermellow_count} will go unfed`,
       tip: "Everyone eats one timbermellow when the turn ends. Soldiers starve first, then villagers. Gather more before you end the turn.",
       go: () => uiPointAt("gather", "btn_find_timbermellow"),
@@ -223,16 +214,16 @@ function uiBuildAlerts() {
 
   if (garlocks_attacking) {
     alerts.push({
-      level: "bad", icon: "⚔",
+      level: "bad", icon: typeof getIcon === "function" ? getIcon("seize") : "⚔",
       text: `Garlock raid on turn ${garlock_incomingattack_turn}`,
-      tip: `They come with a strength of ${garlock_strangth} and a defense of ${garlock_defense}. Soldiers are the only thing that stops them; without any, the village is sacked.`,
+      tip: `They come with a strength of ${garlock_strangth} and defense of ${garlock_defense}. Soldiers are the only thing that stops them.`,
       go: () => uiPointAt("people", "btn_soldier"),
     });
   }
 
   if (humans > peoplecap) {
     alerts.push({
-      level: seasonchecker >= 3 ? "bad" : "warn", icon: "🏠",
+      level: seasonchecker >= 3 ? "bad" : "warn", icon: typeof getIcon === "function" ? getIcon("house") : "🏠",
       text: `${humans - peoplecap} without a roof`,
       tip: "Anyone without a roof dies of exposure in winter. Each house shelters 3 and costs 2 stone.",
       go: () => uiPointAt("build", "btn_house"),
@@ -241,34 +232,34 @@ function uiBuildAlerts() {
 
   if (timbermellow_count >= storage_capacity && storage_capacity > 0) {
     alerts.push({
-      level: "warn", icon: "🏚",
-      text: "Barns full — the rest is lost",
-      tip: "Anything over your barn space is eaten by the garlocks the moment the turn ends. A barn costs 4 wood and holds 5 more.",
+      level: "warn", icon: typeof getIcon === "function" ? getIcon("barn") : "🏚",
+      text: "Barns full — excess is lost",
+      tip: "Anything over your barn space is eaten by garlocks when the turn ends. Build another barn (4 wood).",
       go: () => uiPointAt("build", "btn_barn"),
     });
   }
 
   if (timbermellow_count >= 20 && human_army === 0) {
     alerts.push({
-      level: "warn", icon: "🛡",
-      text: "Full barns, no soldiers",
-      tip: "The garlocks start watching once your stores pass 25. Train a soldier before the scouts are seen.",
+      level: "warn", icon: typeof getIcon === "function" ? getIcon("soldier") : "🛡",
+      text: "Abundant stores, no soldiers",
+      tip: "The garlocks start watching once stores reach 25. Train a soldier before scouts arrive.",
       go: () => uiPointAt("people", "btn_soldier"),
     });
   }
 
   if (foodOnLand <= 3 && seasonchecker !== 4) {
     alerts.push({
-      level: "warn", icon: "🌰",
+      level: "warn", icon: typeof getIcon === "function" ? getIcon("timbermellow") : "🌰",
       text: "The land is running dry",
-      tip: "There is almost nothing left to gather on the tiles you hold. Pick a tile next to your land and explore it.",
+      tip: "There is almost nothing left to gather on the tiles you hold. Pick a frontier tile and explore it.",
       go: () => uiHintExplore(),
     });
   }
 
   if (woodOnLand <= 0 && wood < 4) {
     alerts.push({
-      level: "info", icon: "🪵",
+      level: "info", icon: typeof getIcon === "function" ? getIcon("wood") : "🪵",
       text: "No wood on your land",
       tip: "Forests and dense bush carry wood. Take a tile that has some.",
       go: () => uiHintExplore(),
@@ -277,9 +268,9 @@ function uiBuildAlerts() {
 
   if (stoneOnLand <= 0 && stone < 2) {
     alerts.push({
-      level: "info", icon: "🪨",
+      level: "info", icon: typeof getIcon === "function" ? getIcon("stone") : "🪨",
       text: "No stone on your land",
-      tip: "Mountains, rocky outcrops and terraced hills carry stone, and stone never grows back. You will need a tile with some for houses.",
+      tip: "Mountains, rocky outcrops and terraced hills carry stone, and stone never grows back. You will need stone for houses.",
       go: () => uiHintExplore(),
     });
   }
@@ -288,18 +279,18 @@ function uiBuildAlerts() {
     .filter((id) => { const b = document.getElementById(id); return b && b.style.display !== "none"; });
   if (techOpen.length) {
     alerts.push({
-      level: "info", icon: "💡",
+      level: "info", icon: typeof getIcon === "function" ? getIcon("tech") : "💡",
       text: `${techOpen.length} new idea${techOpen.length > 1 ? "s" : ""}`,
-      tip: "Someone in the village has worked something out. Research it before you need it.",
+      tip: "Someone in the village has devised an innovation. Research it before you need it.",
       go: () => uiPointAt("research", techOpen[0]),
     });
   }
 
   if (working_hours > 0) {
     alerts.push({
-      level: "info", icon: "⏱",
+      level: "info", icon: typeof getIcon === "function" ? getIcon("hours") : "⏱",
       text: `${working_hours} work hour${working_hours > 1 ? "s" : ""} idle`,
-      tip: "Unspent hours are gone when the turn ends. Spend them gathering, building or raising people.",
+      tip: "Unspent hours vanish when the turn ends. Spend them gathering, building or raising people.",
       go: () => uiPointAt("gather", "btn_find_timbermellow"),
     });
   }
@@ -312,20 +303,18 @@ function uiRefreshAlerts() {
   if (!host) return;
   const alerts = uiBuildAlerts();
   host.innerHTML = "";
-  alerts.forEach((alert, index) => {
+  alerts.forEach((alert) => {
     const button = document.createElement("button");
     button.className = `rw-alert rw-alert--${alert.level}`;
     button.innerHTML = `<span class="rw-alert__icon">${alert.icon}</span><span>${alert.text}</span>`;
     button.dataset.tipTitle = alert.text;
     button.dataset.tip = alert.tip;
-    button.dataset.tipCost = "Click to be shown what fixes it.";
+    button.dataset.tipCost = "Click to open the action that resolves this.";
     button.onclick = alert.go;
     host.appendChild(button);
-    void index;
   });
 }
 
-// "Pick a tile and explore it" — select the best frontier tile and say so.
 function uiHintExplore() {
   uiSetTab(null);
   if (typeof selectBestFrontier === "function") selectBestFrontier();
@@ -334,51 +323,48 @@ function uiHintExplore() {
 // ---------------------------------------------------------------------------
 // Learning helper
 // ---------------------------------------------------------------------------
-//
-// One lesson at a time, in the order they become true. Dismissed lessons are
-// remembered in the browser.
 
 const UI_LESSONS = [
   {
     id: "welcome",
-    title: "Your village",
-    body: "This is the world, drawn by hand. The gold outline is the land you hold — everything you gather comes off it. Drag to pan, scroll to zoom, click any hex to look at it.",
+    title: "Your Settlement",
+    body: "This is the world, drawn by hand. The gold outline is the land you hold — everything you gather comes off it. Drag to pan, scroll to zoom, click any hex to inspect it.",
     when: () => true,
   },
   {
     id: "hours",
-    title: "Work hours",
-    body: "Bottom right is everything the village can do. Open GATHER and spend your hours — every action costs one. Hours you don't spend are lost when the turn ends.",
+    title: "Work Hours",
+    body: "Bottom right contains all village actions. Open GATHER and spend your hours — every action costs one. Hours you do not spend are lost when the turn ends.",
     when: () => working_hours > 0,
   },
   {
     id: "endturn",
-    title: "Ending the turn",
-    body: "When the hours are gone, press END TURN (or hit Space). Everyone eats one timbermellow, the season moves on and the neighbours settle more land.",
+    title: "Ending the Turn",
+    body: "When your hours are spent, press END TURN (or Space). Everyone eats one timbermellow, the season moves on and neighbouring factions expand.",
     when: () => working_hours <= 0,
   },
   {
     id: "barn",
-    title: "Build a barn",
-    body: "Your barns only hold so much, and anything over that is eaten the moment the turn ends. Open BUILD and put up a barn — 4 wood each, 5 more spaces each.",
+    title: "Build a Barn",
+    body: "Your barns only hold so much, and anything over capacity is eaten when the turn ends. Open BUILD and construct a barn — 4 wood, 5 more spaces.",
     when: () => wood >= 4,
   },
   {
     id: "explore",
-    title: "Taking new land",
-    body: "The dashed white hexes are wild land touching yours. Select one and press EXPLORE in the bottom-left panel. It needs 3 villagers, 1 soldier as escort, 10 timbermellows and 4 hours.",
+    title: "Frontier Expansion",
+    body: "The dashed white hexes are wild lands touching yours. Select one and press EXPLORE in the bottom-left panel. Requires 3 settlers, 1 soldier escort, 10 food and 4 hours.",
     when: () => humans >= 3 && human_army >= 1,
   },
   {
     id: "winter",
-    title: "Winter is coming",
-    body: "In winter nothing can be gathered, everyone still eats, and anyone without a roof dies of exposure. Fill the barns and build houses before the snow.",
+    title: "Winter is Coming",
+    body: "In winter nothing can be gathered, everyone still eats, and anyone without a roof dies of exposure. Fill the barns and build houses before the frost.",
     when: () => seasonchecker === 3,
   },
   {
     id: "garlocks",
-    title: "The garlocks",
-    body: "The garlock camp has noticed your stores. When the raid comes, soldiers are the only thing between them and your barns — and without soldiers the village is sacked.",
+    title: "The Garlocks",
+    body: "The distant garlock camp has noticed your full stores. When they attack, soldiers are your only defense — without soldiers the village is sacked.",
     when: () => garlocks_attacking,
   },
 ];
@@ -393,22 +379,26 @@ function uiLoadTutor() {
   }
   const box = document.getElementById("tutorOff");
   const menuBox = document.getElementById("tutorOffMenu");
+  const settingsBox = document.getElementById("settingsToggleHelper");
   if (box) box.checked = uiTutorOff;
   if (menuBox) menuBox.checked = uiTutorOff;
+  if (settingsBox) settingsBox.checked = uiTutorOff;
 }
 
 function uiSaveTutor() {
   try {
     localStorage.setItem(UI_TUTOR_STORE, JSON.stringify({ done: uiTutorDone, off: uiTutorOff }));
-  } catch (error) { /* private windows refuse storage; the tips just come back */ }
+  } catch (error) { /* ignored */ }
 }
 
 function uiSetTutorOff(off) {
   uiTutorOff = off;
   const box = document.getElementById("tutorOff");
   const menuBox = document.getElementById("tutorOffMenu");
+  const settingsBox = document.getElementById("settingsToggleHelper");
   if (box) box.checked = off;
   if (menuBox) menuBox.checked = off;
+  if (settingsBox) settingsBox.checked = off;
   uiSaveTutor();
   uiRefreshTutor();
 }
@@ -424,7 +414,7 @@ function uiRefreshTutor() {
   const panel = document.getElementById("tutorPanel");
   if (!panel) return;
   if (uiTutorOff) { panel.hidden = true; uiTutorShowing = null; return; }
-  if (uiTutorShowing) return;                       // let the player read it
+  if (uiTutorShowing) return;
 
   const lesson = UI_LESSONS.find((candidate) => !uiTutorDone[candidate.id] && candidate.when());
   if (!lesson) { panel.hidden = true; return; }
@@ -435,7 +425,7 @@ function uiRefreshTutor() {
 }
 
 // ---------------------------------------------------------------------------
-// Why a button is greyed out
+// Block reasons
 // ---------------------------------------------------------------------------
 
 function uiBlockReasons() {
@@ -470,15 +460,12 @@ function uiBlockReasons() {
 }
 
 // ---------------------------------------------------------------------------
-// Keyboard — RimWorld plays from the keyboard too
+// Keyboard
 // ---------------------------------------------------------------------------
 
 const UI_KEYS = { "1": "gather", "2": "build", "3": "people", "4": "research", "5": "villages" };
 
 function uiInstallKeys() {
-  // A clicked button keeps the focus, and then Space would press it again
-  // as well as ending the turn. Drop the focus after a real mouse click;
-  // keyboard focus (event.detail === 0) is left alone.
   document.addEventListener("click", (event) => {
     const button = event.target.closest && event.target.closest("button");
     if (button && event.detail > 0) button.blur();
@@ -493,11 +480,100 @@ function uiInstallKeys() {
     if (event.key === " ") { end_turn(); event.preventDefault(); return; }
     if (event.key === "Escape") {
       const log = document.getElementById("logPanel");
-      if (!log.hidden) { log.hidden = true; return; }
+      if (log && !log.hidden) { log.hidden = true; return; }
+      const settings = document.getElementById("settingsModal");
+      if (settings && !settings.hidden) { closeSettingsModal(); return; }
+      const codex = document.getElementById("codexModal");
+      if (codex && !codex.hidden) { closeCodexModal(); return; }
       uiToggleTab("menu");
       event.preventDefault();
     }
   });
+}
+
+// ---------------------------------------------------------------------------
+// Populating static SVG vector icons across the interface
+// ---------------------------------------------------------------------------
+
+function uiPopulateStaticIcons() {
+  if (typeof getIcon !== "function") return;
+  document.querySelectorAll("[data-icon]").forEach((el) => {
+    const iconName = el.dataset.icon;
+    const extraClass = el.classList.contains("rw-gizmo__icon") ? "game-icon--lg" : "";
+    el.innerHTML = getIcon(iconName, extraClass);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Commercial Game Shell Modals & Triggers
+// ---------------------------------------------------------------------------
+
+function startGameFromTitle(loadSaved) {
+  const titleScreen = document.getElementById("titleScreen");
+  if (titleScreen) {
+    titleScreen.classList.add("is-hidden");
+    setTimeout(() => { titleScreen.hidden = true; }, 500);
+  }
+  if (typeof focusVillage === "function") focusVillage();
+}
+
+function openSettingsModal() {
+  const modal = document.getElementById("settingsModal");
+  if (!modal) return;
+  const seedDisp = document.getElementById("settingsSeedDisplay");
+  if (seedDisp && typeof worldSeed !== "undefined") seedDisp.textContent = worldSeed;
+  modal.hidden = false;
+  requestAnimationFrame(() => modal.classList.add("is-open"));
+}
+
+function closeSettingsModal() {
+  const modal = document.getElementById("settingsModal");
+  if (!modal) return;
+  modal.classList.remove("is-open");
+  setTimeout(() => (modal.hidden = true), 260);
+}
+
+function openCodexModal() {
+  const modal = document.getElementById("codexModal");
+  if (!modal) return;
+  modal.hidden = false;
+  requestAnimationFrame(() => modal.classList.add("is-open"));
+}
+
+function closeCodexModal() {
+  const modal = document.getElementById("codexModal");
+  if (!modal) return;
+  modal.classList.remove("is-open");
+  setTimeout(() => (modal.hidden = true), 260);
+}
+
+function copyActiveSeed() {
+  if (typeof worldSeed === "undefined") return;
+  navigator.clipboard.writeText(String(worldSeed)).then(() => {
+    if (typeof updatelog === "function") updatelog(`World seed ${worldSeed} copied to clipboard!`, "good");
+  }).catch(() => {
+    prompt("World Seed:", String(worldSeed));
+  });
+}
+
+function applyCustomSeed() {
+  const input = document.getElementById("titleSeedInput");
+  if (!input || !input.value.trim()) return;
+  const seedVal = encodeURIComponent(input.value.trim());
+  location.search = `?seed=${seedVal}`;
+}
+
+function toggleHelperFromSettings(checked) {
+  uiSetTutorOff(checked);
+}
+
+function restartSameSeed() {
+  localStorage.removeItem("bottom_up.save.v1");
+  if (typeof worldSeed !== "undefined") {
+    location.search = `?seed=${worldSeed}`;
+  } else {
+    location.reload();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -506,31 +582,34 @@ function uiInstallKeys() {
 
 function uiInit() {
   for (const tab of document.querySelectorAll(".rw-tab")) {
-    if (tab.dataset.tab === "log") continue;       // its own onclick opens the window
+    if (tab.dataset.tab === "log") continue;
     tab.addEventListener("click", () => uiToggleTab(tab.dataset.tab));
   }
-  document.getElementById("tutorNext").addEventListener("click", uiDismissLesson);
-  document.getElementById("tutorClose").addEventListener("click", uiDismissLesson);
-  document.getElementById("tutorOff").addEventListener("change", (event) => uiSetTutorOff(event.target.checked));
-  document.getElementById("tutorOffMenu").addEventListener("change", (event) => uiSetTutorOff(event.target.checked));
+  const tutorNext = document.getElementById("tutorNext");
+  const tutorClose = document.getElementById("tutorClose");
+  const tutorOff = document.getElementById("tutorOff");
+  const tutorOffMenu = document.getElementById("tutorOffMenu");
+
+  if (tutorNext) tutorNext.addEventListener("click", uiDismissLesson);
+  if (tutorClose) tutorClose.addEventListener("click", uiDismissLesson);
+  if (tutorOff) tutorOff.addEventListener("change", (event) => uiSetTutorOff(event.target.checked));
+  if (tutorOffMenu) tutorOffMenu.addEventListener("change", (event) => uiSetTutorOff(event.target.checked));
 
   uiLoadTutor();
+  uiPopulateStaticIcons();
   uiInstallTooltips();
   uiInstallKeys();
   uiSetTab("gather");
 }
 
-// Called at the end of game.js's update().
 function uiRefresh() {
   const year = Math.floor((turngame - 1) / 8) + 1;
   const yearLabel = document.getElementById("text_year");
   if (yearLabel) yearLabel.textContent = year;
 
-  // End turn turns red when there isn't enough food to go round.
   const endturn = document.querySelector(".rw-endturn");
   if (endturn) endturn.classList.toggle("rw-endturn--short", timbermellow_count < humans + human_army);
 
-  // A tab with something new in it asks to be opened.
   const research = document.querySelector('.rw-tab[data-tab="research"]');
   if (research) {
     const open = ["stoneaxebt", "foodbasketbt", "farmingbt", "mapmakingbt"]
@@ -542,5 +621,5 @@ function uiRefresh() {
   uiRefreshColonists();
   uiRefreshAlerts();
   uiRefreshTutor();
-  if (uiTipTarget) { uiTipTarget = null; uiUpdateTooltip(); }   // costs may have changed
+  if (uiTipTarget) { uiTipTarget = null; uiUpdateTooltip(); }
 }

@@ -6,8 +6,8 @@
 // they can never slide apart.
 
 function setupMapViewport(stage, viewport) {
-  const MIN_SCALE = 1;
-  const MAX_SCALE = 3.5;
+  const MIN_SCALE = 0.75;
+  const MAX_SCALE = 4.5;
 
   let scale = 1;
   let translateX = 0;
@@ -25,10 +25,12 @@ function setupMapViewport(stage, viewport) {
     // clientHeight don't force a layout the way getBoundingClientRect does,
     // which matters while dragging.
     const bounds = { width: stage.clientWidth, height: stage.clientHeight };
-    const maxX = 0;
-    const maxY = 0;
-    const minX = bounds.width - bounds.width * scale;
-    const minY = bounds.height - bounds.height * scale;
+    const boundX1 = bounds.width - bounds.width * scale;
+    const boundY1 = bounds.height - bounds.height * scale;
+    const minX = Math.min(0, boundX1);
+    const maxX = Math.max(0, boundX1);
+    const minY = Math.min(0, boundY1);
+    const maxY = Math.max(0, boundY1);
     translateX = Math.min(maxX, Math.max(minX, translateX));
     translateY = Math.min(maxY, Math.max(minY, translateY));
     viewport.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
@@ -38,7 +40,15 @@ function setupMapViewport(stage, viewport) {
 
   // The current view, for a minimap: scale, offset, and the stage size.
   function getView() {
-    return { scale, translateX, translateY, width: stage.clientWidth, height: stage.clientHeight };
+    return {
+      scale,
+      translateX,
+      translateY,
+      x: translateX,
+      y: translateY,
+      width: stage.clientWidth,
+      height: stage.clientHeight
+    };
   }
 
   stage.addEventListener("wheel", (event) => {

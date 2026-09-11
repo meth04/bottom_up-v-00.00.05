@@ -158,30 +158,66 @@ class HexRenderer {
     polygon.setAttribute("stroke-linejoin", "round");
 
     if (state === "hidden") {
-      polygon.setAttribute("fill", HEX_FOG_COLOR);
-      polygon.setAttribute("fill-opacity", "0.86");
-      polygon.setAttribute("stroke", HEX_FOG_COLOR);
-      polygon.setAttribute("stroke-width", "1.5");
+      polygon.setAttribute("fill", "#e2d2b2");
+      polygon.setAttribute("fill-opacity", "0.96");
+      polygon.setAttribute("stroke", "#c4b08a");
+      polygon.setAttribute("stroke-width", "1");
+      group.appendChild(polygon);
+
+      // Antique Cartographic Cross-Hatching on Terra Incognita
+      const hatchPattern = (Math.abs(tile.q * 19 + tile.r * 23)) % 3;
+      if (hatchPattern === 0) {
+        const line = document.createElementNS(SVG_NS, "line");
+        line.setAttribute("x1", c.x - size * 0.4);
+        line.setAttribute("y1", c.y - size * 0.25);
+        line.setAttribute("x2", c.x + size * 0.4);
+        line.setAttribute("y2", c.y + size * 0.25);
+        line.setAttribute("stroke", "rgba(120, 90, 55, 0.22)");
+        line.setAttribute("stroke-width", "1");
+        line.setAttribute("stroke-dasharray", "4 4");
+        group.appendChild(line);
+      } else if (hatchPattern === 1) {
+        const line = document.createElementNS(SVG_NS, "line");
+        line.setAttribute("x1", c.x - size * 0.35);
+        line.setAttribute("y1", c.y + size * 0.25);
+        line.setAttribute("x2", c.x + size * 0.35);
+        line.setAttribute("y2", c.y - size * 0.25);
+        line.setAttribute("stroke", "rgba(120, 90, 55, 0.22)");
+        line.setAttribute("stroke-width", "1");
+        line.setAttribute("stroke-dasharray", "4 4");
+        group.appendChild(line);
+      }
+      // Occasional compass star motif on Terra Incognita
+      if ((Math.abs(tile.q * 37 + tile.r * 13)) % 8 === 0) {
+        const star = document.createElementNS(SVG_NS, "path");
+        star.setAttribute("d", `M ${c.x} ${c.y - 7} L ${c.x} ${c.y + 7} M ${c.x - 7} ${c.y} L ${c.x + 7} ${c.y} M ${c.x - 4} ${c.y - 4} L ${c.x + 4} ${c.y + 4} M ${c.x - 4} ${c.y + 4} L ${c.x + 4} ${c.y - 4}`);
+        star.setAttribute("stroke", "rgba(140, 100, 60, 0.28)");
+        star.setAttribute("stroke-width", "1");
+        star.setAttribute("stroke-linecap", "round");
+        group.appendChild(star);
+      }
     } else if (state === "frontier") {
       polygon.setAttribute("fill", "#ffffff");
-      polygon.setAttribute("fill-opacity", "0.06");
-      polygon.setAttribute("stroke", HEX_FRONTIER_OUTLINE);
-      polygon.setAttribute("stroke-width", "2");
-      polygon.setAttribute("stroke-dasharray", "6 5");
-      polygon.setAttribute("stroke-opacity", "0.9");
+      polygon.setAttribute("fill-opacity", "0.08");
+      polygon.setAttribute("stroke", "#d49e32");
+      polygon.setAttribute("stroke-width", "2.4");
+      polygon.setAttribute("stroke-dasharray", "6 4");
+      polygon.setAttribute("stroke-opacity", "0.95");
+      group.appendChild(polygon);
     } else if (state === "seizable") {
       polygon.setAttribute("fill", this.ownerColor(tile.owner));
-      polygon.setAttribute("fill-opacity", "0.12");
+      polygon.setAttribute("fill-opacity", "0.14");
       polygon.setAttribute("stroke", this.ownerColor(tile.owner));
-      polygon.setAttribute("stroke-width", "2");
-      polygon.setAttribute("stroke-dasharray", "6 5");
+      polygon.setAttribute("stroke-width", "2.2");
+      polygon.setAttribute("stroke-dasharray", "6 4");
+      group.appendChild(polygon);
     } else {
       // Transparent click target; hover tint comes from CSS.
       polygon.setAttribute("fill", "#ffffff");
       polygon.setAttribute("fill-opacity", "0");
       polygon.setAttribute("stroke", "none");
+      group.appendChild(polygon);
     }
-    group.appendChild(polygon);
 
     if (this.onTileClick) {
       group.addEventListener("click", () => this.onTileClick(tile.id));

@@ -7,12 +7,10 @@
 //   2. paints it (worldPainter.js), lays the hex overlay over it
 //      (hexRenderer.js), adds the buildings, the villagers and the sky
 //   3. hands the map to territory.js, which game.js gathers from
-//   4. reacts to what happens — a "+3" floats up when you gather, an
+//   4. reacts to what happens — a floating number rises when you gather, an
 //      expedition walks out to a tile you take, buildings appear as you
 //      build, the neighbours take their turn after yours, the weather
 //      follows the season, the game autosaves (save.js)
-//
-// The map layers live inside #mapviewport, which pans and zooms as one.
 
 let world = null;
 let worldSeed = 0;
@@ -59,6 +57,19 @@ async function initGame() {
   else if (params.get("seed")) worldSeed = Number(params.get("seed")) >>> 0;
   else worldSeed = Math.floor(Math.random() * 1e9);
 
+  // If a seed was given in URL, bypass the Title Screen directly so automated playtests run cleanly
+  const titleScreen = document.getElementById("titleScreen");
+  const continueBtn = document.getElementById("btnContinueGame");
+  if (continueBtn && saved) {
+    continueBtn.style.display = "flex";
+  }
+  if (params.get("seed") || location.hash.includes("stop-after-explore")) {
+    if (titleScreen) {
+      titleScreen.classList.add("is-hidden");
+      titleScreen.hidden = true;
+    }
+  }
+
   world = generateWorld(Object.assign({}, mapData.world, { seed: worldSeed }));
   mapGrid = world.grid;
 
@@ -94,9 +105,12 @@ async function initGame() {
   viewport = setupMapViewport(document.getElementById("mapstage"), document.getElementById("mapviewport"));
   viewport.onChange(drawMinimap);
   document.getElementById("minimap").addEventListener("click", onMinimapClick);
-  viewport.focusOn(village, { width: world.width, height: world.height }, 2.4);
+  viewport.focusOn(village, { width: world.width, height: world.height }, 2.8);
 
-  document.getElementById("seedLabel").textContent = worldSeed;
+  const seedLabel = document.getElementById("seedLabel");
+  if (seedLabel) seedLabel.textContent = worldSeed;
+  const settingsSeed = document.getElementById("settingsSeedDisplay");
+  if (settingsSeed) settingsSeed.textContent = worldSeed;
 
   if (saved) {
     gameSetState(saved.game);
@@ -128,17 +142,21 @@ function onTerritoryChanged(event) {
   if (!hexRenderer) return;
 
   if (event && event.kind === "take") {
-    if (event.amount > 0 && mapEffects) {
-      const village = villageCenter();
-      const icon = RESOURCE_ICONS[event.types[0]] || event.types[0];
-      mapEffects.floatText(village.x, village.y - mapGrid.hexSize * 0.9, `+${event.amount} ${icon}`, "good");
+    if (event.amount > 0) {
+      if (typeof spawnFloatingReward === "function") {
+        spawnFloatingReward(`+${event.amount}`, event.types[0]);
+      }
+      if (mapEffects) {
+        const village = villageCenter();
+        const icon = typeof getIcon === "function" ? "" : (RESOURCE_ICONS[event.types[0]] || event.types[0]);
+        mapEffects.floatText(village.x, village.y - mapGrid.hexSize * 0.9, `+${event.amount} ${icon}`, "good");
+      }
     }
     refreshTilePanel();
     return;
   }
 
   if (event && (event.kind === "claim" || event.kind === "seize")) {
-    // The land changes hands at once; the banner walking out is decoration.
     hexMap.selectTile(event.tile.id);
     hexRenderer.render();
     refreshTilePanel();
@@ -166,6 +184,19 @@ function afterTurnEnded() {
   refreshVillagesPanel();
   drawMinimap();
   saveGame(worldSeed);
+
+  // Check Game Over condition
+  if (typeof humans !== "undefined" && typeof human_army !== "undefined") {
+    if (humans <= 0 && human_army <= 0) {
+      const year = Math.floor((turngame - 1) / 8) + 1;
+      if (typeof showGameOverScreen === "function") {
+        showGameOverScreen(
+          "Famine and the bitter elements have claimed the final settler. The fires in the village have gone cold.",
+          { year, turns: turngame, tiles: typeof territoryClaimedCount === "function" ? territoryClaimedCount() : 1 }
+        );
+      }
+    }
+  }
 }
 
 function onHexTileClick(tileId) {
@@ -179,14 +210,17 @@ function refreshMapEffects() {
   if (!mapEffects) return;
   const season = document.getElementById("season").innerText.toLowerCase();
   const stage = document.getElementById("mapstage");
-  // Only touch the stage's classes when the season actually changes:
-  // rewriting them restyles every sprite on the map.
+
   if (!stage.classList.contains(`season--${season}`)) {
     mapEffects.setSeason(season);
     for (const name of Array.from(stage.classList)) {
       if (name.startsWith("season--")) stage.classList.remove(name);
     }
     stage.classList.add(`season--${season}`);
+    const year = Math.floor((turngame - 1) / 8) + 1;
+    if (typeof showSeasonBanner === "function") {
+      showSeasonBanner(season, year);
+    }
   }
   refreshSettlements(false);
   if (villagers) villagers.sync(humans, human_army);
@@ -219,88 +253,8 @@ function toggleLog() {
   if (tab) tab.classList.toggle("is-open", !panel.hidden);
 }
 
-// " from the north-east" — where the garlock camp lies, for the raid log.
-function garlockDirectionText() {
-  const camp = villagesGet().find((village) => village.kind === "garlock");
-  if (!camp || !hexMap) return "";
-  const home = hexMap.getAllTiles().find((tile) => tile.isStartingTile);
-  const campTile = hexMap.getTile(camp.homeTileId);
-  if (!home || !campTile) return "";
-  return ` from the ${directionBetween(home, campTile, mapGrid)}`;
-}
-
-function setMotion(enabled) {
-  document.getElementById("mapstage").classList.toggle("no-motion", !enabled);
-  if (villagers) (enabled ? villagers.start() : villagers.stop());
-}
-
-function newGame() {
-  if (!confirm("Start a new world? The current game will be lost.")) return;
-  clearSavedGame();
-  location.href = `${location.pathname}?seed=${Math.floor(Math.random() * 1e9)}`;
-}
-
-function saveNow() {
-  updatelog(saveGame(worldSeed) ? "Game saved." : "Could not save — the browser refused storage.", "good");
-}
-
 // ---------------------------------------------------------------------------
-// Minimap
-// ---------------------------------------------------------------------------
-
-function drawMinimap(view) {
-  const canvas = document.getElementById("minimap");
-  if (!canvas || !world || !hexMap) return;
-  const context = canvas.getContext("2d");
-  const fit = Math.min(canvas.width / world.width, canvas.height / world.height);
-  const offsetX = (canvas.width - world.width * fit) / 2;
-  const offsetY = (canvas.height - world.height * fit) / 2;
-  const dot = Math.max(2, mapGrid.hexSize * fit * 1.7);
-
-  context.fillStyle = "#0d1014";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  for (const tile of hexMap.getAllTiles()) {
-    const c = worldTileCenter(tile.q, tile.r, mapGrid);
-    const x = offsetX + c.x * fit;
-    const y = offsetY + c.y * fit;
-    context.fillStyle = hexMap.isRevealed(tile.id) ? (TERRAIN_FILL[tile.terrainType] || "#888") : "#1b2029";
-    context.fillRect(x - dot / 2, y - dot / 2, dot, dot);
-    if (tile.owner && hexMap.isRevealed(tile.id)) {
-      context.strokeStyle = tile.owner === "player" ? "#f2c14e" : villageColor(tile.owner);
-      context.lineWidth = 1;
-      context.strokeRect(x - dot / 2 + 0.5, y - dot / 2 + 0.5, dot - 1, dot - 1);
-    }
-  }
-
-  // The part of the world on screen.
-  const current = view || (viewport && viewport.getView());
-  if (current && current.width) {
-    const stageFit = Math.min(current.width / world.width, current.height / world.height);
-    const stageOffsetX = (current.width - world.width * stageFit) / 2;
-    const stageOffsetY = (current.height - world.height * stageFit) / 2;
-    const toWorld = (stageX, stageY) => [(stageX - stageOffsetX) / stageFit, (stageY - stageOffsetY) / stageFit];
-    const [x0, y0] = toWorld(-current.translateX / current.scale, -current.translateY / current.scale);
-    const [x1, y1] = toWorld((current.width - current.translateX) / current.scale, (current.height - current.translateY) / current.scale);
-    context.strokeStyle = "#ffffff";
-    context.lineWidth = 1.5;
-    context.strokeRect(offsetX + x0 * fit, offsetY + y0 * fit, (x1 - x0) * fit, (y1 - y0) * fit);
-  }
-}
-
-function onMinimapClick(event) {
-  const canvas = event.currentTarget;
-  const bounds = canvas.getBoundingClientRect();
-  const fit = Math.min(canvas.width / world.width, canvas.height / world.height);
-  const offsetX = (canvas.width - world.width * fit) / 2;
-  const offsetY = (canvas.height - world.height * fit) / 2;
-  const x = (event.clientX - bounds.left - offsetX) / fit;
-  const y = (event.clientY - bounds.top - offsetY) / fit;
-  const current = viewport.getView();
-  viewport.focusOn({ x, y }, { width: world.width, height: world.height }, Math.max(1.6, current.scale));
-}
-
-// ---------------------------------------------------------------------------
-// Panels
+// Tile inspection pane and minimap
 // ---------------------------------------------------------------------------
 
 function refreshTilePanel() {
@@ -315,9 +269,9 @@ function refreshTilePanel() {
 
   if (!tile) {
     info.innerHTML = `
-      <div class="rw-tileinfo__name">Nothing selected</div>
-      <div class="rw-tileinfo__state">Click any hex on the map to look at it.</div>`;
-    setTileGizmo(button, "\u{1F6A9}", "Explore", false);
+      <div class="rw-tileinfo__name">Select Land</div>
+      <div class="rw-tileinfo__state">Click any hex on the map to survey its terrain and resources.</div>`;
+    setTileGizmo(button, "🚩", "Explore", false);
     button.disabled = true;
     button.dataset.tipBlock = "Nothing selected.";
     reason.textContent = "";
@@ -332,14 +286,14 @@ function refreshTilePanel() {
 
   if (!revealed) {
     info.innerHTML = `
-      <div class="rw-tileinfo__name">Unknown land</div>
-      <div class="rw-tileinfo__state">Blank paper — the world has not been drawn here yet. Your land has to reach it, or you have to learn mapmaking.</div>`;
+      <div class="rw-tileinfo__name">Terra Incognita</div>
+      <div class="rw-tileinfo__state">Blank parchment — uncharted frontier. Your settlement must expand here, or discover Mapmaking.</div>`;
   } else {
     let state = "Wild land";
     let stateClass = "";
-    if (claimed) { state = tile.isStartingTile ? "Your village" : "Your land"; stateClass = "rw-tileinfo__state--claimed"; }
-    else if (foreign) { state = `${villageName(tile.owner)}'s land`; stateClass = "rw-tileinfo__state--foreign"; }
-    else if (frontier) { state = "Next to your land — can be explored"; stateClass = "rw-tileinfo__state--frontier"; }
+    if (claimed) { state = tile.isStartingTile ? "Settlement Hearth" : "Your Territory"; stateClass = "rw-tileinfo__state--claimed"; }
+    else if (foreign) { state = `${villageName(tile.owner)}'s domain`; stateClass = "rw-tileinfo__state--foreign"; }
+    else if (frontier) { state = "Frontier — adjacent and explorable"; stateClass = "rw-tileinfo__state--frontier"; }
 
     const chip = foreign ? `<i class="chip" style="background:${villageColor(tile.owner)}"></i>` : "";
     info.innerHTML = `
@@ -351,48 +305,50 @@ function refreshTilePanel() {
   // One gizmo, two jobs: explore wild land, seize another village's.
   if (foreign) {
     const blocker = territorySeizeBlocker(tile.id);
-    const cost = `${territorySeizeSoldiersNeeded(tile.id)} soldiers (one never comes back) \u00b7 ${SEIZE_FOOD_COST} \u{1F330} \u00b7 ${SEIZE_WORK_HOURS} hours`;
-    setTileGizmo(button, "\u2694", "Seize", true);
+    const cost = `${territorySeizeSoldiersNeeded(tile.id)} soldiers (1 lost) · ${SEIZE_FOOD_COST} food · ${SEIZE_WORK_HOURS} hours`;
+    setTileGizmo(button, "⚔️", "Seize", true);
     button.onclick = seize;
     button.disabled = !!blocker;
-    button.dataset.tipTitle = `Seize this land from ${villageName(tile.owner)}`;
-    button.dataset.tip = "Your soldiers march out and take the tile. You can take the land around a village, but never the village itself.";
+    button.dataset.tipTitle = `Seize territory from ${villageName(tile.owner)}`;
+    button.dataset.tip = "Your soldiers march out and conquer the tile. You can take peripheral lands, but never the home center.";
     button.dataset.tipCost = cost;
     button.dataset.tipBlock = blocker || "";
-    reason.textContent = blocker || `Costs ${cost}.`;
+    reason.textContent = blocker || `Requires: ${cost}.`;
     reason.className = blocker ? "rw-reason rw-reason--blocked" : "rw-reason";
   } else {
     const blocker = territoryExploreBlocker(tile.id);
-    const cost = `${EXPLORE_MIN_HUMANS} villagers \u00b7 ${EXPLORE_MIN_SOLDIERS} soldier escort \u00b7 ${EXPLORE_FOOD_COST} \u{1F330} \u00b7 ${EXPLORE_WORK_HOURS} hours`;
-    setTileGizmo(button, "\u{1F6A9}", "Explore", false);
+    const cost = `${EXPLORE_MIN_HUMANS} villagers · ${EXPLORE_MIN_SOLDIERS} soldier · ${EXPLORE_FOOD_COST} food · ${EXPLORE_WORK_HOURS} hours`;
+    setTileGizmo(button, "🚩", "Explore", false);
     button.onclick = explore;
     button.disabled = !!blocker;
     button.dataset.tipTitle = "Send an expedition";
-    button.dataset.tip = "The tile becomes yours, whatever grows on it joins your stores-on-land, and the land beyond it comes into view.";
+    button.dataset.tip = "The hex is annexed into your territory, its resources join your stores-on-land, and surrounding lands are revealed.";
     button.dataset.tipCost = cost;
     button.dataset.tipBlock = blocker || "";
-    reason.textContent = blocker || `Costs ${cost}.`;
+    reason.textContent = blocker || `Requires: ${cost}.`;
     reason.className = blocker ? "rw-reason rw-reason--blocked" : "rw-reason";
   }
 }
 
-// The Explore/Seize gizmo keeps its icon and its colour in step with its job.
 function setTileGizmo(button, icon, label, danger) {
-  button.innerHTML = `<span class="rw-gizmo__icon">${icon}</span><span class="rw-gizmo__label">${label}</span>`;
+  if (!button) return;
+  const iconSvg = typeof getIcon === "function" ? getIcon(danger ? "seize" : "explore") : icon;
+  button.innerHTML = `<span class="rw-gizmo__icon">${iconSvg}</span><span class="rw-gizmo__label">${label}</span>`;
   button.classList.toggle("rw-gizmo--danger", !!danger);
   button.classList.toggle("rw-gizmo--go", !danger);
 }
 
 function resourceBars(tile) {
   const types = Object.keys(tile.resources);
-  if (!types.length) return `<div class="rw-tileinfo__empty">Nothing to gather here.</div>`;
+  if (!types.length) return `<div class="rw-tileinfo__empty">No harvestable resources on this tile.</div>`;
   return types.map((type) => {
     const entry = tile.resources[type];
     const percent = entry.max ? Math.round((entry.amount / entry.max) * 100) : 0;
-    const note = entry.renewable ? "regrows every autumn" : "never grows back";
+    const note = entry.renewable ? "replenishes in autumn" : "finite — never regrows";
+    const iconSvg = typeof getIcon === "function" ? getIcon(type) : (RESOURCE_ICONS[type] || "");
     return `
       <div class="bar">
-        <span>${RESOURCE_ICONS[type] || ""} ${type} <small>${note}</small></span>
+        <span>${iconSvg} <b>${type}</b> <small>(${note})</small></span>
         <b>${entry.amount} / ${entry.max}</b>
         <div class="bar__track"><div class="bar__fill ${entry.renewable ? "" : "bar__fill--finite"}" style="width:${percent}%"></div></div>
       </div>`;
@@ -402,23 +358,159 @@ function resourceBars(tile) {
 function refreshVillagesPanel() {
   const list = document.getElementById("villageList");
   if (!list || !hexMap) return;
-  const kinds = { player: "you", rival: "rival village", garlock: "garlocks" };
+  const kinds = { player: "your village", rival: "neighbour", garlock: "garlock camp" };
+  const tileIcon = typeof getIcon === "function" ? getIcon("tiles") : "⬡";
   list.innerHTML = villagesGet().map((village) => {
     const tiles = hexMap.getTilesOwnedBy(village.id).length;
     const known = village.kind === "player" || hexMap.isRevealed(village.homeTileId);
     return `
-      <li class="villagerow ${known ? "" : "villagerow--unknown"}">
-        <i class="chip" style="background:${village.color}"></i>
-        <span class="villagerow__name">${known ? village.name : "An unknown village"}</span>
-        <span class="villagerow__kind">${kinds[village.kind] || village.kind}</span>
-        <b class="villagerow__tiles">${known ? tiles : "?"} \u2B21</b>
+      <li class="villagelist__row villagerow ${known ? "" : "villagelist__row--unknown"}">
+        <span>
+          <i class="chip" style="background:${village.color}"></i>
+          <b>${known ? village.name : "Uncharted Settlement"}</b>
+          <small style="color:var(--ink-faint); margin-left:6px;">(${kinds[village.kind] || village.kind})</small>
+        </span>
+        <span style="display:flex; align-items:center; gap:4px;">
+          <b>${known ? tiles : "?"}</b> ${tileIcon}
+        </span>
       </li>`;
   }).join("");
 }
 
 // ---------------------------------------------------------------------------
-// Taking the player somewhere — the alerts and the colonist bar use these
+// Minimap & Camera
 // ---------------------------------------------------------------------------
+
+function drawMinimap() {
+  const canvas = document.getElementById("minimap");
+  if (!canvas || !world || !viewport) return;
+  const ctx = canvas.getContext("2d");
+  const cw = canvas.width;
+  const ch = canvas.height;
+  ctx.clearRect(0, 0, cw, ch);
+
+  // Background tint: antique parchment look
+  ctx.fillStyle = "#edd9b4";
+  ctx.fillRect(0, 0, cw, ch);
+
+  // Subtle parchment border inside
+  ctx.strokeStyle = "#cbb28d";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(1, 1, cw - 2, ch - 2);
+
+  const scale = Math.min(cw / world.width, ch / world.height);
+  const ox = (cw - world.width * scale) / 2;
+  const oy = (ch - world.height * scale) / 2;
+
+  // Render rivers
+  if (world.rivers && world.rivers.length) {
+    ctx.strokeStyle = "rgba(74, 119, 122, 0.45)";
+    ctx.lineWidth = Math.max(1, 2 * scale);
+    ctx.lineCap = "round";
+    for (const river of world.rivers) {
+      if (!river.points || river.points.length < 2) continue;
+      ctx.beginPath();
+      ctx.moveTo(ox + river.points[0].x * scale, oy + river.points[0].y * scale);
+      for (let i = 1; i < river.points.length; i++) {
+        ctx.lineTo(ox + river.points[i].x * scale, oy + river.points[i].y * scale);
+      }
+      ctx.stroke();
+    }
+  }
+
+  // Render hexes
+  const radius = Math.max(1.8, mapGrid.hexSize * scale * 0.85);
+  for (const tile of hexMap.getAllTiles()) {
+    if (!hexMap.isRevealed(tile.id)) continue;
+    const center = worldTileCenter(tile.q, tile.r, mapGrid);
+    const px = ox + center.x * scale;
+    const py = oy + center.y * scale;
+
+    if (tile.owner === "player") {
+      ctx.fillStyle = "#c29339";
+    } else if (tile.owner) {
+      ctx.fillStyle = villageColor(tile.owner);
+    } else if (hexMap.isFrontier(tile.id)) {
+      ctx.fillStyle = "rgba(100, 145, 75, 0.45)";
+    } else {
+      ctx.fillStyle = "rgba(180, 150, 110, 0.18)";
+    }
+
+    ctx.beginPath();
+    ctx.arc(px, py, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Highlight village centers
+  if (typeof villagesGet === "function") {
+    const villages = villagesGet();
+    for (const v of villages) {
+      const homeTile = hexMap.getTile(v.homeTileId);
+      if (!homeTile || !hexMap.isRevealed(homeTile.id)) continue;
+      const center = worldTileCenter(homeTile.q, homeTile.r, mapGrid);
+      const px = ox + center.x * scale;
+      const py = oy + center.y * scale;
+
+      ctx.fillStyle = v.kind === "garlock" ? "#8c1f1f" : "#2a4d3a";
+      ctx.beginPath();
+      ctx.arc(px, py, radius * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+
+  // Camera viewport indicator
+  const stage = document.getElementById("mapstage");
+  if (stage) {
+    const sRect = stage.getBoundingClientRect();
+    const fit = Math.min(sRect.width / world.width, sRect.height / world.height);
+    const offsetX = (sRect.width - world.width * fit) / 2;
+    const offsetY = (sRect.height - world.height * fit) / 2;
+    const view = viewport.getView();
+
+    const worldLeft = (-view.translateX / view.scale - offsetX) / fit;
+    const worldTop = (-view.translateY / view.scale - offsetY) / fit;
+    const worldW = (sRect.width / view.scale) / fit;
+    const worldH = (sRect.height / view.scale) / fit;
+
+    const vx = ox + worldLeft * scale;
+    const vy = oy + worldTop * scale;
+    const vw = worldW * scale;
+    const vh = worldH * scale;
+
+    ctx.strokeStyle = "#8c2a1c";
+    ctx.lineWidth = 1.8;
+    ctx.strokeRect(vx, vy, vw, vh);
+
+    // Golden corner accents on camera box
+    ctx.fillStyle = "#8c2a1c";
+    const cs = 3;
+    ctx.fillRect(vx - 1, vy - 1, cs, cs);
+    ctx.fillRect(vx + vw - cs + 1, vy - 1, cs, cs);
+    ctx.fillRect(vx - 1, vy + vh - cs + 1, cs, cs);
+    ctx.fillRect(vx + vw - cs + 1, vy + vh - cs + 1, cs, cs);
+  }
+}
+
+function onMinimapClick(event) {
+  if (!viewport || !world) return;
+  const canvas = document.getElementById("minimap");
+  const rect = canvas.getBoundingClientRect();
+  const clickX = event.clientX - rect.left;
+  const clickY = event.clientY - rect.top;
+
+  const scale = Math.min(canvas.width / world.width, canvas.height / world.height);
+  const ox = (canvas.width - world.width * scale) / 2;
+  const oy = (canvas.height - world.height * scale) / 2;
+
+  const worldX = (clickX - ox) / scale;
+  const worldY = (clickY - oy) / scale;
+
+  const current = viewport.getView();
+  viewport.focusOn({ x: worldX, y: worldY }, { width: world.width, height: world.height }, current.scale);
+}
 
 function focusVillage() {
   if (!viewport) return;
@@ -434,8 +526,6 @@ function focusSelectedTile() {
   viewport.focusOn(worldTileCenter(tile.q, tile.r, mapGrid), { width: world.width, height: world.height }, Math.max(2.2, current.scale));
 }
 
-// Picks the richest tile the village could explore next, selects it and brings
-// it on screen — so "the land is running dry" has somewhere to point.
 function selectBestFrontier() {
   if (!hexMap) return;
   const frontier = hexMap.getAllTiles().filter((tile) => hexMap.isFrontier(tile.id) && !tile.owner);

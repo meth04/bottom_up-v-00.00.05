@@ -690,6 +690,9 @@
             techmade = techmade + 1;
             updatelog("You have made a stone axe! you can chop more wood now", "good");
             stoneaxebt.style.display = "none";
+            if (typeof showMilestonePopup === "function") {
+              showMilestonePopup("The Stone Axe", "Heftier blades bite deep into ancient trunks. Woodcutting yields double from now on!", "stoneaxe");
+            }
           }
           update();
         }
@@ -710,6 +713,9 @@
           techmade = techmade + 1;
           foodbasketbt.style.display = "none";
           updatelog("You have made a foodbasket!", "good");
+          if (typeof showMilestonePopup === "function") {
+            showMilestonePopup("Woven Baskets", "Sturdy woven willow baskets allow gatherers to carry twice as many timbermellows each hour.", "foodbasket");
+          }
          }
          update();
         }
@@ -728,6 +734,9 @@
             techmade = techmade + 1;
             farmingbt.style.display = "none";
             updatelog("Your village has learned to farm! Grain on your plains now counts as food.", "good");
+            if (typeof showMilestonePopup === "function") {
+              showMilestonePopup("The Age of Agriculture", "No longer chained to wild groves! Settlers clear fields and cultivate golden grain as food across plains and terraced hills.", "farming");
+            }
           }
           update();
         }
@@ -747,6 +756,9 @@
             mapmakingbt.style.display = "none";
             territoryRevealMap();
             updatelog("Your mapmakers have charted the whole land.", "good");
+            if (typeof showMilestonePopup === "function") {
+              showMilestonePopup("The Grand Cartography", "Nautical calipers and ink render the entire world visible. The blank frontiers vanish beneath drawn terrain and settlements.", "mapmaking");
+            }
           }
           update();
         }

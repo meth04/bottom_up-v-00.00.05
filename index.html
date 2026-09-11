@@ -3,10 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>bottom up</title>
+  <title>bottom up — A Village Survival Story</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+
+  <!-- Floating particles & juice overlay layers -->
+  <div id="floatingTextLayer"></div>
+  <div id="dangerVignette" class="danger-vignette"></div>
+
+  <!-- Grand Season Transition Banner -->
+  <div id="seasonBanner" class="season-banner">
+    <div class="season-banner__plate">
+      <div id="seasonBannerIcon" class="season-banner__icon"></div>
+      <div id="seasonBannerTitle" class="season-banner__title">Spring Dawns</div>
+      <div id="seasonBannerYear" class="season-banner__year">Year 1</div>
+      <div id="seasonBannerSub" class="season-banner__sub"></div>
+    </div>
+  </div>
 
   <!-- The world fills the window; everything else floats over it. -->
   <div class="stage season--spring" id="mapstage">
@@ -25,13 +39,18 @@
   <div class="rw-colonistbar" id="colonistBar"></div>
 
   <!-- ================================================================= -->
-  <!-- Resource readout — top left                                       -->
+  <!-- Resource readout — top left antique ledger                        -->
   <!-- ================================================================= -->
   <section class="rw-panel rw-readout">
+    <div class="rw-panel__head">
+      <span>Stores & Dominion</span>
+      <small class="rw-hint">settlement ledger</small>
+    </div>
+
     <div class="rw-readout__row rw-readout__row--hours"
          data-tip-title="Work hours"
          data-tip="Everything the village does costs hours. They come back when you end the turn — 4 per human in spring and autumn, 6 in summer, 2 in winter.">
-      <span class="rw-ico">⏱</span>
+      <span class="rw-ico" data-icon="hours"></span>
       <b id="text_workhours">0</b>
       <small>hours left</small>
     </div>
@@ -39,7 +58,7 @@
     <div class="rw-readout__row"
          data-tip-title="Timbermellow"
          data-tip="Food. Everyone eats one every turn. The first number is what's in the barns, the second what is still growing on the land you hold.">
-      <span class="rw-ico">🌰</span>
+      <span class="rw-ico" data-icon="timbermellow"></span>
       <b id="text_timbermellow">0</b>
       <small>on land <span id="text_land_food">0</span></small>
     </div>
@@ -47,7 +66,7 @@
     <div class="rw-readout__row"
          data-tip-title="Wood"
          data-tip="Barns and most technologies. Grows back every autumn on the tiles you hold.">
-      <span class="rw-ico">🪵</span>
+      <span class="rw-ico" data-icon="wood"></span>
       <b id="text_wood">0</b>
       <small>on land <span id="text_land_wood">0</span></small>
     </div>
@@ -55,7 +74,7 @@
     <div class="rw-readout__row"
          data-tip-title="Stone"
          data-tip="Houses and the stone axe. Stone does NOT grow back — when the rock on your land is gone you must take more land.">
-      <span class="rw-ico">🪨</span>
+      <span class="rw-ico" data-icon="stone"></span>
       <b id="text_stone">0</b>
       <small>on land <span id="text_land_stone">0</span></small>
     </div>
@@ -65,7 +84,7 @@
     <div class="rw-readout__row"
          data-tip-title="Villagers"
          data-tip="Everyone who works. Each one is 4 work hours in spring and autumn, 6 in summer, 2 in winter — and eats one timbermellow a turn.">
-      <span class="rw-ico">👤</span>
+      <span class="rw-ico" data-icon="villager"></span>
       <b id="text_human">0</b>
       <small>villagers</small>
     </div>
@@ -73,7 +92,7 @@
     <div class="rw-readout__row"
          data-tip-title="Soldiers"
          data-tip="They do no work, but they escort expeditions, seize land and stand between the garlocks and your barns. They eat too.">
-      <span class="rw-ico">🛡</span>
+      <span class="rw-ico" data-icon="soldier"></span>
       <b id="text_soldier">0</b>
       <small>soldiers</small>
     </div>
@@ -81,7 +100,7 @@
     <div class="rw-readout__row"
          data-tip-title="Barn space"
          data-tip="Anything over this is eaten by the garlocks when the turn ends. Each barn holds 5.">
-      <span class="rw-ico">🏚</span>
+      <span class="rw-ico" data-icon="barn"></span>
       <b><span id="text_storage_current">0</span>/<span id="text_storage">0</span></b>
       <small><span id="text_barn">0</span> barns</small>
     </div>
@@ -89,7 +108,7 @@
     <div class="rw-readout__row"
          data-tip-title="Roofs"
          data-tip="Anyone without a roof dies of exposure in winter. Each house shelters 3.">
-      <span class="rw-ico">🏠</span>
+      <span class="rw-ico" data-icon="house"></span>
       <b><span id="text_peoplecap_current">0</span>/<span id="text_peoplecap">0</span></b>
       <small><span id="text_house">0</span> houses</small>
     </div>
@@ -97,7 +116,7 @@
     <div class="rw-readout__row"
          data-tip-title="Land held"
          data-tip="Every tile you hold. Everything you gather comes off them.">
-      <span class="rw-ico">⬡</span>
+      <span class="rw-ico" data-icon="tiles"></span>
       <b id="text_tiles">1</b>
       <small>tiles</small>
     </div>
@@ -113,20 +132,20 @@
         <span>World <b id="seedLabel">…</b></span>
         <span class="rw-hint">click to jump</span>
       </div>
-      <canvas id="minimap" width="232" height="152"></canvas>
+      <canvas id="minimap" width="294" height="186"></canvas>
     </section>
 
     <!-- Learning helper: tells the player what to do next -->
     <section class="rw-panel rw-tutor" id="tutorPanel" hidden>
       <div class="rw-panel__head">
-        <span>💡 Learning helper</span>
+        <span>Guide & Chronicle</span>
         <button class="rw-x" id="tutorClose">✕</button>
       </div>
       <div class="rw-tutor__lesson" id="tutorTitle"></div>
       <p id="tutorBody"></p>
       <div class="rw-tutor__foot">
         <button class="rw-btn rw-btn--small" id="tutorNext">Got it</button>
-        <label class="rw-check"><input type="checkbox" id="tutorOff"> no tips</label>
+        <label class="rw-check"><input type="checkbox" id="tutorOff"> quiet</label>
       </div>
     </section>
 
@@ -144,19 +163,21 @@
   <!-- ================================================================= -->
   <div class="rw-inspect">
     <div class="rw-gizmorow">
-      <button class="rw-gizmo" id="exploreButton" onclick="explore()" disabled>
-        <span class="rw-gizmo__icon">🚩</span><span class="rw-gizmo__label">Explore</span>
+      <button class="rw-gizmo rw-gizmo--go" id="exploreButton" onclick="explore()" disabled>
+        <span class="rw-gizmo__icon" data-icon="explore"></span>
+        <span class="rw-gizmo__label">Explore</span>
       </button>
       <button class="rw-gizmo" id="focusButton" onclick="focusSelectedTile()"
               data-tip-title="Centre the view"
               data-tip="Bring the selected tile to the middle of the screen.">
-        <span class="rw-gizmo__icon">🔍</span><span class="rw-gizmo__label">Centre</span>
+        <span class="rw-gizmo__icon" data-icon="center"></span>
+        <span class="rw-gizmo__label">Centre</span>
       </button>
     </div>
     <section class="rw-panel rw-inspectpane">
       <div id="tileInfo" class="rw-tileinfo">
-        <div class="rw-tileinfo__name">Nothing selected</div>
-        <div class="rw-tileinfo__state">Click any hex on the map to look at it.</div>
+        <div class="rw-tileinfo__name">Select Land</div>
+        <div class="rw-tileinfo__state">Click any hex on the map to survey its terrain and resources.</div>
       </div>
       <p class="rw-reason" id="exploreReason"></p>
     </section>
@@ -173,14 +194,15 @@
 
         <!-- Gather ------------------------------------------------- -->
         <div class="rw-pane" data-pane="gather" hidden>
-          <div class="rw-pane__head">Gather <small><span id="text_workhours_basic">0</span> hours left · one hour each</small></div>
+          <div class="rw-pane__head">Gather <small><span id="text_workhours_basic">0</span> hours left · 1h per task</small></div>
           <div class="rw-pane__body">
             <div class="rw-gizmowrap">
               <button class="rw-gizmo" id="btn_find_timbermellow" onclick="find_timbermellow()"
                       data-tip-title="Gather timbermellows"
                       data-tip="Takes one hour and one timbermellow off your land. Twice as many in autumn; nothing at all in winter."
                       data-tip-cost="1 hour">
-                <span class="rw-gizmo__icon">🌰</span><span class="rw-gizmo__label">Timbermellow</span>
+                <span class="rw-gizmo__icon" data-icon="timbermellow"></span>
+                <span class="rw-gizmo__label">Timbermellow</span>
               </button>
               <button class="rw-x5" id="btn_timbermellow_5x" onclick="timbermellow_5x()"
                       data-tip-title="Gather ×5" data-tip="Five hours at once." data-tip-cost="5 hours">×5</button>
@@ -190,7 +212,8 @@
                       data-tip-title="Cut wood"
                       data-tip="One hour for one wood — two once you have the stone axe."
                       data-tip-cost="1 hour">
-                <span class="rw-gizmo__icon">🪵</span><span class="rw-gizmo__label">Wood</span>
+                <span class="rw-gizmo__icon" data-icon="wood"></span>
+                <span class="rw-gizmo__label">Wood</span>
               </button>
               <button class="rw-x5" id="btn_wood_5x" onclick="wood_5x()"
                       data-tip-title="Cut wood ×5" data-tip="Five hours at once." data-tip-cost="5 hours">×5</button>
@@ -200,7 +223,8 @@
                       data-tip-title="Quarry stone"
                       data-tip="One hour for one stone. Stone never grows back — once the rock on your land is gone, you need new land."
                       data-tip-cost="1 hour">
-                <span class="rw-gizmo__icon">🪨</span><span class="rw-gizmo__label">Stone</span>
+                <span class="rw-gizmo__icon" data-icon="stone"></span>
+                <span class="rw-gizmo__label">Stone</span>
               </button>
               <button class="rw-x5" id="btn_stone_5x" onclick="stone_5x()"
                       data-tip-title="Quarry ×5" data-tip="Five hours at once." data-tip-cost="5 hours">×5</button>
@@ -210,21 +234,23 @@
 
         <!-- Build -------------------------------------------------- -->
         <div class="rw-pane" data-pane="build" hidden>
-          <div class="rw-pane__head">Build <small>one hour and the materials</small></div>
+          <div class="rw-pane__head">Build <small>one hour plus materials</small></div>
           <div class="rw-pane__body">
             <button class="rw-gizmo" id="btn_barn" onclick="make_barn()"
                     data-tip-title="Barn"
                     data-tip="Holds 5 more timbermellows. Anything over your barn space is lost the moment the turn ends."
-                    data-tip-cost="4 🪵 · 1 hour">
-              <span class="rw-gizmo__icon">🏚</span><span class="rw-gizmo__label">Barn</span>
-              <span class="rw-gizmo__cost">4🪵</span>
+                    data-tip-cost="4 wood · 1 hour">
+              <span class="rw-gizmo__icon" data-icon="barn"></span>
+              <span class="rw-gizmo__label">Barn</span>
+              <span class="rw-gizmo__cost">4 Wood</span>
             </button>
             <button class="rw-gizmo" id="btn_house" onclick="make_house()"
                     data-tip-title="House"
                     data-tip="Shelters 3 people. Anyone without a roof dies of exposure in winter."
-                    data-tip-cost="2 🪨 · 1 hour">
-              <span class="rw-gizmo__icon">🏠</span><span class="rw-gizmo__label">House</span>
-              <span class="rw-gizmo__cost">2🪨</span>
+                    data-tip-cost="2 stone · 1 hour">
+              <span class="rw-gizmo__icon" data-icon="house"></span>
+              <span class="rw-gizmo__label">House</span>
+              <span class="rw-gizmo__cost">2 Stone</span>
             </button>
           </div>
         </div>
@@ -237,19 +263,22 @@
               <button class="rw-gizmo" id="btn_human" onclick="make_human()"
                       data-tip-title="Raise a human"
                       data-tip="Another pair of hands — and another mouth that eats one timbermellow every turn."
-                      data-tip-cost="3 🌰 · 1 hour">
-                <span class="rw-gizmo__icon">👤</span><span class="rw-gizmo__label">Raise</span>
-                <span class="rw-gizmo__cost">3🌰</span>
+                      data-tip-cost="3 timbermellow · 1 hour">
+                <span class="rw-gizmo__icon" data-icon="villager"></span>
+                <span class="rw-gizmo__label">Raise</span>
+                <span class="rw-gizmo__cost">3 Food</span>
               </button>
               <button class="rw-x5" id="btn_human_5x" onclick="human_5x()"
-                      data-tip-title="Raise ×5" data-tip="Five at once." data-tip-cost="15 🌰 · 5 hours">×5</button>
+                      data-tip-title="Raise ×5" data-tip="Five at once." data-tip-cost="15 food · 5 hours">×5</button>
             </div>
             <div class="rw-gizmowrap">
               <button class="rw-gizmo" id="btn_soldier" onclick="apont_soldier()"
                       data-tip-title="Train a soldier"
                       data-tip="Turns a human into a soldier. Soldiers do no work, but they escort expeditions, seize land and stand between the garlocks and your barns."
                       data-tip-cost="1 human">
-                <span class="rw-gizmo__icon">🛡</span><span class="rw-gizmo__label">Train</span>
+                <span class="rw-gizmo__icon" data-icon="soldier"></span>
+                <span class="rw-gizmo__label">Train</span>
+                <span class="rw-gizmo__cost">1 Villager</span>
               </button>
               <button class="rw-x5" id="btn_soldier_5x" onclick="soldier_5x()"
                       data-tip-title="Train ×5" data-tip="Five at once." data-tip-cost="5 humans">×5</button>
@@ -265,29 +294,33 @@
             <button class="rw-gizmo rw-gizmo--tech" id="stoneaxebt" style="display:none" onclick="stoneaxe()"
                     data-tip-title="Stone axe"
                     data-tip="Every hour spent cutting wood brings back two instead of one."
-                    data-tip-cost="20 🪵 · 30 🪨">
-              <span class="rw-gizmo__icon">🪓</span><span class="rw-gizmo__label">Stone axe</span>
+                    data-tip-cost="20 wood · 30 stone">
+              <span class="rw-gizmo__icon" data-icon="stoneaxe"></span>
+              <span class="rw-gizmo__label">Stone axe</span>
               <span class="rw-gizmo__cost">20🪵 30🪨</span>
             </button>
             <button class="rw-gizmo rw-gizmo--tech" id="foodbasketbt" style="display:none" onclick="foodbasket()"
                     data-tip-title="Food basket"
                     data-tip="Every hour spent gathering brings back two timbermellows instead of one."
-                    data-tip-cost="50 🪵 · 16 hours">
-              <span class="rw-gizmo__icon">🧺</span><span class="rw-gizmo__label">Food basket</span>
+                    data-tip-cost="50 wood · 16 hours">
+              <span class="rw-gizmo__icon" data-icon="foodbasket"></span>
+              <span class="rw-gizmo__label">Food basket</span>
               <span class="rw-gizmo__cost">50🪵 16h</span>
             </button>
             <button class="rw-gizmo rw-gizmo--tech" id="farmingbt" style="display:none" onclick="farming()"
                     data-tip-title="Farming"
                     data-tip="Grain on plains and terraced hills starts counting as food."
-                    data-tip-cost="30 🪵 · 12 hours">
-              <span class="rw-gizmo__icon">🌾</span><span class="rw-gizmo__label">Farming</span>
+                    data-tip-cost="30 wood · 12 hours">
+              <span class="rw-gizmo__icon" data-icon="farming"></span>
+              <span class="rw-gizmo__label">Farming</span>
               <span class="rw-gizmo__cost">30🪵 12h</span>
             </button>
             <button class="rw-gizmo rw-gizmo--tech" id="mapmakingbt" style="display:none" onclick="mapmaking()"
                     data-tip-title="Mapmaking"
                     data-tip="The whole world is drawn in — no more blank paper."
-                    data-tip-cost="20 🪵 · 10 hours">
-              <span class="rw-gizmo__icon">🗺</span><span class="rw-gizmo__label">Mapmaking</span>
+                    data-tip-cost="20 wood · 10 hours">
+              <span class="rw-gizmo__icon" data-icon="mapmaking"></span>
+              <span class="rw-gizmo__label">Mapmaking</span>
               <span class="rw-gizmo__cost">20🪵 10h</span>
             </button>
           </div>
@@ -295,7 +328,7 @@
 
         <!-- Villages ----------------------------------------------- -->
         <div class="rw-pane rw-pane--wide" data-pane="villages" hidden>
-          <div class="rw-pane__head">Villages <small>who else lives out there</small></div>
+          <div class="rw-pane__head">Villages <small>factions across the map</small></div>
           <div class="rw-pane__body rw-pane__body--list">
             <ul class="villagelist" id="villageList"></ul>
             <div class="rw-legend">
@@ -309,12 +342,16 @@
 
         <!-- Menu --------------------------------------------------- -->
         <div class="rw-pane" data-pane="menu" hidden>
-          <div class="rw-pane__head">Menu</div>
+          <div class="rw-pane__head">Options & Save</div>
           <div class="rw-pane__body rw-pane__body--menu">
             <button class="rw-btn" onclick="saveNow()"
-                    data-tip-title="Save" data-tip="The game also saves itself at the end of every turn.">Save game</button>
+                    data-tip-title="Save" data-tip="The game also saves itself automatically at the end of every turn.">Save Game</button>
             <button class="rw-btn" onclick="newGame()"
-                    data-tip-title="New world" data-tip="Throws this save away and rolls a brand new world.">New world</button>
+                    data-tip-title="New world" data-tip="Throws this save away and rolls a brand new world.">New World</button>
+            <button class="rw-btn" onclick="openCodexModal()"
+                    data-tip-title="Codex" data-tip="Read the survival rules and game lore.">Survival Codex</button>
+            <button class="rw-btn" onclick="openSettingsModal()"
+                    data-tip-title="Settings" data-tip="Adjust preferences and seed.">Settings</button>
             <label class="rw-check rw-check--row">
               <input type="checkbox" id="toggleMotion" checked onchange="setMotion(this.checked)"> animations
             </label>
@@ -326,17 +363,17 @@
 
       </div><!-- /palette -->
 
-      <!-- Clock + End turn, RimWorld's speed controls corner -->
+      <!-- Clock + End turn -->
       <div class="rw-globals">
         <div class="rw-clock">
           <div class="rw-clock__season"><span id="season" class="season season--spring">spring</span></div>
           <div class="rw-clock__turn">Turn <b id="text_turn">1</b> · Year <b id="text_year">1</b></div>
         </div>
         <button class="rw-endturn" onclick="end_turn()"
-                data-tip-title="End the turn  (Space)"
-                data-tip="Anything over your barn space is lost, everyone eats one timbermellow, the season moves on and the neighbours take their turn.">
-          <span class="rw-endturn__label">End turn</span>
-          <small class="rw-endturn__food">eats <b id="timbermellow_needed">0</b> of your <b id="text_endturn_timbermellow_current">0</b> 🌰</small>
+                data-tip-title="End the turn (Space)"
+                data-tip="Excess food over barn capacity is lost. Everyone consumes 1 timbermellow. Seasons progress and rivals take their turn.">
+          <span class="rw-endturn__label">End Turn</span>
+          <small class="rw-endturn__food">eats <b id="timbermellow_needed">0</b> of your <b id="text_endturn_timbermellow_current">0</b> food</small>
         </button>
       </div>
 
@@ -365,6 +402,130 @@
   <!-- One tooltip, moved around -->
   <div class="rw-tip" id="tooltip" hidden></div>
 
+  <!-- ================================================================= -->
+  <!-- Commercial Game Shell: Title Screen                               -->
+  <!-- ================================================================= -->
+  <div id="titleScreen" class="title-screen">
+    <div class="title-card">
+      <h1 class="title-logo">BOTTOM UP</h1>
+      <div class="title-sub">A Hand-Drawn Village Survival Odyssey</div>
+      <div class="title-menu">
+        <button class="title-btn title-btn--primary" id="btnBeginGame" onclick="startGameFromTitle(false)">
+          Begin Journey
+        </button>
+        <button class="title-btn" id="btnContinueGame" onclick="startGameFromTitle(true)" style="display:none">
+          Continue Saved Village
+        </button>
+        <button class="title-btn" onclick="openCodexModal()">
+          Survival Codex & Rules
+        </button>
+        <button class="title-btn" onclick="openSettingsModal()">
+          World Seed & Settings
+        </button>
+      </div>
+      <div class="title-seed-row">
+        <input type="text" id="titleSeedInput" class="title-seed-input" placeholder="World Seed (optional)">
+        <button class="rw-btn rw-btn--small" onclick="applyCustomSeed()" style="width: auto;">Set Seed</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settingsModal" class="modal-backdrop" hidden>
+    <div class="modal-window">
+      <div class="modal-window__head">
+        <span>Settings & Chronicle</span>
+        <button class="rw-x" onclick="closeSettingsModal()">✕</button>
+      </div>
+      <div class="modal-window__body">
+        <h4 style="margin: 0 0 10px; font-family: var(--font-display);">World Information</h4>
+        <p style="margin: 0 0 12px;">Active World Seed: <b id="settingsSeedDisplay" style="color: #7a3811;">-</b></p>
+        <button class="rw-btn" onclick="copyActiveSeed()" style="margin-bottom: 16px;">Copy World Seed</button>
+
+        <h4 style="margin: 0 0 10px; font-family: var(--font-display);">Display Preferences</h4>
+        <label class="rw-check rw-check--row" style="margin-bottom: 8px;">
+          <input type="checkbox" id="settingsToggleMotion" checked onchange="setMotion(this.checked)">
+          Enable living map animations (rivers, clouds, smoke)
+        </label>
+        <label class="rw-check rw-check--row" style="margin-bottom: 16px;">
+          <input type="checkbox" id="settingsToggleHelper" onchange="toggleHelperFromSettings(this.checked)">
+          Silence learning helper
+        </label>
+
+        <h4 style="margin: 0 0 10px; font-family: var(--font-display);">Keyboard Shortcuts</h4>
+        <div style="font-family: var(--font-ui); font-size: 13px; line-height: 1.6; color: var(--ink-secondary);">
+          <div><b>1–5</b> — Open Gather, Build, People, Research, Villages</div>
+          <div><b>6</b> — Open Turn History</div>
+          <div><b>Space</b> — End Turn</div>
+          <div><b>Esc</b> — Close dialog or open Menu</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Codex / Survival Rules Modal -->
+  <div id="codexModal" class="modal-backdrop" hidden>
+    <div class="modal-window" style="max-width: 580px;">
+      <div class="modal-window__head">
+        <span>The Survival Codex</span>
+        <button class="rw-x" onclick="closeCodexModal()">✕</button>
+      </div>
+      <div class="modal-window__body" style="font-size: 13.5px;">
+        <h3 style="font-family: var(--font-display); margin: 0 0 6px; color: #7a3811;">The Goal</h3>
+        <p>You begin with two settlers in a single timbermellow forest. Live off the land until it runs dry, then push outwards into the wild frontier and take tiles from rival villages until you discover <b>Farming</b>.</p>
+
+        <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">The Four Seasons</h3>
+        <ul style="padding-left: 18px; margin: 0 0 10px;">
+          <li><b>Spring:</b> 4 hours per human. The year begins anew.</li>
+          <li><b>Summer:</b> 6 hours per human. Abundant daylight for construction.</li>
+          <li><b>Autumn:</b> 4 hours per human. The harvest doubles food gathering, and resources regrow across all held tiles.</li>
+          <li><b>Winter:</b> 2 hours per human. No food can be gathered. Anyone without a roof dies of exposure.</li>
+        </ul>
+
+        <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">Resources & Land</h3>
+        <ul style="padding-left: 18px; margin: 0 0 10px;">
+          <li><b>Timbermellow:</b> Food. Every person and soldier eats 1 per turn. Excess beyond barn capacity is lost!</li>
+          <li><b>Wood:</b> Required for barns and technologies. Regrows in autumn.</li>
+          <li><b>Stone:</b> Required for winter houses. <b>Finite:</b> stone on a tile never regrows once mined.</li>
+          <li><b>Grain:</b> Found on plains; becomes edible food once Farming is researched.</li>
+        </ul>
+
+        <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">The Garlocks</h3>
+        <p>A ferocious faction dwells far across the map. When your food stores reach 25 or more, scouts will spot you and an attack will come. Train soldiers to defend the settlement!</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Milestone Celebration Modal -->
+  <div id="milestoneModal" class="modal-backdrop" hidden>
+    <div class="modal-window" style="max-width: 440px; text-align: center;">
+      <div class="modal-window__body" style="padding: 24px 20px;">
+        <div id="milestoneIcon" style="width: 52px; height: 52px; margin: 0 auto 10px;"></div>
+        <h3 id="milestoneTitle" style="font-family: var(--font-display); font-size: 22px; margin: 0 0 8px; color: #3b220c;"></h3>
+        <p id="milestoneDesc" style="font-size: 14.5px; color: var(--ink-secondary); margin: 0 0 18px;"></p>
+        <button class="rw-btn rw-btn--small" onclick="closeMilestonePopup()" style="margin: 0 auto; width: 120px;">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game Over / Chronicle of the Fallen -->
+  <div id="gameOverModal" class="modal-backdrop" hidden>
+    <div class="modal-window" style="max-width: 480px; text-align: center;">
+      <div class="modal-window__head" style="justify-content: center; background: #b83928; color: #fff;">
+        <span>THE VILLAGE HAS FALLEN</span>
+      </div>
+      <div class="modal-window__body">
+        <p id="gameOverCause" style="font-size: 15px; font-style: italic; color: #73170c; margin: 8px 0 16px;"></p>
+        <div id="gameOverStats" class="summary-stats"></div>
+        <div style="display: flex; gap: 10px; margin-top: 18px;">
+          <button class="title-btn title-btn--primary" onclick="restartSameSeed()" style="flex: 1;">Rebuild On This Land</button>
+          <button class="title-btn" onclick="newGame()" style="flex: 1;">Seek New World</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/icons.js"></script>
   <script src="js/map/hexMath.js"></script>
   <script src="js/map/hexMap.js"></script>
   <script src="js/map/hexRenderer.js"></script>
@@ -377,6 +538,7 @@
   <script src="js/villages.js"></script>
   <script src="js/save.js"></script>
   <script src="js/territory.js"></script>
+  <script src="js/gameFeel.js"></script>
   <script src="js/game.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/main.js"></script>

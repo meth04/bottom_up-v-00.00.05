@@ -12,13 +12,16 @@
 // TUNING
 // ---------------------------------------------------------------------------
 
-const WORLD_NOISE_SCALE = 7;         // bigger = broader hills and forests
+const WORLD_NOISE_SCALE = 10;        // bigger = broader hills and forests
 const WORLD_EDGE_ROCK = 0.45;         // how strongly the map edge rises into rock
-const WORLD_RIVER_COUNT = 3;
-const WORLD_VILLAGE_SPACING = 5;      // minimum hexes between villages
+const WORLD_RIVER_COUNT = 8;
+const WORLD_VILLAGE_SPACING = 7;      // minimum hexes between villages
 
-const VILLAGE_NAMES = ["Ashford", "Brookhollow", "Cairnwick", "Dunmere", "Elmreach", "Fernby", "Greywater", "Hollins"];
-const VILLAGE_COLORS = ["#c0392b", "#8e44ad", "#2980b9", "#16a085", "#d35400", "#7f8c8d"];
+const VILLAGE_NAMES = [
+  "Ashford", "Brookhollow", "Cairnwick", "Dunmere", "Elmreach", "Fernby", "Greywater", "Hollins",
+  "Oakhaven", "Ironridge", "Stonegate", "Mistveil", "Riverrun", "Windshear"
+];
+const VILLAGE_COLORS = ["#c0392b", "#8e44ad", "#2980b9", "#16a085", "#d35400", "#7f8c8d", "#2c3e50", "#1abc9c"];
 const PLAYER_COLOR = "#d9a441";
 const GARLOCK_COLOR = "#3b2f2f";
 
@@ -122,7 +125,7 @@ function generateWorld(spec) {
       const elevation = fractalNoise(nx, ny, seed, 3) * 0.8 + edgeFactor * edgeFactor * WORLD_EDGE_ROCK;
       const moisture = fractalNoise(nx + 37.2, ny + 91.7, seed + 7, 3);
 
-      const tile = { id: `hex_${q}_${r}`, q, r, col, row, elevation, moisture, edgeDistance, terrainType: null, specialEffect: null };
+      const tile = { id: `hex_${q}_${r}`, q, r, col, row, elevation, moisture, edgeDistance, terrainType: null, specialEffect: null, landmark: null };
       tiles.push(tile);
       byKey.set(hexKey(q, r), tile);
     }
@@ -210,18 +213,22 @@ function generateWorld(spec) {
       });
     }
   }
-  // The village farthest from yours is the garlock camp.
+  // The villages farthest from yours are garlock camps.
   if (villages.length > 1) {
-    let farthest = villages[1];
-    let farthestDistance = -1;
-    for (const village of villages.slice(1)) {
-      const home = byKey.get(hexKey(...village.homeTileId.split("_").slice(1).map(Number)));
-      const d = hexDistance(home, playerHome);
-      if (d > farthestDistance) { farthestDistance = d; farthest = village; }
+    const nonPlayers = villages.slice(1);
+    nonPlayers.sort((va, vb) => {
+      const ha = byKey.get(hexKey(...va.homeTileId.split("_").slice(1).map(Number)));
+      const hb = byKey.get(hexKey(...vb.homeTileId.split("_").slice(1).map(Number)));
+      return hexDistance(hb, playerHome) - hexDistance(ha, playerHome);
+    });
+    nonPlayers[0].kind = "garlock";
+    nonPlayers[0].name = "Garlock Stronghold";
+    nonPlayers[0].color = GARLOCK_COLOR;
+    if (nonPlayers.length > 4) {
+      nonPlayers[1].kind = "garlock";
+      nonPlayers[1].name = "Garlock Outpost";
+      nonPlayers[1].color = "#4a3535";
     }
-    farthest.kind = "garlock";
-    farthest.name = "Garlock camp";
-    farthest.color = GARLOCK_COLOR;
   }
 
   for (const village of villages) {
@@ -231,6 +238,26 @@ function generateWorld(spec) {
     home.isStartingTile = village.kind === "player";
     home.villageId = village.id;
   }
+
+  // ---- Procedural Landmarks & World Wonders -----------------------------------
+  const landmarkCandidates = shuffle(
+    tiles.filter((t) => !t.villageId && !t.isStartingTile && t.edgeDistance >= 3),
+    random
+  );
+  const placedLandmarks = new Set();
+  const tryPlaceLandmark = (type, predicate) => {
+    const match = landmarkCandidates.find((t) => !t.landmark && !placedLandmarks.has(t.id) && predicate(t));
+    if (match) {
+      match.landmark = type;
+      placedLandmarks.add(match.id);
+    }
+  };
+
+  tryPlaceLandmark("standingStones", (t) => t.terrainType === "plains" || t.terrainType === "flowerMeadow");
+  tryPlaceLandmark("motherTree", (t) => t.terrainType === "forest" || t.terrainType === "denseBush");
+  tryPlaceLandmark("dragonBones", (t) => t.terrainType === "rockyOutcrop" || t.terrainType === "overgrownHighlands");
+  tryPlaceLandmark("crystalMine", (t) => t.terrainType === "mountains" || t.terrainType === "rockyOutcrop");
+  tryPlaceLandmark("shipwreck", (t) => t.terrainType === "river" || neighborsOf(t).some((n) => n.terrainType === "river"));
 
   return { seed, cols, rows, grid, width, height, tiles, rivers, villages };
 }

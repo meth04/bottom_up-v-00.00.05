@@ -30,6 +30,7 @@ class HexMap {
         r: tile.r,
         terrainType: tile.terrainType,
         specialEffect: tile.specialEffect || null,
+        landmark: tile.landmark || null,
         isStartingTile: !!tile.isStartingTile,
         villageId: tile.villageId || null,   // set on a village's home tile
         owner: null,                         // village id, or null for wild land
