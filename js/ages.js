@@ -208,8 +208,9 @@ const AGE_UNLOCKS = [
     when: () => human_army >= 1,
   },
   {
+    // The Raid gizmo itself is shown by main.js only while another
+    // village's land is selected, so it is not in `show`.
     id: "raiding",
-    show: ["raidButton"],
     title: "The Neighbours' Barns",
     note: "Two soldiers can be sent to plunder a village you have found. Select any of its land and press Raid. Win and you carry off their stores; they will remember it, and they will come for yours.",
     when: () => human_army >= 2,
