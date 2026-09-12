@@ -364,6 +364,21 @@ export class Improvements {
   // the village's, or has nothing left on it. Idempotent.
   //
   // flags: { farming: bool, perTiles?: number }
+  // The site type on `tile` that produces `wanted` ("food"|"wood"|"stone"),
+  // or null if that ground cannot. Used to guarantee variety.
+  siteTypeForYield(tile, wanted, flags) {
+    const farming = !!(flags && flags.farming);
+    const resourceFor = { food: farming ? ["timbermellow", "grain"] : ["timbermellow"], wood: ["wood"], stone: ["stone"] };
+    if (!resourceFor[wanted].some((type) => hasResource(tile, type))) return null;
+    for (const [type, def] of Object.entries(IMPROVEMENTS)) {
+      if (def.kind !== "site" || def.yields !== wanted) continue;
+      if (type === "farm" && !farming) continue;
+      if (def.needsWater) { if (nearWater(tile) && tile.terrainType !== "mountains") return type; continue; }
+      if (def.terrains && def.terrains.includes(tile.terrainType)) return type;
+    }
+    return null;
+  }
+
   syncWorkSites(villageId, flags) {
     const map = this.hexMap;
     const home = map.homeTileOf(villageId);
@@ -415,6 +430,36 @@ export class Improvements {
       map.setImprovement(tile.id, type);
       placed.push(tile.id);
       count++;
+    }
+
+    // Variety: a valley with woods and rock in it should not end up with
+    // four pastures and nothing else — the carts would only ever bring food.
+    // For every kind of yield the land actually carries, make sure at least
+    // one site produces it, spacing rule relaxed to "not on top of another".
+    const yieldsHave = new Set();
+    for (const [tileId, type] of map.getImprovements(villageId)) {
+      const def = IMPROVEMENTS[type];
+      if (def && def.yields) yieldsHave.add(def.yields);
+    }
+    for (const wanted of ["food", "wood", "stone"]) {
+      if (yieldsHave.has(wanted)) continue;
+      // Prefer a hex with room around it; a crowded valley may have to
+      // put the quarry beside a pasture, which is still better than no quarry.
+      for (const strict of [true, false]) {
+        let done = false;
+        for (const tile of candidates) {
+          if (tile.improvement || tile.building) continue;
+          if (strict && !this.clearOfSites(tile)) continue;
+          const type = this.siteTypeForYield(tile, wanted, { farming });
+          if (!type) continue;
+          map.setImprovement(tile.id, type);
+          placed.push(tile.id);
+          yieldsHave.add(wanted);
+          done = true;
+          break;
+        }
+        if (done) break;
+      }
     }
 
     map.endBatch();

@@ -290,6 +290,7 @@ async function boot() {
   callLegacy("turnSnapshotTake");
   minimap.invalidate();
   minimap.draw(currentView());
+  startSiteIncome();
   window.addEventListener("resize", () => { if (renderer) renderer.resize(); });
   await nextFrame();
   bootDone();
@@ -540,6 +541,59 @@ function afterTurnEnded() {
       raidsWon: report.raidsWon || 0,
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Real-time income: the work sites keep producing between turns
+//
+// Turns cost work hours, but the map never stops — and a player watching
+// carts roll along the roads expects the barns to fill while they watch.
+// Every SITE_TICK_SECONDS each road-connected work site sends one unit of
+// what it makes home (taken off the land, so the fields still run dry),
+// food only if there is room in the barns. Nothing arrives while the tab
+// is hidden, so leaving the game open overnight is not a strategy.
+// ---------------------------------------------------------------------------
+
+const SITE_TICK_SECONDS = 12;
+const SITE_YIELD_TYPES = { food: null, wood: ["wood"], stone: ["stone"] };
+let siteTimer = null;
+let siteCursor = 0;
+
+function startSiteIncome() {
+  if (siteTimer) clearInterval(siteTimer);
+  siteTimer = setInterval(siteIncomeTick, 1000);
+}
+
+function siteIncomeTick() {
+  if (document.hidden || !improvements || !roads) return;
+  const sites = improvements.listFor("player").filter((entry) => entry.kind === "site" && entry.yields);
+  if (!sites.length) return;
+  // Spread the deliveries over the interval so carts arrive one at a time
+  // rather than the whole village dumping its load on the same second.
+  const perSecond = sites.length / SITE_TICK_SECONDS;
+  siteCursor += perSecond;
+  let deliveries = Math.floor(siteCursor);
+  siteCursor -= deliveries;
+  const state = legacy();
+  let changed = false;
+  while (deliveries-- > 0) {
+    const site = sites[Math.floor(Math.random() * sites.length)];
+    if (!roads.isConnected(site.tileId, "player")) continue;
+    const types = site.yields === "food" ? (callLegacy("territoryFoodTypes") || ["timbermellow"]) : SITE_YIELD_TYPES[site.yields];
+    if (!types) continue;
+    if (site.yields === "food" && state.timbermellow_count >= state.storage_capacity) continue;
+    const taken = callLegacy("territoryTakeQuiet", types, 1);
+    if (!taken) continue;
+    callLegacy("legacyAdd", site.yields === "food" ? { food: taken } : site.yields === "wood" ? { wood: taken } : { stone: taken });
+    changed = true;
+    const tile = hexMap.getTile(site.tileId);
+    if (renderer && tile) {
+      const centre = worldTileCenter(tile.q, tile.r, world.grid);
+      renderer.floatText(centre.x, centre.y - HEX_SIZE, `+${taken} ${RESOURCE_ICONS[types[0]] || ""}`, "good");
+    }
+    if (sim) sim.onEvent({ kind: "gather", type: types[0], amount: taken });
+  }
+  if (changed) callLegacy("update");
 }
 
 // ---------------------------------------------------------------------------

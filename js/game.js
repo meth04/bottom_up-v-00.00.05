@@ -902,6 +902,12 @@
             
             seasons_effect();
 
+            // The land comes back a little every growing turn (js/territory.js).
+            if (typeof territoryRegrowTurn === "function") {
+              const regrownNow = territoryRegrowTurn();
+              if (regrownNow > 0) turnReportNote(`the land regrew ${regrownNow}`, "good");
+            }
+
             // Villagers on standing orders work without being told
             // (js/professions.js) — this is the end of clicking for every hour.
             jobsRunAuto();

@@ -275,12 +275,24 @@ test("syncWorkSites places sites on owned resource tiles and connects them", () 
     assert.ok(IMPROVEMENTS[tile.improvement] && IMPROVEMENTS[tile.improvement].kind === "site");
     assert.notEqual(tile.id, home.id);
     assert.ok(roads.isConnected(tileId, "player"), `site ${tile.improvement} at ${tileId} not joined by road`);
-    // Spacing: no two sites touch, and none touches the hall.
-    for (const neighbor of tile.neighbors) assert.ok(!neighbor.improvement && !neighbor.villageId, "sites too close");
+    // None touches the hall. (Sites may touch each other only when the
+    // variety pass had nowhere else to put a missing kind of site.)
+    for (const neighbor of tile.neighbors) assert.ok(!neighbor.villageId, "site touches the hall");
   }
-  // Roughly one per nine resource hexes.
+  // Roughly one per nine resource hexes, plus at most one extra per kind
+  // of yield the variety pass had to add.
   const resourceTiles = hexMap.getTilesOwnedBy("player").filter((tile) => tile !== home && Object.values(tile.resources).some((e) => e.amount > 0)).length;
-  assert.ok(result.placed.length <= Math.max(1, Math.round(resourceTiles / 9)) + 1);
+  assert.ok(result.placed.length <= Math.max(1, Math.round(resourceTiles / 9)) + 3);
+  // Every kind of yield the land carries has a site making it.
+  const yieldsOnLand = new Set();
+  for (const tile of hexMap.getTilesOwnedBy("player")) {
+    if (tile === home) continue;
+    if (tile.resources.timbermellow && tile.resources.timbermellow.amount > 0) yieldsOnLand.add("food");
+    if (tile.resources.wood && tile.resources.wood.amount > 0) yieldsOnLand.add("wood");
+    if (tile.resources.stone && tile.resources.stone.amount > 0) yieldsOnLand.add("stone");
+  }
+  const yieldsMade = new Set(improvements.listFor("player").filter((e) => e.kind === "site").map((e) => e.yields));
+  for (const y of yieldsOnLand) assert.ok(yieldsMade.has(y) || y === "food", `no site makes ${y}`);
 
   const again = improvements.syncWorkSites("player", { farming: false });
   assert.equal(again.placed.length, 0);

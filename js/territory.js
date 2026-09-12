@@ -137,6 +137,13 @@ function territoryTake(types, wanted) {
   return taken;
 }
 
+// The same, without the floating "+3" and the ledger bump: the carts that
+// trickle goods home between turns (js/main.js) announce themselves.
+function territoryTakeQuiet(types, wanted) {
+  if (!territoryMap) return 0;
+  return territoryMap.take(types, wanted);
+}
+
 function territoryRegrowAutumn() {
   if (!territoryMap) return 0;
   let rates = REGROWTH_PER_AUTUMN;
@@ -150,6 +157,25 @@ function territoryRegrowAutumn() {
   }
   const grown = territoryMap.regrow(rates);
   territoryChangedCallback({ kind: "regrow", amount: grown });
+  return grown;
+}
+
+// A little of everything comes back EVERY turn of the growing season, not
+// only at the harvest: waiting a whole year for the grove to refill made
+// the early game feel like standing still. Winter still grows nothing, and
+// the famine still halves what returns.
+const REGROWTH_PER_TURN_FRACTION = 0.35;   // of the autumn rate, in spring and summer
+
+function territoryRegrowTurn() {
+  if (!territoryMap) return 0;
+  if (typeof seasonchecker !== "undefined" && (seasonchecker === 3 || seasonchecker === 4)) return 0;
+  const famine = typeof ageFamineActive !== "undefined" && ageFamineActive;
+  const rates = {};
+  for (const type of Object.keys(REGROWTH_PER_AUTUMN)) {
+    rates[type] = REGROWTH_PER_AUTUMN[type] * REGROWTH_PER_TURN_FRACTION * (famine ? 0.5 : 1);
+  }
+  const grown = territoryMap.regrow(rates);
+  if (grown > 0) territoryChangedCallback({ kind: "regrow", amount: grown });
   return grown;
 }
 

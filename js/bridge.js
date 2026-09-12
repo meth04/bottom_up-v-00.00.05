@@ -25,6 +25,15 @@ function legacyState() {
   };
 }
 
+// gain: { food, wood, stone } — what the carts bring in between turns
+// (js/main.js, siteIncomeTick). Food never overfills the barns.
+function legacyAdd(gain) {
+  timbermellow_count = Math.min(storage_capacity, timbermellow_count + (gain.food || 0));
+  wood += gain.wood || 0;
+  stone += gain.stone || 0;
+  return legacyState();
+}
+
 // cost: { wood, stone, food, hours } — any missing entry is zero. The map
 // tools check affordability before calling this, so it never goes negative
 // silently; it clamps and reports.
