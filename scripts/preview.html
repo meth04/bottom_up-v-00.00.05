@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<!--
+  preview.html — the whole world at a glance, without the fog and without
+  the game around it. For looking at what the generator makes.
+
+  Serve the project (node scripts/dev-server.js) and open
+
+      http://localhost:8080/scripts/preview.html?seed=424242
+
+  Drag to pan, wheel/pinch to zoom, G for the grid, L to cycle lenses,
+  "Another world" rolls a new seed. This replaced the old build-standalone.js:
+  ES modules cannot load from a double-clicked file, so it needs the server.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>bottom up — world preview</title>
+<link rel="stylesheet" href="../css/style.css">
+<style>
+  .preview-head { position: fixed; z-index: 20; top: 8px; left: 8px; right: 8px; height: 46px; display: flex; align-items: center; gap: 14px; padding: 0 12px;
+    background: var(--parchment-bg); border: 1px solid var(--edge-leather); border-radius: 4px; box-shadow: var(--shadow-drop); }
+  .preview-head h1 { font-family: var(--font-display); font-size: 16px; letter-spacing: 0.08em; margin: 0; color: var(--ink-primary); }
+  .preview-head p { font-family: var(--font-ui); font-size: 12px; color: var(--ink-secondary); margin: 0; }
+  .preview-head p b { color: var(--ink-primary); }
+  .preview-head .rw-btn { width: auto; margin-left: auto; padding: 4px 12px; }
+  .preview-head .rw-btn + .rw-btn { margin-left: 0; }
+  .preview-legend { position: fixed; z-index: 20; left: 8px; bottom: 8px; padding: 6px 10px; background: var(--parchment-bg); border: 1px solid var(--edge-leather); border-radius: 4px;
+    font-family: var(--font-ui); font-size: 12px; display: grid; grid-template-columns: repeat(2, auto); gap: 2px 12px; max-height: 40vh; overflow: auto; }
+  .preview-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .preview-stats { position: fixed; z-index: 20; right: 8px; bottom: 8px; padding: 6px 10px; background: rgba(0,0,0,0.6); color: #cfe; font: 12px/1.5 Consolas, monospace; border-radius: 4px; white-space: pre; }
+  .rw-fps { top: 60px; }
+</style>
+</head>
+<body>
+  <div class="stage season--summer" id="mapstage"></div>
+  <div class="preview-head">
+    <h1>BOTTOM UP · WORLD PREVIEW</h1>
+    <p>seed <b id="seedLabel">…</b> · <b id="tileCount">…</b> hexes · <b id="continentCount">…</b> continents · <b id="villageCount">…</b> settlements</p>
+    <button class="rw-btn" onclick="toggleMapGrid()">Grid (G)</button>
+    <button class="rw-btn" onclick="cycleLens()">Lens (L)</button>
+    <button class="rw-btn" onclick="cycleSeason()">Season</button>
+    <button class="rw-btn" onclick="anotherWorld()">Another world</button>
+  </div>
+  <div class="preview-legend" id="legend"></div>
+  <div class="preview-stats" id="stats">booting…</div>
+  <div class="rw-fps" id="fpsMeter">— fps</div>
+
+  <script type="module">
+    import { TERRAIN, TERRAIN_TYPES } from "../js/world/terrainDefs.js";
+    import { HexMap } from "../js/world/hexMap.js";
+    import { RoadNetwork } from "../js/world/roads.js";
+    import { Improvements } from "../js/world/improvements.js";
+    import { AgentSim } from "../js/world/agents.js";
+    import { WeatherModel } from "../js/world/weather.js";
+    import { detectDevice, qualityFor } from "../js/engine/device.js";
+    import { createWorldRenderer } from "../js/engine/renderer.js";
+    import { hexSpiral } from "../js/world/hexMath.js";
+
+    const params = new URLSearchParams(location.search);
+    const seed = params.get("seed") ? Number(params.get("seed")) >>> 0 : Math.floor(Math.random() * 1e9);
+    const stats = document.getElementById("stats");
+    let renderer = null;
+    let gridOn = false;
+    let lens = null;
+    let season = 2;
+    const LENSES = [null, "yields", "territory", "resources", "roads"];
+
+    window.toggleMapGrid = () => { gridOn = !gridOn; if (renderer) renderer.setGrid(gridOn); };
+    window.cycleLens = () => { lens = LENSES[(LENSES.indexOf(lens) + 1) % LENSES.length]; if (renderer) renderer.setLens(lens); };
+    window.cycleSeason = () => { season = (season % 4) + 1; if (renderer) renderer.setSeason(season); if (weather) weather.setSeason(season); };
+    window.anotherWorld = () => { location.search = `?seed=${Math.floor(Math.random() * 1e9)}`; };
+    document.addEventListener("keydown", (e) => { if (e.key === "g") toggleMapGrid(); if (e.key === "l") cycleLens(); });
+
+    const legend = document.getElementById("legend");
+    legend.innerHTML = TERRAIN_TYPES.map((type) => `<span><i style="background:#${TERRAIN[type].color.toString(16).padStart(6, "0")}"></i>${TERRAIN[type].name}</span>`).join("");
+
+    const mapData = await (await fetch("../data/map.json")).json();
+    const spec = Object.assign({}, mapData.world, { seed });
+    stats.textContent = "generating world…";
+    const started = performance.now();
+    const world = await new Promise((resolve, reject) => {
+      const worker = new Worker(new URL("../js/world/worldGen.worker.js", import.meta.url), { type: "module" });
+      worker.onmessage = (event) => {
+        const m = event.data;
+        if (m.type === "progress") stats.textContent = `generating… ${Math.round(m.fraction * 100)}% ${m.caption || ""}`;
+        else if (m.type === "done") { worker.terminate(); resolve(m.world); }
+        else if (m.type === "error") { worker.terminate(); reject(new Error(m.message)); }
+      };
+      worker.onerror = (e) => reject(new Error(e.message));
+      worker.postMessage({ spec });
+    });
+    const genMs = performance.now() - started;
+
+    const hexMap = new HexMap({ cols: world.cols, rows: world.rows, terrainDefaults: mapData.terrainDefaults, tiles: world.tiles });
+    hexMap.beginBatch();
+    for (const village of world.villages) {
+      const home = hexMap.getTile(village.homeTileId);
+      for (const { q, r } of hexSpiral(home, 3)) {
+        const tile = hexMap.getTileAt(q, r);
+        if (tile && !tile.owner && !["ocean", "shallows", "lake"].includes(tile.terrainType)) hexMap.claimTile(tile.id, village.id);
+      }
+    }
+    for (const route of world.tradeRoutes || []) hexMap.addRoadPath(route.tileIds);
+    hexMap.unlockMapmaking();
+    hexMap.endBatch();
+
+    const roads = new RoadNetwork(hexMap);
+    const improvements = new Improvements(hexMap, roads);
+    for (const village of world.villages) {
+      if (village.kind === "player") improvements.syncTown("player", { houses: 4, barns: 3, schools: 1, camps: 1 });
+      else improvements.syncRival(village, hexMap.countOwnedBy(village.id));
+      improvements.syncWorkSites(village.id, { farming: true });
+    }
+
+    const quality = qualityFor(params.get("quality") || detectDevice().tier);
+    renderer = await createWorldRenderer({
+      host: document.getElementById("mapstage"), world, hexMap, quality,
+      villages: () => world.villages,
+      callbacks: {
+        onTileClick: (id) => { hexMap.selectTile(id); renderer.setSelected(id); const t = hexMap.getTile(id); stats.textContent = describe(t); },
+        onTileLongPress: () => {}, onTileHover: () => {}, onViewChange: () => {},
+        onFps: (fps, ms, q) => { document.getElementById("fpsMeter").textContent = `${Math.round(fps)} fps · ${ms.toFixed(1)} ms · ${q.tier}`; },
+      },
+    });
+    const weather = new WeatherModel(seed);
+    weather.setSeason(season);
+    renderer.setWeather(weather);
+    renderer.setSeason(season);
+    const sim = new AgentSim({ world, hexMap, roads, improvements, quality });
+    sim.syncPopulation({ humans: 8, soldiers: 2, trades: { forester: 1, mason: 1, farmer: 1 }, season });
+    renderer.setAgentSource(sim);
+
+    const home = hexMap.getTile(world.villages[0].homeTileId);
+    const c = renderer.camera;
+    c.focusOn(world.width / 2, world.height / 2, Math.min(innerWidth / world.width, innerHeight / world.height) * 0.98, { animate: false });
+
+    document.getElementById("seedLabel").textContent = seed;
+    document.getElementById("tileCount").textContent = world.tiles.length.toLocaleString();
+    document.getElementById("continentCount").textContent = (world.continents || []).length;
+    document.getElementById("villageCount").textContent = world.villages.length;
+    const counts = {};
+    for (const t of world.tiles) counts[t.terrainType] = (counts[t.terrainType] || 0) + 1;
+    stats.textContent = `generated in ${genMs.toFixed(0)} ms\n` + Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k.padEnd(20)} ${v}`).join("\n");
+
+    function describe(t) {
+      return `${t.id}  ${t.terrainType}\nelev ${t.elevation.toFixed(2)} moist ${t.moisture.toFixed(2)} temp ${t.temperature.toFixed(2)}\n` +
+        `continent ${t.continentId} region ${t.regionId || "-"}\nriver ${t.riverWidth}/${t.riverMask.toString(2)} feature ${t.feature || "-"} landmark ${t.landmark || "-"}\n` +
+        `owner ${t.owner || "-"} road ${t.road.toString(2)} improvement ${t.improvement || "-"} building ${t.building || "-"}\n` +
+        Object.entries(t.resources).map(([k, v]) => `${k} ${v.amount}/${v.max}`).join("  ");
+    }
+  </script>
+</body>
+</html>

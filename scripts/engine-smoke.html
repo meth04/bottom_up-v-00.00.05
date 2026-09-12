@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>bottom up — engine smoke test</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; background: #10181f; color: #eee; font: 13px/1.4 system-ui, sans-serif; overflow: hidden; }
+  #host { position: absolute; inset: 0; }
+  #hud { position: absolute; top: 8px; left: 8px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; z-index: 2; }
+  #hud button { background: #2b3a48; color: #eee; border: 1px solid #4a5f72; border-radius: 4px; padding: 4px 8px; cursor: pointer; }
+  #hud button:hover { background: #3a4d5e; }
+  #stats { position: absolute; left: 8px; bottom: 8px; background: rgba(0,0,0,.55); padding: 6px 8px; border-radius: 4px; white-space: pre; font-family: ui-monospace, monospace; z-index: 2; }
+  #minimap { position: absolute; right: 8px; bottom: 8px; width: 240px; height: 160px; border: 1px solid #cbb28d; background: #4c86ad; z-index: 2; }
+  #log { position: absolute; right: 8px; top: 8px; max-width: 46vw; max-height: 40vh; overflow: auto; background: rgba(0,0,0,.6); padding: 6px 8px; border-radius: 4px; font-family: ui-monospace, monospace; font-size: 11px; white-space: pre-wrap; z-index: 2; }
+  #log .err { color: #ff8a80; }
+</style>
+</head>
+<body>
+<div id="host"></div>
+<div id="hud">
+  <button id="btnGrid">toggle grid</button>
+  <button id="btnSeason">cycle season</button>
+  <button id="btnOwner">random ownership</button>
+  <button id="btnReveal">toggle mapmaking</button>
+  <button id="btnFit">fit world</button>
+  <button id="btnRenderer">test renderer.js</button>
+</div>
+<div id="stats">booting…</div>
+<canvas id="minimap" width="240" height="160"></canvas>
+<div id="log"></div>
+
+<script type="module">
+// Synthetic-world smoke test for the engine layers this agent owns:
+// Camera, TerrainLayer, LabelLayer, Minimap (plus device.js). The other
+// layers (atlas, roads, features, units, overlay, weather) are built by
+// other agents; the "test renderer.js" button tries the full renderer and
+// simply reports if those modules are not there yet.
+
+const logEl = document.getElementById("log");
+function log(msg, isError) {
+  const line = document.createElement("div");
+  line.textContent = msg;
+  if (isError) line.className = "err";
+  logEl.appendChild(line);
+  if (isError) console.error(msg); else console.log(msg);
+}
+window.addEventListener("error", (e) => log("uncaught: " + (e.message || e), true));
+window.addEventListener("unhandledrejection", (e) => log("unhandled rejection: " + (e.reason && e.reason.stack || e.reason), true));
+
+import PIXI from "../js/engine/pixi.js";
+import { HexMap } from "../js/world/hexMap.js";
+import { HEX_SIZE, WORLD_PAD } from "../js/world/constants.js";
+import { colRowToAxial, hexId, latticeHash, createRandom, worldTileCenter, HEX_DIRECTIONS, hexKey } from "../js/world/hexMath.js";
+import { TERRAIN } from "../js/world/terrainDefs.js";
+import { detectDevice, qualityFor, FpsMeter, AdaptiveQuality } from "../js/engine/device.js";
+import { Camera } from "../js/engine/camera.js";
+import { TerrainLayer } from "../js/engine/terrainLayer.js";
+import { LabelLayer } from "../js/engine/labelLayer.js";
+import { Minimap } from "../js/engine/minimap.js";
+
+// ---- synthetic world -------------------------------------------------------------
+
+function valueNoise(x, y, seed) {
+  // Three octaves of smoothed lattice noise; cheap and good enough for blobs.
+  let total = 0, amp = 1, freq = 1, norm = 0;
+  for (let o = 0; o < 3; o++) {
+    const fx = x * freq, fy = y * freq;
+    const ix = Math.floor(fx), iy = Math.floor(fy);
+    const tx = fx - ix, ty = fy - iy;
+    const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+    const a = latticeHash(ix, iy, seed + o), b = latticeHash(ix + 1, iy, seed + o);
+    const c = latticeHash(ix, iy + 1, seed + o), d = latticeHash(ix + 1, iy + 1, seed + o);
+    total += ((a + (b - a) * sx) + ((c + (d - c) * sx) - (a + (b - a) * sx)) * sy) * amp;
+    norm += amp; amp *= 0.5; freq *= 2.1;
+  }
+  return total / norm;
+}
+
+function buildWorld(cols, rows, seed) {
+  const hexSize = HEX_SIZE;
+  const w = hexSize * Math.sqrt(3);
+  const grid = { hexSize, originX: WORLD_PAD + w / 2, originY: WORLD_PAD + hexSize };
+  const width = grid.originX + w * (cols - 1) + w + WORLD_PAD;
+  const height = grid.originY + 1.5 * hexSize * (rows - 1) + hexSize + WORLD_PAD;
+  const tiles = new Array(cols * rows);
+  const random = createRandom(seed);
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const { q, r } = colRowToAxial(col, row);
+      const nx = col / 48, ny = row / 32;
+      // Island mask: fade to sea at the edges.
+      const ex = (col / cols) * 2 - 1, ey = (row / rows) * 2 - 1;
+      const edge = Math.max(0, 1 - Math.pow(Math.max(Math.abs(ex), Math.abs(ey)), 4) * 1.15);
+      const elevation = valueNoise(nx, ny, seed) * edge;
+      const moisture = valueNoise(nx + 100, ny + 50, seed + 7);
+      const temperature = 1 - row / rows + (valueNoise(nx + 300, ny, seed + 13) - 0.5) * 0.2;
+      let type;
+      if (elevation < 0.30) type = "ocean";
+      else if (elevation < 0.35) type = "shallows";
+      else if (elevation < 0.38) type = temperature < 0.2 ? "tundra" : "beach";
+      else if (elevation > 0.78) type = "mountains";
+      else if (elevation > 0.70) type = "hills";
+      else if (temperature < 0.15) type = "snowfield";
+      else if (temperature < 0.28) type = moisture > 0.5 ? "taiga" : "tundra";
+      else if (temperature > 0.85) type = moisture < 0.45 ? "desert" : "badlands";
+      else if (moisture > 0.62) type = elevation < 0.45 ? "marsh" : "forest";
+      else if (moisture > 0.52) type = "denseBush";
+      else if (moisture > 0.42) type = "birchWood";
+      else if (moisture > 0.3) type = "flowerMeadow";
+      else type = "plains";
+      const detailSeed = (Math.floor(random() * 0xffffffff)) >>> 0;
+      tiles[row * cols + col] = {
+        id: hexId(q, r), q, r, col, row, index: row * cols + col,
+        terrainType: type, elevation, moisture, temperature, detailSeed,
+        regionId: null, continentId: type === "ocean" || type === "shallows" ? -1 : 0,
+        coastal: false, snowCapped: type === "mountains" && temperature < 0.4,
+        feature: null, landmark: null, riverWidth: 0, riverMask: 0,
+        villageId: null, isStartingTile: false, specialEffect: null,
+      };
+    }
+  }
+  const byCoord = new Map();
+  for (const t of tiles) byCoord.set(hexKey(t.q, t.r), t);
+  const at = (q, r) => byCoord.get(hexKey(q, r));
+
+  // Fake rivers: walk downhill from random mountains until water.
+  const rivers = [];
+  const riverNames = ["Silverwend", "Old Ash", "Keelwater", "Marrow", "Thornbrook", "Greyflow", "Lantern Run", "Hollowmere"];
+  for (let n = 0; n < 8; n++) {
+    let tile = null;
+    for (let tries = 0; tries < 200 && !tile; tries++) {
+      const cand = tiles[Math.floor(random() * tiles.length)];
+      if (cand.terrainType === "mountains" || cand.terrainType === "hills") tile = cand;
+    }
+    if (!tile) continue;
+    const ids = [];
+    const visited = new Set();
+    let steps = 0;
+    while (tile && steps++ < 160) {
+      visited.add(tile.id);
+      if (TERRAIN[tile.terrainType].water && tile.terrainType !== "river") break;
+      ids.push(tile.id);
+      let best = null, bestDir = -1, bestE = Infinity;
+      for (let d = 0; d < 6; d++) {
+        const nb = at(tile.q + HEX_DIRECTIONS[d].q, tile.r + HEX_DIRECTIONS[d].r);
+        if (!nb || visited.has(nb.id)) continue;
+        const e = nb.elevation + (latticeHash(nb.col, nb.row, seed + n) - 0.5) * 0.08;
+        if (e < bestE) { bestE = e; best = nb; bestDir = d; }
+      }
+      if (!best) break;
+      tile.terrainType = "river";
+      tile.riverWidth = Math.min(3, 1 + Math.floor(ids.length / 30));
+      tile.riverMask |= 1 << bestDir;
+      best.riverMask |= 1 << ((bestDir + 3) % 6);
+      tile = best;
+    }
+    if (ids.length > 8) rivers.push({ id: `river_${n}`, name: riverNames[n], tileIds: ids, reachedWater: true });
+  }
+
+  // Regions: coarse 40x30 blocks of the dominant land type, for labels.
+  const regions = [];
+  const regionNames = ["Ashen Reach", "Copper Downs", "Thistle Vale", "Harrow Moor", "Brightwater", "Oldmark", "Fenholt", "Greywold", "Sunder Hills", "Kestrel Field", "Wyrmback", "Low Marches", "Nettleburn", "Ember Waste", "Hoarfrost", "Larkspur Plain"];
+  let regionIndex = 0;
+  for (let by = 0; by < rows; by += 30) {
+    for (let bx = 0; bx < cols; bx += 40) {
+      const counts = new Map();
+      let sx = 0, sy = 0, n = 0;
+      for (let row = by; row < Math.min(rows, by + 30); row++) {
+        for (let col = bx; col < Math.min(cols, bx + 40); col++) {
+          const t = tiles[row * cols + col];
+          if (TERRAIN[t.terrainType].water) continue;
+          counts.set(t.terrainType, (counts.get(t.terrainType) || 0) + 1);
+          const c = worldTileCenter(t.q, t.r, grid);
+          sx += c.x; sy += c.y; n++;
+        }
+      }
+      if (n < 200) continue;
+      let dominant = null, most = 0;
+      for (const [type, count] of counts) if (count > most) { most = count; dominant = type; }
+      const id = `region_${regionIndex}`;
+      const name = regionNames[regionIndex % regionNames.length] + (regionIndex >= regionNames.length ? " " + (Math.floor(regionIndex / regionNames.length) + 1) : "");
+      regions.push({ id, terrainType: dominant, name, tileCount: n, center: { x: sx / n, y: sy / n } });
+      for (let row = by; row < Math.min(rows, by + 30); row++) {
+        for (let col = bx; col < Math.min(cols, bx + 40); col++) {
+          const t = tiles[row * cols + col];
+          if (!TERRAIN[t.terrainType].water) t.regionId = id;
+        }
+      }
+      regionIndex++;
+    }
+  }
+
+  // Villages on land.
+  const villages = [];
+  const kinds = ["player", "rival", "rival", "rival", "garlock", "rival"];
+  const colors = ["#c29339", "#5b7fbf", "#b25d8a", "#4f9b6d", "#8c1f1f", "#a67c3d"];
+  const names = ["Hearthstead", "Dunmere", "Rookhollow", "Sallowford", "Garlock Camp", "Wyckby"];
+  const homes = [];
+  for (let i = 0; i < kinds.length; i++) {
+    let home = null;
+    for (let tries = 0; tries < 2000 && !home; tries++) {
+      const cand = tiles[Math.floor(random() * tiles.length)];
+      if (!["plains", "flowerMeadow", "forest", "birchWood", "hills"].includes(cand.terrainType)) continue;
+      // Keep villages apart so their labels and holdings do not overlap.
+      const tooClose = homes.some((other) => Math.abs(other.col - cand.col) < 40 && Math.abs(other.row - cand.row) < 30);
+      if (!tooClose) home = cand;
+    }
+    if (home) homes.push(home);
+    if (!home) continue;
+    home.villageId = kinds[i] === "player" ? "player" : `village_${i}`;
+    villages.push({ id: home.villageId, name: names[i], color: colors[i], kind: kinds[i], homeTileId: home.id, continentId: 0 });
+  }
+
+  return { seed, cols, rows, grid, width, height, tiles, continents: [], rivers, lakes: [], regions, villages, tradeRoutes: [], seaLanes: [], landmarks: [] };
+}
+
+// ---- boot ---------------------------------------------------------------------------
+
+const stats = document.getElementById("stats");
+const host = document.getElementById("host");
+let world, hexMap, app, camera, terrain, labels, minimap, quality;
+let season = 1, grid = false;
+const meter = new FpsMeter();
+const villagesGet = () => world.villages;
+
+async function boot() {
+  const t0 = performance.now();
+  const device = detectDevice();
+  quality = qualityFor(device.tier);
+  log(`device: ${JSON.stringify(device)}`);
+  world = buildWorld(360, 240, 20240912);
+  hexMap = new HexMap({ cols: world.cols, rows: world.rows, tiles: world.tiles, terrainDefaults: {} });
+  log(`world: ${world.cols}x${world.rows} = ${hexMap.allTiles.length} tiles, ${world.rivers.length} rivers, ${world.regions.length} regions in ${(performance.now() - t0).toFixed(0)} ms`);
+
+  // Ownership + fog for the fake villages.
+  hexMap.beginBatch();
+  for (const village of world.villages) {
+    const home = hexMap.getTile(village.homeTileId);
+    const radius = village.kind === "player" ? 4 : 3;
+    const queue = [[home, 0]];
+    const seen = new Set([home.id]);
+    while (queue.length) {
+      const [tile, d] = queue.shift();
+      if (!TERRAIN[tile.terrainType].water || tile.terrainType === "river") hexMap.claimTile(tile.id, village.id);
+      if (d >= radius) continue;
+      for (const nb of tile.neighbors) if (!seen.has(nb.id)) { seen.add(nb.id); queue.push([nb, d + 1]); }
+    }
+    if (village.kind === "player") {
+      // The player sees a wide ring around home.
+      const far = [];
+      const q2 = [[home, 0]];
+      const s2 = new Set([home.id]);
+      while (q2.length) {
+        const [tile, d] = q2.shift();
+        far.push(tile);
+        if (d >= 9) continue;
+        for (const nb of tile.neighbors) if (!s2.has(nb.id)) { s2.add(nb.id); q2.push([nb, d + 1]); }
+      }
+      hexMap.revealTiles(far);
+    }
+  }
+  hexMap.endBatch();
+
+  app = new PIXI.Application();
+  await app.init({
+    preference: "webgl", antialias: quality.antialias, resolution: quality.resolution, autoDensity: true,
+    backgroundColor: 0x1a2a38, resizeTo: host, powerPreference: "high-performance",
+  });
+  app.canvas.style.cssText = "width:100%;height:100%;display:block;touch-action:none";
+  host.appendChild(app.canvas);
+  log(`renderer: ${app.renderer.name} type=${app.renderer.type} ${app.screen.width}x${app.screen.height} @${app.renderer.resolution}`);
+
+  const worldRoot = new PIXI.Container();
+  app.stage.addChild(worldRoot);
+  camera = new Camera(host, { worldWidth: world.width, worldHeight: world.height });
+  camera.resize(app.screen.width, app.screen.height);
+
+  const t1 = performance.now();
+  terrain = new TerrainLayer(PIXI, world, hexMap, quality);
+  log(`terrain: ${terrain.chunks.filter(Boolean).length} chunks built in ${(performance.now() - t1).toFixed(0)} ms`);
+  terrain.setOwnerColors((id) => { const v = world.villages.find((x) => x.id === id); return v ? v.color : null; });
+  labels = new LabelLayer(PIXI, world, hexMap, villagesGet);
+  labels.setQuality(quality);
+  worldRoot.addChild(terrain.container);
+  worldRoot.addChild(labels.container);
+
+  minimap = new Minimap(document.getElementById("minimap"), world, hexMap, villagesGet);
+  minimap.onClick((wx, wy) => camera.focusOn(wx, wy, undefined, { animate: true, duration: 0.45 }));
+  camera.onChange((view) => minimap.draw(view));
+
+  // Start on the player's village at a readable zoom. Query params let a
+  // headless run start in other states: ?zoom=0.12&grid=1&season=4&mapmaking=1&debug=1
+  const params = new URLSearchParams(location.search);
+  const home = hexMap.getTile(world.villages[0].homeTileId);
+  const c = worldTileCenter(home.q, home.r, world.grid);
+  camera.focusOn(c.x, c.y, Number(params.get("zoom")) || 0.5, { animate: false });
+  if (params.get("grid")) { grid = true; terrain.setGrid(true); }
+  if (params.get("season")) { season = Number(params.get("season")) || 1; terrain.setSeason(season); }
+  if (params.get("mapmaking")) hexMap.unlockMapmaking();
+  if (params.get("hidemm")) document.getElementById("minimap").style.display = "none";
+  if (params.get("claims")) { let k = 0; app.ticker.add(() => { if (++k === 3) for (let i = 0; i < Number(params.get("claims")); i++) document.getElementById("btnOwner").onclick(); }); }
+
+  camera.attachInput(app.canvas, {
+    onTap: (sx, sy) => {
+      const p = camera.screenToWorld(sx, sy);
+      log(`tap -> world ${p.x.toFixed(0)},${p.y.toFixed(0)}`);
+    },
+    onLongPress: (sx, sy) => log(`long press at ${sx},${sy}`),
+    onHover: () => {},
+  });
+
+  hexMap.onChange((ev) => {
+    if (ev.kind === "owner" || ev.kind === "seen") { terrain.markDirty(ev.tileIds); minimap.invalidate(); labels.refresh(); }
+    if (ev.kind === "reveal") { terrain.markAllDirty(); minimap.invalidate(); labels.refresh(); }
+  });
+
+  let terrainMs = 0, frames = 0, acc = 0;
+  app.ticker.add((ticker) => {
+    const dt = Math.min(0.1, ticker.deltaMS / 1000);
+    camera.update(dt);
+    camera.applyTo(worldRoot);
+    const a = performance.now();
+    terrain.update(camera, dt);
+    terrainMs += performance.now() - a;
+    labels.update(camera, dt);
+    meter.tick(ticker.deltaMS);
+    frames++; acc += ticker.deltaMS;
+    if (acc > 500) {
+      const visible = terrain.chunks.filter((ch) => ch && ch.visible).length;
+      stats.textContent = `fps ${meter.fps.toFixed(0)}  frame ${meter.frameMs.toFixed(1)} ms  p95 ${meter.p95.toFixed(1)} ms\n`
+        + `terrain.update ${(terrainMs / frames).toFixed(2)} ms  chunks visible ${visible}/${terrain.chunks.length}  dirty ${terrain.dirty.size}\n`
+        + `labels ${labels.visibleCount || 0}  zoom ${camera.zoom.toFixed(3)}  cam ${camera.x.toFixed(0)},${camera.y.toFixed(0)}  season ${season} grid ${grid} mapmaking ${hexMap.mapmakingUnlocked}\n`
+        + `quality ${quality.tier} res ${quality.resolution}`;
+      terrainMs = 0; frames = 0; acc = 0;
+    }
+  });
+  minimap.draw(camera.view);
+  window.addEventListener("resize", () => { camera.resize(app.screen.width, app.screen.height); });
+  if (params.get("debug")) {
+    // Dump what is on screen after a few frames, for headless inspection.
+    let n = 0;
+    app.ticker.add(() => {
+      if (++n !== 5) return;
+      for (const rec of labels.all) {
+        if (!rec.text.visible) continue;
+        const b = rec.text.getBounds();
+        log(`label ${rec.kind}:${rec.key} screen ${b.x.toFixed(0)},${b.y.toFixed(0)} ${b.width.toFixed(0)}x${b.height.toFixed(0)} scale ${rec.text.scale.x.toFixed(3)}`);
+      }
+      for (const [x, y] of [[1300, 130], [700, 400], [1250, 820]]) {
+        const el = document.elementFromPoint(x, y);
+        log(`elementFromPoint ${x},${y}: ${el ? el.tagName + "#" + el.id : "none"}`);
+        if (el && !el.id) {
+          const r = el.getBoundingClientRect();
+          log(`  rect ${r.x},${r.y} ${r.width}x${r.height} parent=${el.parentElement && (el.parentElement.tagName + "#" + el.parentElement.id)} html=${el.outerHTML.slice(0, 300)}`);
+        }
+      }
+      log(`stage children: ${app.stage.children.map((ch) => ch.label || ch.constructor.name).join(", ")}; labels container children ${labels.container.children.length}`);
+      log(`viewport ${innerWidth}x${innerHeight}; body children: ${Array.from(document.body.children).map((el) => { const r = el.getBoundingClientRect(); return `${el.tagName}#${el.id}@${r.x | 0},${r.y | 0} ${r.width | 0}x${r.height | 0}`; }).join(" | ")}`);
+    });
+  }
+  log(`boot complete in ${(performance.now() - t0).toFixed(0)} ms`);
+
+  // Expose for poking from the console.
+  window.smoke = { world, hexMap, app, camera, terrain, labels, minimap, quality };
+}
+
+document.getElementById("btnGrid").onclick = () => { grid = !grid; terrain.setGrid(grid); };
+document.getElementById("btnSeason").onclick = () => { season = (season % 4) + 1; terrain.setSeason(season); };
+document.getElementById("btnOwner").onclick = () => {
+  // Grow a random village by a ring of tiles (fires "owner" events -> markDirty).
+  const village = world.villages[Math.floor(Math.random() * world.villages.length)];
+  const frontier = hexMap.getFrontierTiles(village.id).filter((t) => !TERRAIN[t.terrainType].water || t.terrainType === "river");
+  hexMap.beginBatch();
+  for (const tile of frontier.slice(0, 12)) hexMap.claimTile(tile.id, village.id);
+  hexMap.endBatch();
+  log(`${village.name} claimed ${Math.min(12, frontier.length)} tiles (dirty chunks: ${terrain.dirty.size})`);
+};
+document.getElementById("btnReveal").onclick = () => {
+  if (hexMap.mapmakingUnlocked) { hexMap.mapmakingUnlocked = false; hexMap.emit("reveal", []); }
+  else hexMap.unlockMapmaking();
+};
+document.getElementById("btnFit").onclick = () => camera.focusOn(world.width / 2, world.height / 2, camera.minZoom, { animate: true, duration: 0.8 });
+document.getElementById("btnRenderer").onclick = async () => {
+  // Only works once the art/sim agents' modules exist.
+  try {
+    const mod = await import("../js/engine/renderer.js");
+    app.ticker.stop();
+    host.innerHTML = "";
+    const r = await mod.createWorldRenderer({
+      host, world, hexMap, villages: villagesGet, quality,
+      callbacks: {
+        onTileClick: (id, info) => log(`click ${id} ${JSON.stringify(info)}`),
+        onTileLongPress: (id) => log(`long press ${id}`),
+        onTileHover: () => {},
+        onViewChange: () => {},
+        onFps: (fps, ms, q) => { stats.textContent = `renderer.js  fps ${fps.toFixed(0)} frame ${ms.toFixed(1)} ms  quality ${q.tier}`; },
+      },
+    });
+    r.attachMinimap(minimap);
+    window.smoke.renderer = r;
+    log("renderer.js created OK");
+  } catch (err) {
+    log("renderer.js not testable yet: " + (err && err.message || err), true);
+  }
+};
+
+boot().catch((err) => log("boot failed: " + (err && err.stack || err), true));
+</script>
+</body>
+</html>

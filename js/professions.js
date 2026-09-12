@@ -329,6 +329,12 @@ function jobsRunAuto() {
   const perVillager = jobHoursPerVillager();
   const report = [];
 
+  // Roads: fields joined to the hall by road haul more home in the same
+  // hours (js/territory.js, territoryRoadMultiplier) — the standing orders
+  // get the same bonus the gather buttons do.
+  const roadFactor = typeof territoryRoadMultiplier === "function" ? territoryRoadMultiplier() : 1;
+  const haul = (amount) => Math.max(1, Math.round(amount * roadFactor));
+
   for (const type of JOB_TYPES) {
     const workers = Math.min(jobAssignments[type] || 0, humans);
     if (workers <= 0) continue;
@@ -342,7 +348,7 @@ function jobsRunAuto() {
       if (seasonchecker === 4) continue;                       // nothing grows
       let perHour = 1 + (foodbasketmade >= 1 ? 1 : 0) + professionGatherBonus("timbermellow");
       if (seasonchecker === 3) perHour *= 2;                   // the harvest
-      const taken = territoryTake(territoryFoodTypes(), perHour * hours);
+      const taken = territoryTake(territoryFoodTypes(), haul(perHour * hours));
       if (taken > 0) {
         timbermellow_count += taken;
         ageCountFood(taken);
@@ -351,12 +357,12 @@ function jobsRunAuto() {
       working_hours -= hours;
     } else if (type === "wood") {
       const perHour = 1 + (stoneaxe_made >= 1 ? 1 : 0) + professionGatherBonus("wood");
-      const taken = territoryTake(["wood"], perHour * hours);
+      const taken = territoryTake(["wood"], haul(perHour * hours));
       if (taken > 0) { wood += taken; report.push(`${taken} wood`); }
       working_hours -= hours;
     } else if (type === "stone") {
       const perHour = 1 + professionGatherBonus("stone");
-      const taken = territoryTake(["stone"], perHour * hours);
+      const taken = territoryTake(["stone"], haul(perHour * hours));
       if (taken > 0) { stone += taken; report.push(`${taken} stone`); }
       working_hours -= hours;
     }

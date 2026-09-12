@@ -198,6 +198,16 @@ const AGE_UNLOCKS = [
     note: "You have too many people to click for one at a time. Put villagers on a standing job and they will work it every turn without being told.",
     when: () => ageAtLeast("famine"),
   },
+  {
+    // Town planning: until now the village decided where things stood.
+    // From the raids onward the player may place buildings and draw roads
+    // by hand (the Place and Road tools above the map, js/main.js).
+    id: "planning",
+    show: ["toolBuild", "toolRoad"],
+    title: "Town Planning",
+    note: "The elders have started arguing about where things should go. You may now choose where buildings stand and draw the roads yourself — the Place and Road tools sit above the map.",
+    when: () => ageAtLeast("raids"),
+  },
 ];
 
 // Every tab the interface has. Anything not unlocked is hidden outright.

@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<!--
+  atlas-preview.html — a look at every sprite in the procedural atlas and a
+  live test scene for the feature / road / overlay layers.
+
+  Run the dev server and open:
+
+      http://localhost:8080/scripts/atlas-preview.html
+
+  The top half shows every atlas key at 3x on a dark ground with its name.
+  The bottom half builds a small synthetic 40x30 HexMap (noise terrain, a
+  river, roads, two villages, a few buildings and work sites, partial fog)
+  and renders it with FeatureLayer + RoadLayer + OverlayLayer over a flat
+  hex_fill stand-in for the terrain mesh. Drag to pan, wheel to zoom.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>bottom up — atlas preview</title>
+<style>
+  body { margin: 0; font-family: Segoe UI, system-ui, sans-serif; background: #1d2228; color: #e6e1d6; }
+  h1 { font-size: 18px; margin: 14px 16px 6px; }
+  h1 small { color: #9aa3ad; font-weight: normal; margin-left: 12px; font-size: 13px; }
+  #grid { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 16px; }
+  .cell { background: #3b5a3a; border: 1px solid #52705a; border-radius: 4px; padding: 6px 6px 3px; display: flex; flex-direction: column; align-items: center; }
+  .cell.flat { background: #2f4f6f; border-color: #4d6f8f; }
+  .cell canvas { display: block; image-rendering: auto; }
+  .cell span { font-size: 9px; color: #dfe6ea; margin-top: 3px; white-space: nowrap; font-family: Consolas, monospace; }
+  .group { width: 100%; font-size: 12px; color: #9aa3ad; margin: 10px 0 -2px; text-transform: uppercase; letter-spacing: 1px; }
+  #scene { margin: 8px 16px 24px; }
+  #controls { display: flex; gap: 8px; margin: 6px 0; align-items: center; }
+  button { background: #3a4653; color: #fff; border: 1px solid #5a6a7a; border-radius: 4px; padding: 5px 10px; cursor: pointer; font-size: 13px; }
+  button:hover { background: #4a5867; }
+  #status { color: #9aa3ad; font-size: 12px; margin-left: 12px; }
+  #host canvas { display: block; border: 1px solid #3a4653; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1>Atlas <small id="stats">building…</small></h1>
+<div id="grid"></div>
+<h1>Live scene <small>FeatureLayer + RoadLayer + OverlayLayer on a synthetic 40×30 map</small></h1>
+<div id="scene">
+  <div id="controls">
+    <button id="btn-season">Season: summer</button>
+    <button id="btn-lens">Lens: none</button>
+    <button id="btn-select">Selection: on</button>
+    <button id="btn-zoom">Zoom: 1.2</button>
+    <button id="btn-ghost">Ghost: off</button>
+    <button id="btn-flash">Flash</button>
+    <button id="btn-reveal">Reveal all</button>
+    <span id="status"></span>
+  </div>
+  <div id="host"></div>
+</div>
+
+<script type="module">
+import PIXI from "../js/engine/pixi.js";
+import { buildAtlas } from "../js/engine/atlas.js";
+import { FeatureLayer } from "../js/engine/featureLayer.js";
+import { RoadLayer } from "../js/engine/roadLayer.js";
+import { OverlayLayer } from "../js/engine/overlayLayer.js";
+import { HexMap } from "../js/world/hexMap.js";
+import { HEX_SIZE, WORLD_PAD } from "../js/world/constants.js";
+import { TERRAIN, SEASON_NAMES } from "../js/world/terrainDefs.js";
+import {
+  colRowToAxial, hexId, axialToPixel, latticeHash, hexSpiral, HEX_DIRECTIONS, OPPOSITE_DIRECTION, createRandom, worldTileCenter,
+} from "../js/world/hexMath.js";
+
+const started = performance.now();
+const atlas = await buildAtlas(PIXI, { scale: 2 });
+const buildMs = performance.now() - started;
+
+// ---------------------------------------------------------------------------
+// 1. The sprite grid
+// ---------------------------------------------------------------------------
+
+// "?grid" shows only the sprite grid, "?scene" only the live scene: handy
+// for screenshots of one half at a time.
+// Other params set the initial state: lens=yields|territory|resources|roads,
+// zoom=0.6, season=1..4, reveal=1, ghost=1.
+const params = new URLSearchParams(location.search);
+const mode = params.has("scene") ? "scene" : params.has("grid") ? "grid" : "";
+if (mode === "scene") document.getElementById("grid").style.display = "none";
+if (mode === "grid") document.getElementById("scene").style.display = "none";
+const grid = document.getElementById("grid");
+const keys = atlas.keys();
+document.getElementById("stats").textContent = `${keys.length} sprites, ${atlas.pages.length} page(s), built in ${buildMs.toFixed(0)} ms`;
+let lastGroup = null;
+for (const key of keys) {
+  const group = key.split("/")[0];
+  if (group !== lastGroup) {
+    lastGroup = group;
+    const label = document.createElement("div");
+    label.className = "group";
+    label.textContent = group;
+    grid.appendChild(label);
+  }
+  const tex = atlas.texture(key);
+  const frame = tex.frame;
+  const page = atlas.pages[atlas.sources.indexOf(tex.source)];
+  const cell = document.createElement("div");
+  cell.className = "cell" + (tex.defaultAnchor.y < 0.9 ? " flat" : "");
+  const canvas = document.createElement("canvas");
+  const zoom = 3;
+  canvas.width = Math.ceil(frame.width * zoom);
+  canvas.height = Math.ceil(frame.height * zoom);
+  const ctx = canvas.getContext("2d");
+  const s = atlas.scale;
+  ctx.drawImage(page, frame.x * s, frame.y * s, frame.width * s, frame.height * s, 0, 0, canvas.width, canvas.height);
+  const name = document.createElement("span");
+  name.textContent = key.split("/")[1];
+  cell.appendChild(canvas);
+  cell.appendChild(name);
+  grid.appendChild(cell);
+}
+
+// ---------------------------------------------------------------------------
+// 2. A synthetic world
+// ---------------------------------------------------------------------------
+
+const COLS = 40, ROWS = 30, SEED = 1337;
+
+function noise(x, y, scale, seed) {
+  // Smooth value noise from the lattice hash: bilinear blend of 4 corners.
+  const fx = x / scale, fy = y / scale;
+  const x0 = Math.floor(fx), y0 = Math.floor(fy);
+  const tx = fx - x0, ty = fy - y0;
+  const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+  const a = latticeHash(x0, y0, seed), b = latticeHash(x0 + 1, y0, seed);
+  const c = latticeHash(x0, y0 + 1, seed), d = latticeHash(x0 + 1, y0 + 1, seed);
+  return (a + (b - a) * sx) * (1 - sy) + (c + (d - c) * sx) * sy;
+}
+
+const tiles = [];
+for (let row = 0; row < ROWS; row++) {
+  for (let col = 0; col < COLS; col++) {
+    const { q, r } = colRowToAxial(col, row);
+    const p = axialToPixel(q, r, 1);
+    let elevation = 0.55 * noise(p.x, p.y, 9, SEED) + 0.3 * noise(p.x, p.y, 4, SEED + 1) + 0.15 * noise(p.x, p.y, 2, SEED + 2);
+    // Sea on the left and bottom edge so we get coasts.
+    const edge = Math.min(col / 6, row / 5, (ROWS - 1 - row) / 5, 1);
+    elevation = elevation * 0.75 + 0.25 * edge - (col < 5 ? 0.25 : 0);
+    const moisture = noise(p.x, p.y, 7, SEED + 3);
+    const temperature = 1 - row / ROWS;
+    let type;
+    if (elevation < 0.3) type = "ocean";
+    else if (elevation < 0.37) type = "shallows";
+    else if (elevation < 0.41) type = moisture > 0.6 ? "marsh" : "beach";
+    else if (elevation > 0.84) type = "mountains";
+    else if (elevation > 0.74) type = moisture > 0.5 ? "overgrownHighlands" : "hills";
+    else if (elevation > 0.7 && moisture < 0.4) type = "rockyOutcrop";
+    else if (row < 4) type = moisture > 0.5 ? "taiga" : elevation > 0.6 ? "snowfield" : "tundra";
+    else if (row > ROWS - 5) type = moisture > 0.6 ? "badlands" : "desert";
+    else if (moisture > 0.68) type = elevation > 0.6 ? "denseBush" : "forest";
+    else if (moisture > 0.56) type = temperature > 0.55 ? "birchWood" : "timbermellowForest";
+    else if (moisture > 0.42) type = "flowerMeadow";
+    else type = "plains";
+    tiles.push({
+      id: hexId(q, r), q, r, col, row, index: row * COLS + col,
+      terrainType: type, elevation, moisture, temperature,
+      detailSeed: Math.floor(latticeHash(col, row, SEED + 9) * 4294967295) >>> 0,
+      regionId: null, continentId: type === "ocean" ? -1 : 0,
+      coastal: false, snowCapped: type === "mountains" && (elevation > 0.9 || row < 8),
+      feature: null, landmark: null, riverWidth: 0, riverMask: 0,
+      villageId: null, isStartingTile: false, specialEffect: null,
+    });
+  }
+}
+const byCoord = new Map(tiles.map((t) => [`${t.q},${t.r}`, t]));
+const at = (q, r) => byCoord.get(`${q},${r}`) || null;
+const water = (t) => t && TERRAIN[t.terrainType].water;
+
+// A river: start on the highest tile in the interior and walk downhill.
+let source = null;
+for (const t of tiles) if (Math.abs(t.col - 22) < 5 && Math.abs(t.row - 12) < 5 && !water(t) && (!source || t.elevation > source.elevation)) source = t;
+const riverPath = [];
+{
+  let cur = source;
+  const visited = new Set();
+  while (cur && !water(cur) && riverPath.length < 40) {
+    riverPath.push(cur);
+    visited.add(cur.id);
+    let next = null;
+    for (const d of HEX_DIRECTIONS) {
+      const n = at(cur.q + d.q, cur.r + d.r);
+      if (!n || visited.has(n.id)) continue;
+      if (!next || n.elevation < next.elevation) next = n;
+    }
+    // Force a monotone drop so the walk always reaches the sea in the demo.
+    if (next && next.elevation >= cur.elevation) next.elevation = cur.elevation - 0.01;
+    cur = next;
+  }
+  if (cur && water(cur)) riverPath.push(cur);
+}
+for (let i = 0; i < riverPath.length - 1; i++) {
+  const a = riverPath[i], b = riverPath[i + 1];
+  const dir = HEX_DIRECTIONS.findIndex((d) => a.q + d.q === b.q && a.r + d.r === b.r);
+  a.riverMask |= 1 << dir;
+  b.riverMask |= 1 << OPPOSITE_DIRECTION[dir];
+  if (!water(a)) {
+    a.terrainType = "river";
+    a.riverWidth = i < 8 ? 1 : i < 18 ? 2 : 3;
+  }
+}
+if (riverPath.length > 6) riverPath[5].feature = "waterfall";
+
+const terrainDefaults = {
+  plains: { food: { amount: 6, renewable: true }, stone: { amount: 2 } },
+  flowerMeadow: { food: { amount: 8, renewable: true } },
+  forest: { wood: { amount: 12, renewable: true }, food: { amount: 3, renewable: true } },
+  birchWood: { wood: { amount: 9, renewable: true }, food: { amount: 3, renewable: true } },
+  denseBush: { wood: { amount: 10, renewable: true }, food: { amount: 2, renewable: true } },
+  taiga: { wood: { amount: 8, renewable: true } },
+  timbermellowForest: { food: { amount: 14, renewable: true }, wood: { amount: 6, renewable: true } },
+  hills: { stone: { amount: 8 }, food: { amount: 3, renewable: true } },
+  overgrownHighlands: { stone: { amount: 6 }, food: { amount: 4, renewable: true } },
+  mountains: { stone: { amount: 20 } },
+  rockyOutcrop: { stone: { amount: 12 } },
+  marsh: { food: { amount: 4, renewable: true }, wood: { amount: 3, renewable: true } },
+  river: { food: { amount: 5, renewable: true } },
+};
+
+const world = {
+  seed: SEED, cols: COLS, rows: ROWS,
+  grid: { hexSize: HEX_SIZE, originX: WORLD_PAD + Math.sqrt(3) * HEX_SIZE / 2, originY: WORLD_PAD + HEX_SIZE },
+  width: WORLD_PAD * 2 + Math.sqrt(3) * HEX_SIZE * (COLS + 0.5), height: WORLD_PAD * 2 + HEX_SIZE * (1.5 * ROWS + 0.5),
+  tiles, continents: [], rivers: [], lakes: [], regions: [], villages: [], tradeRoutes: [], seaLanes: [], landmarks: [],
+};
+const hexMap = new HexMap({ cols: COLS, rows: ROWS, tiles, terrainDefaults });
+// From here on work with the HexMap's normalized tiles (they carry
+// neighbours, owner, seen...), not the raw generator records.
+const all = hexMap.getAllTiles();
+const atMap = (q, r) => hexMap.getTileAt(q, r);
+
+// Two villages: the player near the middle and a rival to the north-east.
+const villages = [
+  { id: "player", name: "Homestead", color: "#f2c14e", kind: "player" },
+  { id: "rival_1", name: "Ashford", color: "#c0392b", kind: "rival" },
+];
+function homeNear(col, row) {
+  let best = null;
+  for (const t of all) {
+    if (water(t) || t.terrainType === "mountains" || t.terrainType === "river") continue;
+    const d = Math.abs(t.col - col) + Math.abs(t.row - row);
+    if (!best || d < best.d) best = { t, d };
+  }
+  return best.t;
+}
+const playerHome = homeNear(16, 15);
+const rivalHome = homeNear(30, 8);
+hexMap.beginBatch();
+for (const h of hexSpiral(playerHome, 3)) { const t = atMap(h.q, h.r); if (t) hexMap.claimTile(t.id, "player"); }
+for (const h of hexSpiral(rivalHome, 2)) { const t = atMap(h.q, h.r); if (t && !t.owner) hexMap.claimTile(t.id, "rival_1"); }
+// Reveal a wide area but leave the far corners in fog so the fog rim shows.
+hexMap.revealTiles(all.filter((t) => Math.hypot(t.col - playerHome.col, (t.row - playerHome.row) * 1.2) < 9.5));
+playerHome.villageId = "player";
+rivalHome.villageId = "rival_1";
+
+// Buildings around the halls; work sites on fitting ground nearby.
+function placeAround(home, owner, list, radius) {
+  const ring = hexSpiral(home, radius).map((h) => atMap(h.q, h.r)).filter((t) => t && t.owner === owner && !t.building && t.id !== home.id && !water(t) && t.terrainType !== "river" && t.terrainType !== "mountains");
+  let i = 0;
+  for (const type of list) { if (ring[i]) hexMap.setBuilding(ring[i].id, type); i++; }
+}
+hexMap.setBuilding(playerHome.id, "hall");
+placeAround(playerHome, "player", ["house", "house", "barn", "house", "school", "market", "armyCamp", "windmill", "watchtower", "well"], 2);
+hexMap.setBuilding(rivalHome.id, "hall");
+placeAround(rivalHome, "rival_1", ["house", "house", "barn"], 1);
+
+const wanted = { farm: ["plains", "flowerMeadow"], lumberCamp: ["forest", "birchWood", "denseBush", "timbermellowForest"], quarry: ["hills", "rockyOutcrop", "overgrownHighlands"], pasture: ["plains", "flowerMeadow", "hills"], mine: ["hills", "overgrownHighlands", "rockyOutcrop"] };
+for (const [type, terrains] of Object.entries(wanted)) {
+  const spot = hexMap.getTilesOwnedBy("player").find((t) => !t.building && !t.improvement && terrains.includes(t.terrainType));
+  if (spot) hexMap.setImprovement(spot.id, type);
+}
+const shore = all.find((t) => t.seen && !water(t) && !t.building && !t.improvement && t.terrainType !== "river" && t.neighbors.some((n) => water(n) && n.terrainType !== "river"));
+if (shore) { hexMap.claimTile(shore.id, "player"); hexMap.setImprovement(shore.id, "fishery"); }
+
+// Landmarks on a couple of seen tiles.
+const landmarkSpots = all.filter((t) => t.seen && !t.owner && !water(t) && t.terrainType !== "river" && t.terrainType !== "mountains");
+if (landmarkSpots[3]) landmarkSpots[3].landmark = "standingStones";
+if (landmarkSpots[40]) landmarkSpots[40].landmark = "ruinedTower";
+if (landmarkSpots[80]) landmarkSpots[80].landmark = "motherTree";
+
+// Roads: BFS over land between the halls and out to each work site.
+function landPath(from, to) {
+  const prev = new Map([[from.id, null]]);
+  const queue = [from];
+  while (queue.length) {
+    const cur = queue.shift();
+    if (cur === to) break;
+    for (const n of cur.neighbors) {
+      if (prev.has(n.id) || (water(n) && n.terrainType !== "river") || n.terrainType === "mountains") continue;
+      prev.set(n.id, cur.id);
+      queue.push(n);
+    }
+  }
+  if (!prev.has(to.id)) return null;
+  const path = [];
+  for (let id = to.id; id; id = prev.get(id)) path.unshift(id);
+  return path;
+}
+const halls = [playerHome, rivalHome];
+const p = landPath(playerHome, rivalHome);
+if (p) hexMap.addRoadPath(p);
+for (const [tileId] of hexMap.getImprovements("player")) {
+  const path = landPath(playerHome, hexMap.getTile(tileId));
+  if (path) hexMap.addRoadPath(path);
+}
+for (const [tileId] of hexMap.getBuildings("player")) {
+  const path = landPath(playerHome, hexMap.getTile(tileId));
+  if (path) hexMap.addRoadPath(path);
+}
+hexMap.endBatch();
+
+// ---------------------------------------------------------------------------
+// 3. Render
+// ---------------------------------------------------------------------------
+
+const WIDTH = Math.min(1500, window.innerWidth - 34), HEIGHT = 760;
+const app = new PIXI.Application();
+await app.init({ width: WIDTH, height: HEIGHT, background: 0x21323f, antialias: true, preference: "webgl", resolution: Math.min(2, window.devicePixelRatio || 1), autoDensity: true });
+document.getElementById("host").appendChild(app.canvas);
+
+const quality = { tier: "high", decorDensity: 1, shadows: true, animateWater: true, particles: 1, maxAgents: 300 };
+const playerCenter = worldTileCenter(playerHome.q, playerHome.r, world.grid);
+const camera = {
+  x: playerCenter.x + 40, y: playerCenter.y, zoom: 1.2,
+  getBounds(margin = 0) {
+    const hw = WIDTH / 2 / this.zoom, hh = HEIGHT / 2 / this.zoom;
+    return { minX: this.x - hw - margin, minY: this.y - hh - margin, maxX: this.x + hw + margin, maxY: this.y + hh + margin };
+  },
+  worldToScreen(x, y) { return { x: (x - this.x) * this.zoom + WIDTH / 2, y: (y - this.y) * this.zoom + HEIGHT / 2 }; },
+};
+
+const worldRoot = new PIXI.Container();
+app.stage.addChild(worldRoot);
+
+// Terrain stand-in: one tinted hex_fill per tile (the real game uses a mesh).
+const terrain = new PIXI.Container();
+const hexTex = atlas.texture("ui/hex_fill");
+function mixColor(a, b, t) {
+  const ar = a >> 16 & 255, ag = a >> 8 & 255, ab = a & 255;
+  const br = b >> 16 & 255, bg = b >> 8 & 255, bb = b & 255;
+  return (Math.round(ar + (br - ar) * t) << 16) | (Math.round(ag + (bg - ag) * t) << 8) | Math.round(ab + (bb - ab) * t);
+}
+function paintTerrain() {
+  terrain.removeChildren().forEach((c) => c.destroy());
+  for (const t of hexMap.getAllTiles()) {
+    const s = new PIXI.Sprite(hexTex);
+    const c = worldTileCenter(t.q, t.r, world.grid);
+    s.position.set(c.x, c.y);
+    s.scale.set(1.02);
+    if (!t.seen && !hexMap.mapmakingUnlocked) s.tint = 0xe2d2b2;
+    else {
+      const def = TERRAIN[t.terrainType];
+      let color = mixColor(def.color, def.colorAlt, (t.detailSeed % 1000) / 1000);
+      if (t.owner) color = mixColor(color, t.owner === "player" ? 0xf2c14e : 0xc0392b, 0.18);
+      s.tint = color;
+    }
+    terrain.addChild(s);
+  }
+}
+paintTerrain();
+worldRoot.addChild(terrain);
+
+const roads = new RoadLayer(PIXI, atlas, world, hexMap, quality);
+const features = new FeatureLayer(PIXI, atlas, world, hexMap, quality, () => villages);
+const overlay = new OverlayLayer(PIXI, atlas, world, hexMap, quality, () => villages);
+worldRoot.addChild(roads.container, features.container, overlay.container);
+hexMap.onChange((event) => {
+  roads.markDirty(event.tileIds); features.markDirty(event.tileIds); overlay.markDirty(event.tileIds);
+  if (event.kind === "reveal") { roads.markAllDirty(); features.markAllDirty(); overlay.markAllDirty(); paintTerrain(); }
+});
+
+let season = 2;
+const lenses = [null, "yields", "territory", "resources", "roads"];
+let lensIndex = 0;
+let selectionOn = true;
+const zooms = [1.2, 2.2, 0.6, 0.3];
+let zoomIndex = 0;
+let ghostOn = false;
+const selectedTile = hexMap.getTilesOwnedBy("player").find((t) => t.improvement) || playerHome;
+overlay.setSelected(selectedTile.id);
+overlay.setHover(playerHome.neighbors[2].id);
+overlay.setRoadPreview(hexSpiral(playerHome, 4).slice(37, 43).map((h) => atMap(h.q, h.r)).filter(Boolean).map((t) => t.id));
+
+const status = document.getElementById("status");
+document.getElementById("btn-season").onclick = (e) => {
+  season = (season % 4) + 1;
+  features.setSeason(season); overlay.setSeason(season);
+  e.target.textContent = `Season: ${SEASON_NAMES[season]}`;
+};
+document.getElementById("btn-lens").onclick = (e) => {
+  lensIndex = (lensIndex + 1) % lenses.length;
+  overlay.setLens(lenses[lensIndex]);
+  e.target.textContent = `Lens: ${lenses[lensIndex] || "none"}`;
+};
+document.getElementById("btn-select").onclick = (e) => {
+  selectionOn = !selectionOn;
+  overlay.setSelected(selectionOn ? selectedTile.id : null);
+  e.target.textContent = `Selection: ${selectionOn ? "on" : "off"}`;
+};
+document.getElementById("btn-zoom").onclick = (e) => {
+  zoomIndex = (zoomIndex + 1) % zooms.length;
+  camera.zoom = zooms[zoomIndex];
+  e.target.textContent = `Zoom: ${camera.zoom}`;
+};
+document.getElementById("btn-ghost").onclick = (e) => {
+  ghostOn = !ghostOn;
+  const spot = hexMap.getTilesOwnedBy("player").find((t) => !t.building && !t.improvement && t.terrainType === "plains") || playerHome.neighbors[0];
+  overlay.setPlacementGhost(ghostOn ? { tileId: spot.id, type: "farm", valid: spot.terrainType === "plains" } : null);
+  e.target.textContent = `Ghost: ${ghostOn ? "on" : "off"}`;
+};
+document.getElementById("btn-flash").onclick = () => overlay.flashTile(playerHome.id, 0xffffff);
+document.getElementById("btn-reveal").onclick = () => hexMap.unlockMapmaking();
+
+// Pan / zoom by mouse for manual inspection.
+let dragging = null;
+app.canvas.addEventListener("pointerdown", (e) => { dragging = { x: e.clientX, y: e.clientY }; });
+window.addEventListener("pointerup", () => { dragging = null; });
+window.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  camera.x -= (e.clientX - dragging.x) / camera.zoom;
+  camera.y -= (e.clientY - dragging.y) / camera.zoom;
+  dragging = { x: e.clientX, y: e.clientY };
+});
+app.canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  camera.zoom = Math.max(0.1, Math.min(4, camera.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+}, { passive: false });
+
+let frames = 0, acc = 0;
+app.ticker.add((ticker) => {
+  const dt = Math.min(0.1, ticker.deltaMS / 1000);
+  worldRoot.scale.set(camera.zoom);
+  worldRoot.position.set(WIDTH / 2 - camera.x * camera.zoom, HEIGHT / 2 - camera.y * camera.zoom);
+  roads.update(camera, dt);
+  features.update(camera, dt);
+  overlay.update(camera, dt);
+  frames++; acc += ticker.deltaMS;
+  if (acc > 500) {
+    let sprites = 0;
+    for (const chunk of features.chunks.values()) sprites += chunk.container.children.length;
+    status.textContent = `${(frames / acc * 1000).toFixed(0)} fps · ${features.chunks.size} feature chunks · ${sprites} feature sprites · zoom ${camera.zoom.toFixed(2)}`;
+    frames = 0; acc = 0;
+  }
+});
+window.__preview = { atlas, hexMap, world, camera, features, roads, overlay, app };
+if (params.get("season")) { season = Number(params.get("season")) - 1 || 0; document.getElementById("btn-season").click(); }
+if (params.get("lens")) { lensIndex = Math.max(0, lenses.indexOf(params.get("lens"))) - 1; document.getElementById("btn-lens").click(); }
+if (params.get("zoom")) { camera.zoom = Number(params.get("zoom")) || 1.2; document.getElementById("btn-zoom").textContent = `Zoom: ${camera.zoom}`; }
+if (params.get("ghost")) document.getElementById("btn-ghost").click();
+if (params.get("reveal")) document.getElementById("btn-reveal").click();
+console.log(`[preview] river ${riverPath.length} tiles from ${source && source.id}, seen ${riverPath.filter((t) => hexMap.getTile(t.id).seen).length}`);
+console.log(`[preview] ready: ${keys.length} sprites, atlas ${buildMs.toFixed(0)} ms`);
+</script>
+</body>
+</html>

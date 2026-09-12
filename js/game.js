@@ -235,6 +235,14 @@
           return 1 + professionGatherBonus("stone");
         }
 
+        // Roads: fields joined to the hall by road haul more home in the
+        // same hours (js/territory.js, territoryRoadMultiplier). Never
+        // rounds a real hour's work down to nothing.
+        function roadHaul(amount) {
+          const factor = typeof territoryRoadMultiplier === "function" ? territoryRoadMultiplier() : 1;
+          return Math.max(1, Math.round(amount * factor));
+        }
+
         // One gathering job, run for `hours` hours. Everything comes off the
         // tiles the village holds, oldest claim first (js/territory.js).
         function gatherFood(hours) {
@@ -256,7 +264,7 @@
           }
 
           working_hours = working_hours - hours;
-          let gathered = territoryTake(territoryFoodTypes(), foodPerHour() * hours);
+          let gathered = territoryTake(territoryFoodTypes(), roadHaul(foodPerHour() * hours));
           timbermellow_count = timbermellow_count + gathered;
           ageCountFood(gathered);
           update();
@@ -275,7 +283,7 @@
             return;
           }
           working_hours = working_hours - hours;
-          wood = wood + territoryTake(["wood"], woodPerHour() * hours);
+          wood = wood + territoryTake(["wood"], roadHaul(woodPerHour() * hours));
           update();
         }
 
@@ -295,7 +303,7 @@
             return;
           }
           working_hours = working_hours - hours;
-          stone = stone + territoryTake(["stone"], stonePerHour() * hours);
+          stone = stone + territoryTake(["stone"], roadHaul(stonePerHour() * hours));
           update();
         }
 
@@ -490,7 +498,10 @@
         // What stands between the garlocks and the barns. A standing guard of
         // three or four handles an ordinary raid; captains and camps help.
         function garlockVillageDefence() {
-          return human_army * 3 + professionDefenceBonus();
+          // A long connected road network is worth a little too: patrols
+          // move faster and word travels (js/territory.js).
+          const roads = typeof territoryRoadDefence === "function" ? territoryRoadDefence() : 0;
+          return human_army * 3 + professionDefenceBonus() + roads;
         }
 
         function garlockDirectionSuffix() {
@@ -535,6 +546,9 @@
           if (typeof triggerRaidAlarm === "function") {
             triggerRaidAlarm((garlockDirectionSuffix() || " from the dark").replace(/^ from the /, ""));
           }
+
+          // The map shows the warband marching (main.js), whichever way it goes.
+          if (typeof onGarlockRaid === "function") onGarlockRaid(defence >= garlock_strangth);
 
           if (defence >= garlock_strangth) {
             const lost = Math.min(human_army, Math.ceil(garlock_strangth / 4));

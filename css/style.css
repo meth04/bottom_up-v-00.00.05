@@ -2403,3 +2403,206 @@ body {
 @media (max-width: 760px) {
   .rw-pane__body--ledger { grid-template-columns: 1fr; }
 }
+
+/* ---------------------------------------------------------------------- */
+/* The living world: WebGL canvas, map tools, phones                      */
+/* ---------------------------------------------------------------------- */
+
+.stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.stage.is-tool { cursor: crosshair; }
+
+/* Tool strip above the map, centred under the colonist bar. */
+.rw-maptools {
+  position: fixed;
+  top: 92px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 4px;
+  background: var(--parchment-bg);
+  background-image: var(--paper-grain);
+  border: 1px solid var(--edge-leather);
+  border-radius: 4px;
+  box-shadow: var(--shadow-drop), var(--parchment-inset);
+}
+
+.rw-tool {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  width: 52px;
+  padding: 4px 2px 3px;
+  border: 1px solid var(--edge-soft);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.35);
+  color: var(--ink-secondary);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.rw-tool:hover { background: rgba(255, 255, 255, 0.7); color: var(--ink-primary); }
+.rw-tool.is-on { background: var(--edge-gold); color: #2a1d0c; border-color: #a77f22; }
+.rw-tool__icon { font-size: 17px; line-height: 1; }
+.rw-tool__label { line-height: 1; }
+
+.rw-lensmenu {
+  position: absolute;
+  top: 100%;
+  left: 60px;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  min-width: 130px;
+  background: var(--parchment-solid);
+  border: 1px solid var(--edge-leather);
+  border-radius: 4px;
+  box-shadow: var(--shadow-drop);
+  overflow: hidden;
+}
+
+.rw-lensmenu button {
+  border: 0;
+  border-bottom: 1px solid var(--edge-soft);
+  background: none;
+  padding: 7px 12px;
+  text-align: left;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--ink-primary);
+  cursor: pointer;
+}
+
+.rw-lensmenu button:last-child { border-bottom: 0; }
+.rw-lensmenu button:hover { background: rgba(201, 158, 50, 0.22); }
+
+.rw-buildpalette {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  min-width: 340px;
+  background: var(--parchment-bg);
+  background-image: var(--paper-grain);
+  border: 1px solid var(--edge-leather);
+  border-radius: 4px;
+  box-shadow: var(--shadow-deep), var(--parchment-inset);
+}
+
+.rw-buildpalette .rw-pane__body { flex-wrap: wrap; max-width: 420px; }
+.rw-gizmo--place.is-on { outline: 2px solid var(--edge-gold); outline-offset: -2px; }
+
+.rw-toolhint {
+  position: fixed;
+  top: 158px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  padding: 5px 12px;
+  background: var(--parchment-dark);
+  color: #f3e9d2;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  border-radius: 3px;
+  box-shadow: var(--shadow-drop);
+  pointer-events: none;
+  max-width: 60vw;
+  text-align: center;
+}
+
+.rw-fps {
+  position: fixed;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  padding: 2px 8px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #9be29b;
+  font: 12px/1.4 Consolas, monospace;
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+/* Phones and small tablets: shrink the HUD so the map is still the star. */
+@media (max-width: 900px), (max-height: 600px) {
+  body { font-size: 13px; }
+  .rw-readout { width: 200px; padding: 4px 6px; }
+  .rw-readout__row { padding: 2px 0; }
+  .rw-readout__row small { display: none; }
+  .rw-colonistbar { left: 216px; right: 200px; top: 6px; }
+  .rw-pawn { width: 42px; }
+  .rw-pawn__name { display: none; }
+  .rw-rightcol { width: 190px; bottom: 210px; }
+  .rw-world canvas { height: 110px; }
+  .rw-tutor { display: none; }
+  .rw-maptools { top: auto; bottom: 8px; left: 50%; }
+  .rw-tool { width: 44px; font-size: 9px; }
+  .rw-toolhint { top: auto; bottom: 66px; }
+  .rw-inspect { width: 260px; bottom: 60px; }
+  .rw-inspectpane { min-height: 0; padding: 6px 8px; }
+  .rw-tileinfo__climate { display: none; }
+  .rw-bottomright { bottom: 60px; }
+  .rw-palette .rw-pane__body { max-width: min(420px, calc(100vw - 140px)); }
+  .rw-buildpalette { min-width: 0; left: auto; right: 0; width: calc(100vw - 20px); max-width: 420px; }
+  .rw-buildpalette .rw-pane__body { max-width: none; }
+  .rw-lensmenu { left: auto; right: 0; top: auto; bottom: 100%; margin: 0 0 4px; }
+  .rw-toolhint { max-width: 90vw; }
+}
+
+/* Phones: the HUD becomes a thin strip at the top, the inspect pane and
+   the command palette shrink, and the map gets the middle of the screen. */
+@media (max-width: 600px) {
+  .rw-colonistbar { display: none; }
+  .rw-readout {
+    top: 4px; left: 4px; right: 4px; width: auto;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px;
+    padding: 3px 6px;
+  }
+  .rw-readout .rw-panel__head { display: none; }
+  .rw-readout__row { display: inline-flex; align-items: center; gap: 3px; padding: 1px 0; font-size: 12px; }
+  .rw-readout__row .rw-ico { width: 16px; height: 16px; }
+  .rw-readout__row b { font-size: 12px; }
+  .rw-readout__row small { display: none; }
+  .rw-readout__sep { display: none; }
+  .rw-rightcol { top: 58px; right: 4px; width: 150px; bottom: 45vh; gap: 4px; }
+  .rw-world { display: none; }
+  .rw-tutor { display: none; }
+  .rw-alert { padding: 3px 6px; font-size: 11px; }
+  .toasts { display: none; }
+  .rw-inspect { left: 4px; bottom: 58px; width: 50vw; max-width: 230px; gap: 3px; }
+  .rw-gizmorow { gap: 3px; }
+  .rw-gizmorow .rw-gizmo { width: 56px; height: 56px; padding: 4px 2px 2px; }
+  .rw-gizmorow .rw-gizmo__icon svg { width: 20px; height: 20px; }
+  .rw-gizmorow .rw-gizmo__label { font-size: 9px; }
+  .rw-inspectpane { min-height: 0; max-height: 26vh; overflow: auto; padding: 5px 7px; }
+  .rw-tileinfo__name { font-size: 14px; }
+  .rw-tileinfo__climate, .rw-tileinfo__region { display: none; }
+  .bar small { display: none; }
+  .rw-reason { font-size: 11px; }
+  .rw-bottomright { right: 4px; bottom: 4px; transform: scale(0.82); transform-origin: bottom right; max-width: calc(100vw / 0.82 - 8px); }
+  .rw-palette .rw-pane__body { max-width: calc(100vw / 0.82 - 200px); }
+  .rw-maptools { top: auto; bottom: 4px; left: 4px; transform: none; gap: 2px; padding: 2px; }
+  .rw-tool { width: 40px; font-size: 8px; padding: 3px 1px 2px; }
+  .rw-tool__icon { font-size: 14px; }
+  .rw-toolhint { top: 62px; bottom: auto; left: 4px; right: 4px; transform: none; max-width: none; font-size: 12px; }
+  .rw-buildpalette { left: 0; right: auto; width: calc(100vw - 8px); }
+  .rw-lensmenu { left: 0; right: auto; }
+}

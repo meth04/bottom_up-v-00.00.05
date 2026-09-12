@@ -1,114 +1,94 @@
-// main.js
+// main.js (ES module)
 //
-// Boots the game and keeps the map and HUD in step with the village:
+// Boots the game and keeps the living world and the HUD in step with the
+// village:
 //
 //   1. picks a world seed (from a save, the URL's ?seed=, or at random) and
-//      generates the world (worldGen.js)
-//   2. paints it (worldPainter.js), lays the hex overlay over it
-//      (hexRenderer.js), adds the buildings, the villagers and the sky
-//   3. hands the map to territory.js, which game.js gathers from
-//   4. reacts to what happens — a floating number rises when you gather, an
-//      expedition walks out to a tile you take, buildings appear as you
-//      build, the neighbours take their turn after yours, the weather
-//      follows the season, the game autosaves (save.js)
+//      generates the world off the main thread (js/world/worldGen.worker.js)
+//   2. wraps it in a HexMap, founds the villages, lays the old trade tracks
+//      as roads, and builds the towns and work sites on the land
+//   3. starts the PixiJS renderer (js/engine/renderer.js), the agent
+//      simulation (carts, boats, villagers, wildlife) and the weather
+//   4. bridges the two halves of the code base: the rules live in classic
+//      global scripts (game.js, territory.js, ages.js, ...) that expect a
+//      handful of functions and objects on `window`; everything they need
+//      from the map is assigned there from here, and everything the map
+//      needs from the rules is read through small accessor functions.
+//
+// Nothing in js/world or js/engine touches a legacy global directly.
+
+import { HEX_SIZE, SAVE_VERSION, ZOOM_MAX } from "./world/constants.js";
+import {
+  hexKey, hexSpiral, worldTileCenter, worldPointToAxial, createRandom, hexDistance,
+} from "./world/hexMath.js";
+import { TERRAIN, TERRAIN_NAMES, isWaterTerrain } from "./world/terrainDefs.js";
+import { HexMap } from "./world/hexMap.js";
+import { RoadNetwork } from "./world/roads.js";
+import { Improvements, IMPROVEMENTS } from "./world/improvements.js";
+import { AgentSim } from "./world/agents.js";
+import { WeatherModel } from "./world/weather.js";
+import { detectDevice, qualityFor } from "./engine/device.js";
+import { createWorldRenderer } from "./engine/renderer.js";
+import { Minimap } from "./engine/minimap.js";
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
 
 let world = null;
 let worldSeed = 0;
 let hexMap = null;
-let hexRenderer = null;
-let mapEffects = null;
-let villagers = null;
-let viewport = null;
-let mapGrid = null;
-let settlementsKey = "";
+let renderer = null;
+let roads = null;
+let improvements = null;
+let sim = null;
+let weather = null;
+let minimap = null;
+let device = null;
+let quality = null;
 
-const TERRAIN_NAMES = {
-  timbermellowForest: "Timbermellow forest",
-  forest: "Forest",
-  birchWood: "Birch wood",
-  denseBush: "Dense bush",
-  taiga: "Pine taiga",
-  flowerMeadow: "Flowering meadow",
-  plains: "Plains",
-  mountains: "Mountains",
-  rockyOutcrop: "Rocky outcrop",
-  overgrownHighlands: "Terraced hills",
-  marsh: "Marshland",
-  tundra: "Cold tundra",
-  snowfield: "Snowfield",
-  badlands: "Badlands",
-  beach: "Shore",
-  river: "River",
-  lake: "Lake",
-  ocean: "Open sea",
-};
+// The map tool the player is holding: null | { mode: "build", type } |
+// { mode: "road", from: tileId|null }
+let mapTool = null;
+let hoveredTileId = null;
+let roadPreview = null;
+let currentLens = null;
+let gridOn = false;
 
-// What a tile is like to live on — shown in the inspect pane so the player
-// can tell a warm meadow from a frozen one before spending an expedition.
-function terrainClimateNote(tile) {
-  if (!tile) return "";
-  const parts = [];
-  if (tile.temperature !== undefined) {
-    parts.push(tile.temperature < 0.15 ? "frozen" : tile.temperature < 0.35 ? "cold" :
-               tile.temperature > 0.85 ? "parched" : tile.temperature > 0.65 ? "warm" : "temperate");
-  }
-  if (tile.moisture !== undefined) {
-    parts.push(tile.moisture > 0.65 ? "wet" : tile.moisture < 0.38 ? "dry" : "well-watered");
-  }
-  if (tile.elevation !== undefined) {
-    parts.push(tile.elevation > 0.72 ? "high ground" : tile.elevation < 0.32 ? "lowland" : "rolling");
-  }
-  return parts.join(" · ");
+const RESOURCE_ICONS = { timbermellow: "🌰", grain: "🌾", wood: "🪵", stone: "🪨" };
+
+// What the map tools cost. Town buildings pay through the legacy buttons
+// (make_house etc.); these are the work sites and roads that only exist
+// once the player is allowed to plan the land.
+const SITE_COST = { wood: 3, hours: 1 };
+const ROAD_COST_PER_TILE = { wood: 1 };
+const ROAD_HOURS_PER_TILES = 4;
+
+// ---------------------------------------------------------------------------
+// Legacy accessors. The rules scripts keep their state in top-level `let`
+// bindings of classic scripts, which are NOT window properties, so a module
+// cannot read them by name. They are read through an indirect eval-free
+// accessor the legacy side installs (js/bridge.js), with safe fallbacks.
+// ---------------------------------------------------------------------------
+
+function legacy() {
+  return typeof window.legacyState === "function" ? window.legacyState() : {};
 }
 
-// Ground the player has seen but does not hold still shows its own colour on
-// the world panel, so the country reads as country and not as fog.
-const MINIMAP_TERRAIN_TINT = {
-  ocean: "#8fb4c4",
-  lake: "#79b3c8",
-  river: "#8ec5d6",
-  beach: "rgba(229, 211, 163, 0.7)",
-  mountains: "rgba(120, 117, 114, 0.55)",
-  snowfield: "rgba(232, 238, 244, 0.75)",
-  rockyOutcrop: "rgba(158, 139, 114, 0.5)",
-  badlands: "rgba(197, 138, 82, 0.55)",
-  tundra: "rgba(185, 191, 162, 0.55)",
-  marsh: "rgba(127, 143, 78, 0.55)",
-  taiga: "rgba(43, 90, 60, 0.5)",
-  denseBush: "rgba(51, 105, 50, 0.5)",
-  forest: "rgba(70, 133, 56, 0.5)",
-  birchWood: "rgba(127, 168, 68, 0.5)",
-  flowerMeadow: "rgba(136, 189, 90, 0.45)",
-  plains: "rgba(212, 190, 114, 0.45)",
-  overgrownHighlands: "rgba(188, 165, 99, 0.45)",
-  timbermellowForest: "rgba(120, 184, 78, 0.55)",
-};
+function seasonIndex() {
+  const state = legacy();
+  return state.seasonchecker || 1;
+}
 
-const RESOURCE_ICONS = {
-  timbermellow: "🌰",
-  grain: "🌾",
-  wood: "🪵",
-  stone: "🪨",
-  clay: "🏺",
-  iron: "⛏️",
-};
+function callLegacy(name, ...args) {
+  const fn = window[name];
+  return typeof fn === "function" ? fn(...args) : undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Booting
-//
-// Building the island takes about half a second and painting it takes about
-// as long again. Done in one go that is a second of white screen with the
-// tab frozen, which reads as a broken page. So it is done in stages, with a
-// frame handed back to the browser between each one, and a loading card
-// that says what is being built. The work is the same; the difference is
-// that the player can see it happening.
-// ---------------------------------------------------------------------------
-
-// Hands control back so the browser can paint what has just been set up.
 function nextFrame() {
   return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
 }
@@ -129,19 +109,81 @@ function bootDone() {
   setTimeout(() => { screen.hidden = true; }, 700);
 }
 
+function bootFailed(error) {
+  console.error(error);
+  const label = document.getElementById("bootCaption");
+  if (label) {
+    label.textContent = `Could not start: ${error && error.message ? error.message : error}`;
+    label.style.color = "#b83928";
+  }
+}
+
+// Generates the world in a worker so the boot screen keeps animating.
+// Falls back to the main thread if workers are unavailable (file:// pages).
+function generateWorldAsync(spec) {
+  return new Promise((resolve, reject) => {
+    let worker = null;
+    try {
+      worker = new Worker(new URL("./world/worldGen.worker.js", import.meta.url), { type: "module" });
+    } catch (error) {
+      worker = null;
+    }
+    if (!worker) {
+      import("./world/worldGen.js")
+        .then(({ generateWorld }) => resolve(generateWorld(spec, (fraction, caption) => bootStage(caption, 0.1 + fraction * 0.4))))
+        .catch(reject);
+      return;
+    }
+    worker.onmessage = (event) => {
+      const message = event.data || {};
+      if (message.type === "progress") {
+        bootStage(message.caption || "Raising the land out of the sea…", 0.1 + (message.fraction || 0) * 0.4);
+      } else if (message.type === "done") {
+        worker.terminate();
+        resolve(message.world);
+      } else if (message.type === "error") {
+        worker.terminate();
+        reject(new Error(message.message || "world generation failed"));
+      }
+    };
+    worker.onerror = (event) => {
+      worker.terminate();
+      // A worker that cannot even start (old browser, blocked module
+      // workers) is not fatal: do the work here instead.
+      import("./world/worldGen.js")
+        .then(({ generateWorld }) => resolve(generateWorld(spec, (fraction, caption) => bootStage(caption, 0.1 + fraction * 0.4))))
+        .catch(() => reject(new Error(event.message || "world worker failed")));
+    };
+    worker.postMessage({ spec });
+  });
+}
+
 async function initGame() {
+  try {
+    await boot();
+  } catch (error) {
+    bootFailed(error);
+  }
+}
+
+async function boot() {
   bootStage("Unrolling the paper…", 0.04);
   const response = await fetch("data/map.json");
   const mapData = await response.json();
 
-  const saved = loadSavedGame();
+  device = detectDevice();
+  quality = qualityFor(device.tier);
   const params = new URLSearchParams(location.search);
+  const preferred = params.get("quality") || qualityPreference();
+  if (preferred && preferred !== "auto") quality = qualityFor(preferred);
+  const qualitySelect = document.getElementById("settingsQuality");
+  if (qualitySelect) qualitySelect.value = preferred || "auto";
+
+  const saved = callLegacy("loadSavedGame");
   if (saved) worldSeed = saved.seed;
   else if (params.get("seed")) worldSeed = Number(params.get("seed")) >>> 0;
   else worldSeed = Math.floor(Math.random() * 1e9);
 
-  // If a seed was given in URL, bypass the title screen so automated
-  // playtests run cleanly.
   const titleScreen = document.getElementById("titleScreen");
   const continueBtn = document.getElementById("btnContinueGame");
   if (continueBtn && saved) continueBtn.style.display = "flex";
@@ -152,56 +194,69 @@ async function initGame() {
     }
   }
 
-  bootStage("Raising the land out of the sea…", 0.12);
+  bootStage("Raising the land out of the sea…", 0.1);
   await nextFrame();
-  world = generateWorld(Object.assign({}, mapData.world, { seed: worldSeed }));
-  mapGrid = world.grid;
+  const spec = Object.assign({}, mapData.world, { seed: worldSeed });
+  world = await generateWorldAsync(spec);
 
   // The player's home gets the starting stores from map.json.
   const home = world.tiles.find((tile) => tile.isStartingTile);
   home.resources = mapData.startingTile.resources;
 
-  bootStage("Counting what grows on it…", 0.34);
+  bootStage("Counting what grows on it…", 0.52);
   await nextFrame();
-  hexMap = new HexMap({ terrainDefaults: mapData.terrainDefaults, tiles: world.tiles });
-  villagesSet(world.villages);
+  hexMap = new HexMap({ cols: world.cols, rows: world.rows, terrainDefaults: mapData.terrainDefaults, tiles: world.tiles });
+  installBridge();
+
+  callLegacy("villagesSet", world.villages);
+  hexMap.beginBatch();
   if (saved) {
     hexMap.deserialize(saved.map);
-    villagesSet(saved.villages);
+    callLegacy("villagesSet", saved.villages);
   } else {
-    // Every settlement starts on its own valley, not on a single hex.
     for (const village of world.villages) {
-      territoryFoundVillage(hexMap, village.homeTileId, village.id);
+      callLegacy("territoryFoundVillage", hexMap, village.homeTileId, village.id);
     }
+    // The old tracks between the villages are real roads from day one:
+    // carts use them, and a village they reach is a trade partner.
+    for (const route of world.tradeRoutes || []) hexMap.addRoadPath(route.tileIds);
   }
   hexMap.selectTile(home.id);
-  territorySetMap(hexMap, mapGrid, onTerritoryChanged);
+  hexMap.endBatch();
+  callLegacy("territorySetMap", hexMap, world.grid, onTerritoryChanged);
 
-  bootStage("Painting the country…", 0.46);
-  await nextFrame();
-  const viewBox = { x: 0, y: 0, width: world.width, height: world.height };
-  paintWorld(document.getElementById("mapArtworkHost"), world);
+  roads = new RoadNetwork(hexMap);
+  improvements = new Improvements(hexMap, roads);
+  window.roadNetwork = roads;
+  window.improvements = improvements;
 
-  bootStage("Drawing the borders…", 0.74);
+  bootStage("Waking the engine…", 0.6);
   await nextFrame();
-  hexRenderer = new HexRenderer(hexMap, document.getElementById("hexMapSvgHost"), {
-    hexSize: mapGrid.hexSize,
-    origin: { x: mapGrid.originX, y: mapGrid.originY },
-    viewBox,
-    onTileClick: onHexTileClick,
-    ownerColor: villageColor,
+  const host = document.getElementById("mapstage");
+  renderer = await createWorldRenderer({
+    host,
+    world,
+    hexMap,
+    villages: () => callLegacy("villagesGet") || [],
+    quality,
+    callbacks: {
+      onTileClick: onTileClick,
+      onTileLongPress: onTileLongPress,
+      onTileHover: onTileHover,
+      onViewChange: onViewChange,
+      onFps: onFps,
+    },
   });
-  mapEffects = new MapEffects(document.getElementById("mapEffectsHost"), world.width, world.height);
-  villagers = new Villagers(document.getElementById("mapVillagersHost"), world, hexMap);
-  const village = villageCenter();
-  mapEffects.setVillage(village.x, village.y - mapGrid.hexSize * 0.2);
+  window.renderer = renderer;
 
-  bootStage("Setting out the village…", 0.86);
+  weather = new WeatherModel(worldSeed);
+  renderer.setWeather(weather);
+
+  bootStage("Setting out the villages…", 0.8);
   await nextFrame();
-  viewport = setupMapViewport(document.getElementById("mapstage"), document.getElementById("mapviewport"));
-  viewport.onChange(drawMinimap);
-  document.getElementById("minimap").addEventListener("click", onMinimapClick);
-  viewport.focusOn(village, { width: world.width, height: world.height }, 7.5);
+  minimap = new Minimap(document.getElementById("minimap"), world, hexMap, () => callLegacy("villagesGet") || []);
+  minimap.onClick((x, y) => renderer.camera.focusOn(x, y, undefined, { animate: true }));
+  renderer.camera.onChange((view) => minimap.draw(view));
 
   const seedLabel = document.getElementById("seedLabel");
   if (seedLabel) seedLabel.textContent = worldSeed;
@@ -209,33 +264,90 @@ async function initGame() {
   if (settingsSeed) settingsSeed.textContent = worldSeed;
 
   if (saved) {
-    gameSetState(saved.game);
-    updatelog(`Welcome back — turn ${saved.game.turngame}, saved ${new Date(saved.savedAt).toLocaleString()}.`, "good");
+    callLegacy("gameSetState", saved.game);
+    callLegacy("updatelog", `Welcome back — turn ${saved.game.turngame}, saved ${new Date(saved.savedAt).toLocaleString()}.`, "good");
   } else {
-    updatelog("Your village stands in a single timbermellow grove. When it starts to run dry, explore the land around it — and mind the neighbours.", "good");
+    callLegacy("updatelog", "Your village stands in a single timbermellow grove. When it starts to run dry, explore the land around it — and mind the neighbours.", "good");
   }
 
+  // Towns and work sites for everyone, then the people who live in them.
+  syncAllSettlements(true);
+  sim = new AgentSim({ world, hexMap, roads, improvements, quality });
+  renderer.setAgentSource(sim);
+  syncPopulation();
+
+  const centre = villageCenter();
+  renderer.camera.focusOn(centre.x, centre.y, 1.25, { animate: false });
+
   bootStage("Ready.", 1);
-  uiInit();
-  hexRenderer.render();
+  installMapTools();
+  callLegacy("uiInit");
   refreshTilePanel();
   refreshVillagesPanel();
-  update();
-  villagers.start();
-  turnSnapshotTake();
+  callLegacy("update");
+  callLegacy("turnSnapshotTake");
+  minimap.invalidate();
+  minimap.draw(currentView());
+  window.addEventListener("resize", () => { if (renderer) renderer.resize(); });
   await nextFrame();
   bootDone();
 }
 
-// The named stretch of country a tile belongs to, if it is part of one.
-function regionOfTile(tile) {
-  if (!world || !tile || !tile.regionId) return null;
-  return (world.regions || []).find((region) => region.id === tile.regionId) || null;
+function currentView() {
+  const camera = renderer.camera;
+  return { x: camera.x, y: camera.y, zoom: camera.zoom, bounds: camera.getBounds() };
 }
 
-// The hearth never moves, so it is found once. It used to be looked up by
-// searching the whole map, which is thirty thousand tiles now and is asked
-// for on every frame of the villagers' animation.
+// ---------------------------------------------------------------------------
+// The bridge: what the legacy scripts reach for on window
+// ---------------------------------------------------------------------------
+
+function installBridge() {
+  Object.assign(window, {
+    // hex maths the rules use to found villages and claim districts
+    hexKey, hexSpiral, worldTileCenter, createRandom, hexDistance,
+    // the map itself
+    hexMap, world, mapGrid: world.grid, worldSeed,
+    TERRAIN_NAMES,
+    // functions the rules and the HTML call by name
+    refreshTilePanel, refreshVillagesPanel, refreshMapEffects, afterTurnEnded,
+    onHexTileClick, onLogEntry, toggleLog, focusVillage, focusSelectedTile,
+    selectBestFrontier, saveNow, newGame, garlockDirectionText, onGarlockRaid,
+    homeTile, villageCenter, regionOfTile, terrainClimateNote,
+    tileAtWorld, setMapLens, toggleMapGrid, setMapTool, cancelMapTool, toggleFpsMeter,
+    toggleLensMenu, toggleBuildPalette, toggleRoadTool, setQualityPreference,
+  });
+}
+
+// The Settings dialog's detail level. "auto" lets device.js decide; a fixed
+// level is remembered and applied on the next load (the renderer is built
+// once, so switching live would mean rebuilding every layer).
+function setQualityPreference(value) {
+  try {
+    if (value === "auto") localStorage.removeItem("bottomup.quality.v1");
+    else localStorage.setItem("bottomup.quality.v1", value);
+  } catch (error) { /* private window */ }
+  callLegacy("updatelog", value === "auto" ? "Map detail will be picked automatically next time the game loads." : `Map detail set to ${value} — it applies the next time the game loads.`, "good");
+}
+
+function qualityPreference() {
+  try {
+    return localStorage.getItem("bottomup.quality.v1") || "auto";
+  } catch (error) {
+    return "auto";
+  }
+}
+
+function toggleLensMenu() {
+  const menu = document.getElementById("lensMenu");
+  if (menu) menu.hidden = !menu.hidden;
+}
+
+function toggleRoadTool() {
+  if (!toolsUnlocked()) return;
+  setMapTool(mapTool && mapTool.mode === "road" ? null : { mode: "road", from: null });
+}
+
 let homeTileCache = null;
 
 function homeTile() {
@@ -247,28 +359,118 @@ function homeTile() {
 
 function villageCenter() {
   const tile = homeTile();
-  return tile ? worldTileCenter(tile.q, tile.r, mapGrid) : { x: 0, y: 0 };
+  return tile ? worldTileCenter(tile.q, tile.r, world.grid) : { x: 0, y: 0 };
+}
+
+function regionOfTile(tile) {
+  if (!world || !tile || !tile.regionId) return null;
+  return (world.regions || []).find((region) => region.id === tile.regionId) || null;
+}
+
+function continentOfTile(tile) {
+  if (!world || !tile || tile.continentId === null || tile.continentId < 0) return null;
+  return (world.continents || []).find((continent) => continent.id === tile.continentId) || null;
+}
+
+function tileAtWorld(x, y) {
+  if (!hexMap || !world) return null;
+  const axial = worldPointToAxial(x, y, world.grid);
+  return hexMap.getTileAt(axial.q, axial.r);
+}
+
+function terrainClimateNote(tile) {
+  if (!tile) return "";
+  const parts = [];
+  if (tile.temperature !== undefined) {
+    parts.push(tile.temperature < 0.15 ? "frozen" : tile.temperature < 0.35 ? "cold" :
+               tile.temperature > 0.85 ? "parched" : tile.temperature > 0.65 ? "warm" : "temperate");
+  }
+  if (tile.moisture !== undefined) {
+    parts.push(tile.moisture > 0.65 ? "wet" : tile.moisture < 0.38 ? "dry" : "well-watered");
+  }
+  if (tile.elevation !== undefined) {
+    parts.push(tile.elevation > 0.72 ? "high ground" : tile.elevation < 0.32 ? "lowland" : "rolling");
+  }
+  return parts.join(" · ");
 }
 
 // ---------------------------------------------------------------------------
-// Reacting to the game
+// Keeping the world in step with the rules
 // ---------------------------------------------------------------------------
 
+function playerCounters() {
+  const state = legacy();
+  return {
+    houses: state.stonehouse || 1,
+    barns: state.barn || 1,
+    schools: state.school || 0,
+    camps: state.armycamp || 0,
+  };
+}
+
+let pendingPlacementTile = null;
+
+function syncAllSettlements(force) {
+  if (!improvements) return;
+  const state = legacy();
+  improvements.syncTown("player", playerCounters(), pendingPlacementTile);
+  pendingPlacementTile = null;
+  improvements.syncWorkSites("player", { farming: (state.farming_made || 0) > 0 });
+  for (const village of callLegacy("villagesGet") || []) {
+    if (village.kind === "player") continue;
+    if (!force && !hexMap.isRevealed(village.homeTileId)) continue;
+    improvements.syncRival(village, hexMap.countOwnedBy(village.id));
+  }
+}
+
+function syncPopulation() {
+  if (!sim) return;
+  const state = legacy();
+  sim.syncPopulation({
+    humans: state.humans || 0,
+    soldiers: state.human_army || 0,
+    trades: state.professionCounts || {},
+    season: seasonIndex(),
+  });
+}
+
+// game.js calls this from update(): weather, buildings and people follow the numbers.
+let lastSeasonName = "";
+
+function refreshMapEffects() {
+  if (!renderer) return;
+  const seasonName = document.getElementById("season").innerText.toLowerCase();
+  const stage = document.getElementById("mapstage");
+  if (seasonName !== lastSeasonName) {
+    const changed = lastSeasonName !== "";
+    lastSeasonName = seasonName;
+    renderer.setSeason(seasonIndex());
+    if (weather) weather.setSeason(seasonIndex());
+    for (const name of Array.from(stage.classList)) {
+      if (name.startsWith("season--")) stage.classList.remove(name);
+    }
+    stage.classList.add(`season--${seasonName}`);
+    if (changed) {
+      const year = Math.floor(((legacy().turngame || 1) - 1) / 8) + 1;
+      callLegacy("showSeasonBanner", seasonName, year);
+    }
+  }
+  syncAllSettlements(false);
+  syncPopulation();
+  refreshToolBar();
+}
+
 // Called by territory.js whenever land is claimed, seized, gathered from,
-// regrows or is revealed. `event` says which (see territory.js).
+// regrows or is revealed.
 function onTerritoryChanged(event) {
-  if (!hexRenderer) return;
+  if (!renderer) return;
 
   if (event && event.kind === "take") {
     if (event.amount > 0) {
-      if (typeof spawnFloatingReward === "function") {
-        spawnFloatingReward(`+${event.amount}`, event.types[0]);
-      }
-      if (mapEffects) {
-        const village = villageCenter();
-        const icon = typeof getIcon === "function" ? "" : (RESOURCE_ICONS[event.types[0]] || event.types[0]);
-        mapEffects.floatText(village.x, village.y - mapGrid.hexSize * 0.9, `+${event.amount} ${icon}`, "good");
-      }
+      callLegacy("spawnFloatingReward", `+${event.amount}`, event.types[0]);
+      const centre = villageCenter();
+      renderer.floatText(centre.x, centre.y - HEX_SIZE * 1.4, `+${event.amount} ${RESOURCE_ICONS[event.types[0]] || event.types[0]}`, "good");
+      if (sim) sim.onEvent({ kind: "gather", type: event.types[0], amount: event.amount });
     }
     refreshTilePanel();
     return;
@@ -276,110 +478,337 @@ function onTerritoryChanged(event) {
 
   if (event && (event.kind === "claim" || event.kind === "seize")) {
     hexMap.selectTile(event.tile.id);
-    hexRenderer.render();
+    renderer.setSelected(event.tile.id);
     refreshTilePanel();
     refreshVillagesPanel();
-    refreshSettlements(true);
-    invalidateMinimap();
-    drawMinimap();
-    if (mapEffects) {
-      const from = villageCenter();
-      const to = worldTileCenter(event.tile.q, event.tile.r, mapGrid);
-      mapEffects.animateExpedition(from, to, event.kind === "seize" ? "#d9534f" : "#f2c14e", null);
-    }
+    syncAllSettlements(false);
+    minimap.invalidate();
+    const from = villageCenter();
+    const to = worldTileCenter(event.tile.q, event.tile.r, world.grid);
+    renderer.animateExpedition(from, to, event.kind === "seize" ? "#d9534f" : "#f2c14e", null);
+    if (sim) sim.onEvent({ kind: event.kind, tileId: event.tile.id });
     return;
   }
 
-  hexRenderer.render();
+  if (event && event.kind === "reveal") {
+    renderer.refreshAll();
+    syncAllSettlements(true);
+  }
   refreshTilePanel();
-  invalidateMinimap();
-  drawMinimap();
+  minimap.invalidate();
 }
 
 // game.js calls this at the end of end_turn().
 function afterTurnEnded() {
-  villagesTakeTurn(hexMap, mapGrid, turngame, worldSeed, updatelog);
-  hexRenderer.render();
+  const state = legacy();
+  callLegacy("villagesTakeTurn", hexMap, world.grid, state.turngame, worldSeed, window.updatelog);
+  const partners = callLegacy("territoryTradeTurn");
+  if (partners && partners.length && sim) sim.onEvent({ kind: "trade", partners });
+  syncAllSettlements(false);
   refreshTilePanel();
   refreshVillagesPanel();
-  invalidateMinimap();
-  drawMinimap();
-  saveGame(worldSeed);
+  minimap.invalidate();
+  callLegacy("saveGame", worldSeed);
 
-  // Check Game Over condition
-  if (typeof humans !== "undefined" && typeof human_army !== "undefined") {
-    if (humans <= 0 && human_army <= 0) {
-      const year = Math.floor((turngame - 1) / 8) + 1;
-      if (typeof showGameOverScreen === "function") {
-        showGameOverScreen(
-          "Famine and the bitter elements have claimed the final settler. The fires in the village have gone cold.",
-          { year, turns: turngame, tiles: typeof territoryClaimedCount === "function" ? territoryClaimedCount() : 1 }
-        );
-      }
-    }
+  if ((state.humans || 0) <= 0 && (state.human_army || 0) <= 0) {
+    const year = Math.floor((state.turngame - 1) / 8) + 1;
+    callLegacy("showGameOverScreen",
+      "Famine and the bitter elements have claimed the final settler. The fires in the village have gone cold.",
+      { year, turns: state.turngame, tiles: hexMap.countClaimed() });
   }
+}
+
+// game.js calls this as a raid resolves: the warband is seen marching.
+function onGarlockRaid(repelled) {
+  const camp = (callLegacy("villagesGet") || []).find((village) => village.kind === "garlock");
+  if (sim && camp) sim.onEvent({ kind: "raid", fromVillageId: camp.id, repelled: !!repelled });
+  const centre = villageCenter();
+  if (renderer) renderer.flashTile(homeTile().id, repelled ? 0xf2c14e : 0xd9534f);
+  if (renderer && !repelled) renderer.floatText(centre.x, centre.y - HEX_SIZE * 2, "raided!", "bad");
+}
+
+function garlockDirectionText() {
+  if (!hexMap) return "";
+  const camp = (callLegacy("villagesGet") || []).find((village) => village.kind === "garlock");
+  if (!camp) return "";
+  const home = homeTile();
+  const campTile = hexMap.getTile(camp.homeTileId);
+  if (!home || !campTile) return "";
+  return ` from the ${callLegacy("directionBetween", home, campTile, world.grid)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Input from the map
+// ---------------------------------------------------------------------------
+
+function onTileClick(tileId, detail) {
+  if (!hexMap || !tileId) return;
+  if (mapTool) {
+    if (applyMapTool(tileId)) return;
+  }
+  onHexTileClick(tileId);
 }
 
 function onHexTileClick(tileId) {
   hexMap.selectTile(tileId);
-  hexRenderer.render();
+  renderer.setSelected(tileId);
   refreshTilePanel();
 }
 
-// game.js calls this from update(): weather, buildings and people follow the numbers.
-function refreshMapEffects() {
-  if (!mapEffects) return;
-  const season = document.getElementById("season").innerText.toLowerCase();
-  const stage = document.getElementById("mapstage");
-
-  if (!stage.classList.contains(`season--${season}`)) {
-    mapEffects.setSeason(season);
-    for (const name of Array.from(stage.classList)) {
-      if (name.startsWith("season--")) stage.classList.remove(name);
-    }
-    stage.classList.add(`season--${season}`);
-    const year = Math.floor((turngame - 1) / 8) + 1;
-    if (typeof showSeasonBanner === "function") {
-      showSeasonBanner(season, year);
-    }
-  }
-  refreshSettlements(false);
-  if (villagers) villagers.sync(humans, human_army);
+function onTileLongPress(tileId) {
+  if (!tileId) return;
+  onHexTileClick(tileId);
+  focusSelectedTile();
 }
 
-// Redraws buildings and roads only when something about them changed.
-function refreshSettlements(force) {
-  // The season is in the key because the fields change with it: turned earth
-  // in spring, green in summer, sheaves at harvest, snow-covered stubble.
-  const key = `${stonehouse}|${barn}|${school}|${armycamp}|${territoryClaimedCount()}|${seasonchecker}`;
-  if (!force && key === settlementsKey) return;
-  settlementsKey = key;
-  paintSettlements(document.getElementById("mapSettlementsHost"), world, hexMap, {
-    houses: stonehouse, barns: barn, schools: school, camps: armycamp, season: seasonchecker,
+function onTileHover(tileId) {
+  hoveredTileId = tileId;
+  if (!mapTool || !renderer) return;
+  if (mapTool.mode === "build") {
+    if (!tileId) { renderer.setPlacementGhost(null); return; }
+    const check = improvements.canPlace(mapTool.type, tileId, "player");
+    renderer.setPlacementGhost({ tileId, type: mapTool.type, valid: check.ok });
+    setToolHint(check.ok ? `Place ${IMPROVEMENTS[mapTool.type].name || mapTool.type} here` : check.reason);
+  } else if (mapTool.mode === "road" && mapTool.from && tileId) {
+    roadPreview = roads.findPath(mapTool.from, tileId, { preferRoads: true, forVillage: "player" });
+    renderer.setRoadPreview(roadPreview);
+    if (roadPreview) {
+      const cost = roadCost(roadPreview);
+      setToolHint(`Road: ${cost.tiles} new tiles · ${cost.wood} wood · ${cost.hours} hours`);
+    } else {
+      setToolHint("No way through for a road.");
+    }
+  }
+}
+
+let viewChangeQueued = false;
+
+function onViewChange(view) {
+  if (viewChangeQueued) return;
+  viewChangeQueued = true;
+  requestAnimationFrame(() => {
+    viewChangeQueued = false;
+    if (minimap) minimap.draw(view);
   });
 }
 
-// game.js calls this from updatelog(): the newest lines pop up over the map.
-function onLogEntry(text, kind) {
-  const host = document.getElementById("toasts");
-  if (!host) return;
-  const toast = document.createElement("div");
-  toast.className = "toast" + (kind ? ` toast--${kind}` : "");
-  toast.textContent = text;
-  host.appendChild(toast);
-  while (host.childElementCount > 4) host.firstElementChild.remove();
-  setTimeout(() => toast.remove(), 6100);
-}
-
-function toggleLog() {
-  const panel = document.getElementById("logPanel");
-  panel.hidden = !panel.hidden;
-  const tab = document.querySelector('.rw-tab[data-tab="log"]');
-  if (tab) tab.classList.toggle("is-open", !panel.hidden);
+function onFps(fps, frameMs, currentQuality) {
+  const meter = document.getElementById("fpsMeter");
+  if (!meter || meter.hidden) return;
+  meter.textContent = `${Math.round(fps)} fps · ${frameMs.toFixed(1)} ms · ${currentQuality.tier}${sim ? ` · ${sim.counts.active} moving` : ""}`;
 }
 
 // ---------------------------------------------------------------------------
-// Tile inspection pane and minimap
+// Map tools: grid, lenses, building placement, road drawing
+// ---------------------------------------------------------------------------
+
+function installMapTools() {
+  const bar = document.getElementById("mapTools");
+  if (!bar) return;
+  bar.hidden = false;
+  document.addEventListener("keydown", (event) => {
+    if (event.target.matches("input, textarea")) return;
+    if (event.ctrlKey || event.altKey || event.metaKey) return;
+    const key = event.key.toLowerCase();
+    if (key === "g") { toggleMapGrid(); event.preventDefault(); }
+    else if (key === "l") { cycleLens(); event.preventDefault(); }
+    else if (key === "f3") { toggleFpsMeter(); event.preventDefault(); }
+    else if (key === "b" && toolsUnlocked()) { toggleBuildPalette(); event.preventDefault(); }
+    else if (key === "r" && toolsUnlocked()) { setMapTool(mapTool && mapTool.mode === "road" ? null : { mode: "road", from: null }); event.preventDefault(); }
+    else if (key === "escape" && mapTool) { cancelMapTool(); event.preventDefault(); event.stopImmediatePropagation(); }
+  }, true);
+  refreshToolBar();
+}
+
+function toolsUnlocked() {
+  return callLegacy("ageHas", "planning") === true;
+}
+
+function refreshToolBar() {
+  const grid = document.getElementById("toolGrid");
+  if (grid) grid.classList.toggle("is-on", gridOn);
+  const lens = document.getElementById("toolLens");
+  if (lens) {
+    lens.classList.toggle("is-on", !!currentLens);
+    const label = lens.querySelector(".rw-tool__label");
+    if (label) label.textContent = currentLens ? `Lens: ${currentLens}` : "Lens";
+  }
+  const build = document.getElementById("toolBuild");
+  const road = document.getElementById("toolRoad");
+  const unlocked = toolsUnlocked();
+  if (build) { build.hidden = !unlocked; build.classList.toggle("is-on", !!mapTool && mapTool.mode === "build"); }
+  if (road) { road.hidden = !unlocked; road.classList.toggle("is-on", !!mapTool && mapTool.mode === "road"); }
+  const palette = document.getElementById("buildPalette");
+  if (palette && !unlocked) palette.hidden = true;
+}
+
+function toggleMapGrid() {
+  gridOn = !gridOn;
+  if (renderer) renderer.setGrid(gridOn);
+  refreshToolBar();
+}
+
+const LENSES = [null, "yields", "territory", "resources", "roads"];
+
+function cycleLens() {
+  const index = LENSES.indexOf(currentLens);
+  setMapLens(LENSES[(index + 1) % LENSES.length]);
+}
+
+function setMapLens(name) {
+  currentLens = name || null;
+  if (renderer) renderer.setLens(currentLens);
+  refreshToolBar();
+}
+
+function toggleFpsMeter() {
+  const meter = document.getElementById("fpsMeter");
+  if (!meter) return;
+  meter.hidden = !meter.hidden;
+  const button = document.getElementById("toolFps");
+  if (button) button.classList.toggle("is-on", !meter.hidden);
+}
+
+function toggleBuildPalette() {
+  const palette = document.getElementById("buildPalette");
+  if (!palette) return;
+  if (!palette.hidden) { palette.hidden = true; cancelMapTool(); return; }
+  palette.hidden = false;
+  fillBuildPalette();
+}
+
+// Which things can be placed by hand, and what the placement costs. Town
+// buildings are paid through the same functions the Build tab uses, so
+// the price is whatever game.js says it is.
+const PLACEABLE = [
+  { type: "house", label: "House", pay: "make_house", icon: "house" },
+  { type: "barn", label: "Barn", pay: "make_barn", icon: "barn" },
+  { type: "school", label: "School", pay: "make_school", icon: "tech" },
+  { type: "armyCamp", label: "Army camp", pay: "make_armycamp", icon: "soldier" },
+  { type: "farm", label: "Farm", site: true, icon: "farming" },
+  { type: "pasture", label: "Pasture", site: true, icon: "timbermellow" },
+  { type: "lumberCamp", label: "Lumber camp", site: true, icon: "wood" },
+  { type: "quarry", label: "Quarry", site: true, icon: "stone" },
+  { type: "fishery", label: "Fishery", site: true, icon: "explore" },
+];
+
+function fillBuildPalette() {
+  const host = document.getElementById("buildPaletteBody");
+  if (!host) return;
+  const state = legacy();
+  const icon = (name) => (typeof window.getIcon === "function" ? window.getIcon(name) : "");
+  host.innerHTML = PLACEABLE.map((entry) => {
+    const active = mapTool && mapTool.mode === "build" && mapTool.type === entry.type;
+    const blocked = entry.type === "farm" && !(state.farming_made > 0);
+    const cost = entry.site ? `${SITE_COST.wood} wood · ${SITE_COST.hours} hour` : "same as the Build tab";
+    return `
+      <button class="rw-gizmo rw-gizmo--place ${active ? "is-on" : ""}" ${blocked ? "disabled" : ""}
+              data-place="${entry.type}"
+              data-tip-title="Place a ${entry.label.toLowerCase()}"
+              data-tip="Pick where it stands. Work sites bring carts and roads with them."
+              data-tip-cost="${cost}"
+              data-tip-block="${blocked ? "Learn farming first." : ""}">
+        <span class="rw-gizmo__icon">${icon(entry.icon)}</span>
+        <span class="rw-gizmo__label">${entry.label}</span>
+      </button>`;
+  }).join("");
+  for (const button of host.querySelectorAll("[data-place]")) {
+    button.addEventListener("click", () => {
+      const type = button.dataset.place;
+      setMapTool(mapTool && mapTool.mode === "build" && mapTool.type === type ? null : { mode: "build", type });
+      fillBuildPalette();
+    });
+  }
+}
+
+function setMapTool(tool) {
+  mapTool = tool;
+  roadPreview = null;
+  if (renderer) {
+    renderer.setPlacementGhost(null);
+    renderer.setRoadPreview(null);
+  }
+  const stage = document.getElementById("mapstage");
+  if (stage) stage.classList.toggle("is-tool", !!tool);
+  if (!tool) setToolHint("");
+  else if (tool.mode === "road") setToolHint("Road: click where it starts, then where it ends.");
+  else setToolHint(`Click a hex to place the ${tool.type}.`);
+  refreshToolBar();
+}
+
+function cancelMapTool() {
+  setMapTool(null);
+  const palette = document.getElementById("buildPalette");
+  if (palette) palette.hidden = true;
+}
+
+function setToolHint(text) {
+  const hint = document.getElementById("toolHint");
+  if (!hint) return;
+  hint.textContent = text || "";
+  hint.hidden = !text;
+}
+
+function roadCost(path) {
+  let tiles = 0;
+  for (let i = 1; i < path.length; i++) {
+    if (!hexMap.hasRoadBetween(path[i - 1], path[i])) tiles++;
+  }
+  return { tiles, wood: tiles * ROAD_COST_PER_TILE.wood, hours: Math.max(1, Math.ceil(tiles / ROAD_HOURS_PER_TILES)) };
+}
+
+// Returns true when the click was consumed by the tool.
+function applyMapTool(tileId) {
+  const state = legacy();
+  if (mapTool.mode === "build") {
+    const check = improvements.canPlace(mapTool.type, tileId, "player");
+    if (!check.ok) { callLegacy("updatelog", check.reason, "bad"); return true; }
+    const entry = PLACEABLE.find((candidate) => candidate.type === mapTool.type);
+    if (entry && entry.pay) {
+      // The legacy button pays and bumps the counter; syncTown then puts
+      // the new building on the hex the player picked.
+      pendingPlacementTile = tileId;
+      const before = playerCounters();
+      callLegacy(entry.pay);
+      const after = playerCounters();
+      if (JSON.stringify(before) === JSON.stringify(after)) pendingPlacementTile = null;
+      return true;
+    }
+    if (state.wood < SITE_COST.wood) { callLegacy("updatelog", `A ${mapTool.type} needs ${SITE_COST.wood} wood.`, "bad"); return true; }
+    if (state.working_hours < SITE_COST.hours) { callLegacy("updatelog", "No work hours left for that.", "bad"); return true; }
+    callLegacy("legacySpend", { wood: SITE_COST.wood, hours: SITE_COST.hours });
+    improvements.place(mapTool.type, tileId, "player");
+    callLegacy("updatelog", `A ${IMPROVEMENTS[mapTool.type].name || mapTool.type} is staked out on the land.`, "good");
+    callLegacy("update");
+    return true;
+  }
+  if (mapTool.mode === "road") {
+    if (!mapTool.from) {
+      mapTool.from = tileId;
+      setToolHint("Now click where the road ends.");
+      return true;
+    }
+    const path = roads.findPath(mapTool.from, tileId, { preferRoads: true, forVillage: "player" });
+    if (!path) { callLegacy("updatelog", "No way through for a road there.", "bad"); return true; }
+    const cost = roadCost(path);
+    if (cost.tiles === 0) { callLegacy("updatelog", "There is already a road all the way."); mapTool.from = null; return true; }
+    if (state.wood < cost.wood) { callLegacy("updatelog", `That road needs ${cost.wood} wood.`, "bad"); return true; }
+    if (state.working_hours < cost.hours) { callLegacy("updatelog", `That road needs ${cost.hours} work hours.`, "bad"); return true; }
+    callLegacy("legacySpend", { wood: cost.wood, hours: cost.hours });
+    hexMap.addRoadPath(path);
+    roads.invalidate();
+    callLegacy("updatelog", `${cost.tiles} hexes of road laid.`, "good");
+    callLegacy("update");
+    mapTool.from = null;
+    renderer.setRoadPreview(null);
+    setToolHint("Road laid. Click to start another, or press Esc.");
+    return true;
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Tile inspection pane and settlement list
 // ---------------------------------------------------------------------------
 
 let tilePanelKey = "";
@@ -395,8 +824,7 @@ function refreshTilePanel() {
   if (focusButton) focusButton.disabled = !tile;
   const findButton = document.getElementById("findLandButton");
   if (findButton) {
-    const anywhere = hexMap.getFrontierTiles("player")
-      .some((candidate) => !["ocean", "lake"].includes(candidate.terrainType));
+    const anywhere = hexMap.getFrontierTiles("player").some((candidate) => !isWaterTerrain(candidate.terrainType) || candidate.terrainType === "river");
     findButton.disabled = !anywhere;
     findButton.dataset.tipBlock = anywhere ? "" : "There is no wild land touching yours.";
   }
@@ -418,14 +846,12 @@ function refreshTilePanel() {
   const frontier = hexMap.isFrontier(tile.id);
   const revealed = hexMap.isRevealed(tile.id);
   const foreign = tile.owner && tile.owner !== "player";
+  const connected = tile.owner === "player" && roads ? roads.isConnected(tile.id, "player") : false;
 
-  // The pane is a chunk of innerHTML; rebuilding it on every click throws
-  // away the player's tooltip and costs a layout for nothing. It only needs
-  // redrawing when the tile, its stores, or what you could do to it change.
   const key = [
-    tile.id, revealed, claimed, frontier, foreign, tile.owner,
+    tile.id, revealed, claimed, frontier, foreign, tile.owner, tile.road, tile.improvement, tile.building, connected,
     Object.keys(tile.resources).map((type) => tile.resources[type].amount + "/" + tile.resources[type].max).join(","),
-    foreign ? territorySeizeBlocker(tile.id) : territoryExploreBlocker(tile.id),
+    foreign ? callLegacy("territorySeizeBlocker", tile.id) : callLegacy("territoryExploreBlocker", tile.id),
   ].join("|");
   if (key === tilePanelKey) return;
   tilePanelKey = key;
@@ -438,40 +864,48 @@ function refreshTilePanel() {
     let state = "Wild land";
     let stateClass = "";
     if (claimed) { state = tile.isStartingTile ? "Settlement Hearth" : "Your Territory"; stateClass = "rw-tileinfo__state--claimed"; }
-    else if (foreign) { state = `${villageName(tile.owner)}'s domain`; stateClass = "rw-tileinfo__state--foreign"; }
+    else if (foreign) { state = `${callLegacy("villageName", tile.owner)}'s domain`; stateClass = "rw-tileinfo__state--foreign"; }
     else if (frontier) { state = "Frontier — adjacent and explorable"; stateClass = "rw-tileinfo__state--frontier"; }
 
-    const chip = foreign ? `<i class="chip" style="background:${villageColor(tile.owner)}"></i>` : "";
+    const chip = foreign ? `<i class="chip" style="background:${callLegacy("villageColor", tile.owner)}"></i>` : "";
     const region = regionOfTile(tile);
+    const continent = continentOfTile(tile);
     const climate = terrainClimateNote(tile);
+    const details = [];
+    if (tile.riverWidth) details.push(tile.riverWidth >= 3 ? "a wide river" : tile.riverWidth === 2 ? "a river" : "a stream");
+    if (tile.feature) details.push(featureName(tile.feature));
+    if (tile.landmark) details.push(landmarkName(tile.landmark));
+    if (tile.building) details.push(buildingName(tile.building));
+    if (tile.improvement) details.push(buildingName(tile.improvement));
+    if (tile.road) details.push(claimed ? (connected ? "road to the village" : "road, not yet joined to yours") : "an old track");
+    if (tile.snowCapped) details.push("snow-capped");
     info.innerHTML = `
       <div class="rw-tileinfo__name">${TERRAIN_NAMES[tile.terrainType] || tile.terrainType}</div>
-      ${region ? `<div class="rw-tileinfo__region">${region.name}</div>` : ""}
+      ${region ? `<div class="rw-tileinfo__region">${region.name}${continent ? ` · ${continent.name}` : ""}</div>` : (continent ? `<div class="rw-tileinfo__region">${continent.name}</div>` : "")}
       <div class="rw-tileinfo__state ${stateClass}">${chip}${state}</div>
       ${climate ? `<div class="rw-tileinfo__climate">${climate}</div>` : ""}
+      ${details.length ? `<div class="rw-tileinfo__climate">${details.join(" · ")}</div>` : ""}
       ${resourceBars(tile)}`;
   }
 
-  // One gizmo, two jobs: explore wild land, seize another village's.
   if (foreign) {
-    const blocker = territorySeizeBlocker(tile.id);
-    const cost = `${territorySeizeSoldiersNeeded(tile.id)} soldiers (1 lost) · ${SEIZE_FOOD_COST} food · ${SEIZE_WORK_HOURS} hours`;
+    const blocker = callLegacy("territorySeizeBlocker", tile.id);
+    const cost = `${callLegacy("territorySeizeSoldiersNeeded", tile.id)} soldiers (1 lost) · ${window.SEIZE_FOOD_COST} food · ${window.SEIZE_WORK_HOURS} hours`;
     setTileGizmo(button, "⚔️", "Seize", true);
-    button.onclick = seize;
+    button.onclick = window.seize;
     button.disabled = !!blocker;
-    button.dataset.tipTitle = `Seize territory from ${villageName(tile.owner)}`;
+    button.dataset.tipTitle = `Seize territory from ${callLegacy("villageName", tile.owner)}`;
     button.dataset.tip = "Your soldiers march out and conquer the tile. You can take peripheral lands, but never the home center.";
     button.dataset.tipCost = cost;
     button.dataset.tipBlock = blocker || "";
     reason.textContent = blocker || `Requires: ${cost}.`;
     reason.className = blocker ? "rw-reason rw-reason--blocked" : "rw-reason";
   } else {
-    const blocker = territoryExploreBlocker(tile.id);
-    // Scouts make the march cheaper, so quote what it actually costs today.
-    const cost = `${EXPLORE_MIN_HUMANS} villagers · ${EXPLORE_MIN_SOLDIERS} soldier · ${territoryExploreFood()} food · ${territoryExploreHours()} hours`;
-    const gained = territoryExploreYield(tile.id);
+    const blocker = callLegacy("territoryExploreBlocker", tile.id);
+    const cost = `${window.EXPLORE_MIN_HUMANS} villagers · ${window.EXPLORE_MIN_SOLDIERS} soldier · ${callLegacy("territoryExploreFood")} food · ${callLegacy("territoryExploreHours")} hours`;
+    const gained = callLegacy("territoryExploreYield", tile.id);
     setTileGizmo(button, "🚩", "Explore", false);
-    button.onclick = explore;
+    button.onclick = window.explore;
     button.disabled = !!blocker;
     button.dataset.tipTitle = "Send an expedition";
     button.dataset.tip = `An expedition settles a whole district, not one field — about ${gained} hexes around this one. Everything on them joins your stores-on-land, and the country beyond comes into view.`;
@@ -482,9 +916,23 @@ function refreshTilePanel() {
   }
 }
 
+const FEATURE_NAMES = { waterfall: "a waterfall", oasis: "an oasis", reef: "a reef", hotSpring: "a hot spring", ford: "a ford" };
+const LANDMARK_NAMES = {
+  standingStones: "standing stones", motherTree: "the Mother Tree", dragonBones: "dragon bones",
+  crystalMine: "a crystal mine", shipwreck: "a shipwreck", ruinedTower: "a ruined tower",
+  hotSpring: "a hot spring", boneOrchard: "the bone orchard", volcano: "a volcano", oasis: "an oasis",
+};
+
+function featureName(feature) { return FEATURE_NAMES[feature] || feature; }
+function landmarkName(landmark) { return LANDMARK_NAMES[landmark] || landmark; }
+function buildingName(type) {
+  const def = IMPROVEMENTS[type];
+  return def && def.name ? def.name.toLowerCase() : type;
+}
+
 function setTileGizmo(button, icon, label, danger) {
   if (!button) return;
-  const iconSvg = typeof getIcon === "function" ? getIcon(danger ? "seize" : "explore") : icon;
+  const iconSvg = typeof window.getIcon === "function" ? window.getIcon(danger ? "seize" : "explore") : icon;
   button.innerHTML = `<span class="rw-gizmo__icon">${iconSvg}</span><span class="rw-gizmo__label">${label}</span>`;
   button.classList.toggle("rw-gizmo--danger", !!danger);
   button.classList.toggle("rw-gizmo--go", !danger);
@@ -497,7 +945,7 @@ function resourceBars(tile) {
     const entry = tile.resources[type];
     const percent = entry.max ? Math.round((entry.amount / entry.max) * 100) : 0;
     const note = entry.renewable ? "replenishes in autumn" : "finite — never regrows";
-    const iconSvg = typeof getIcon === "function" ? getIcon(type) : (RESOURCE_ICONS[type] || "");
+    const iconSvg = typeof window.getIcon === "function" ? window.getIcon(type) : (RESOURCE_ICONS[type] || "");
     return `
       <div class="bar">
         <span>${iconSvg} <b>${type}</b> <small>(${note})</small></span>
@@ -511,16 +959,18 @@ function refreshVillagesPanel() {
   const list = document.getElementById("villageList");
   if (!list || !hexMap) return;
   const kinds = { player: "your village", rival: "neighbour", garlock: "garlock camp" };
-  const tileIcon = typeof getIcon === "function" ? getIcon("tiles") : "⬡";
-  list.innerHTML = villagesGet().map((village) => {
-    const tiles = hexMap.getTilesOwnedBy(village.id).length;
+  const tileIcon = typeof window.getIcon === "function" ? window.getIcon("tiles") : "⬡";
+  const connected = roads ? roads.connectedToTown("player") : new Set();
+  list.innerHTML = (callLegacy("villagesGet") || []).map((village) => {
+    const tiles = hexMap.countOwnedBy(village.id);
     const known = village.kind === "player" || hexMap.isRevealed(village.homeTileId);
+    const partner = village.kind === "rival" && known && connected.has(village.homeTileId);
     return `
       <li class="villagelist__row villagerow ${known ? "" : "villagelist__row--unknown"}">
         <span>
           <i class="chip" style="background:${village.color}"></i>
           <b>${known ? village.name : "Uncharted Settlement"}</b>
-          <small style="color:var(--ink-faint); margin-left:6px;">(${kinds[village.kind] || village.kind})</small>
+          <small style="color:var(--ink-faint); margin-left:6px;">(${kinds[village.kind] || village.kind}${partner ? " · trading" : ""})</small>
         </span>
         <span style="display:flex; align-items:center; gap:4px;">
           <b>${known ? tiles : "?"}</b> ${tileIcon}
@@ -530,247 +980,55 @@ function refreshVillagesPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Minimap & Camera
+// Menu actions and camera helpers the HUD calls by name
 // ---------------------------------------------------------------------------
 
-// The world panel. Three layers, because it is redrawn on every frame of a
-// drag and there are thirty thousand tiles:
-//
-//   terrain   painted once, offscreen — the island never changes
-//   holdings  repainted only when land changes hands or is revealed
-//   the box   the only thing drawn on every viewport change
-let minimapTerrain = null;
-let minimapHoldings = null;
-let minimapHoldingsKey = "";
-
-function minimapProjection(canvas) {
-  const scale = Math.min(canvas.width / world.width, canvas.height / world.height);
-  return {
-    scale,
-    ox: (canvas.width - world.width * scale) / 2,
-    oy: (canvas.height - world.height * scale) / 2,
-    radius: Math.max(0.7, mapGrid.hexSize * scale * 0.9),
-  };
+function onLogEntry(text, kind) {
+  const host = document.getElementById("toasts");
+  if (!host) return;
+  const toast = document.createElement("div");
+  toast.className = "toast" + (kind ? ` toast--${kind}` : "");
+  toast.textContent = text;
+  host.appendChild(toast);
+  while (host.childElementCount > 4) host.firstElementChild.remove();
+  setTimeout(() => toast.remove(), 6100);
 }
 
-function buildMinimapTerrain(canvas) {
-  const layer = document.createElement("canvas");
-  layer.width = canvas.width;
-  layer.height = canvas.height;
-  const ctx = layer.getContext("2d");
-  const { scale, ox, oy, radius } = minimapProjection(canvas);
-
-  ctx.fillStyle = "#8fb4c4";
-  ctx.fillRect(0, 0, layer.width, layer.height);
-
-  // Grouped by colour: a few dozen fills instead of thirty thousand.
-  const byColor = new Map();
-  for (const tile of hexMap.getAllTiles()) {
-    if (tile.terrainType === "ocean") continue;
-    const color = MINIMAP_TERRAIN_TINT[tile.terrainType] || "rgba(180, 150, 110, 0.5)";
-    if (!byColor.has(color)) byColor.set(color, []);
-    byColor.get(color).push(tile);
-  }
-  for (const [color, tiles] of byColor) {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    for (const tile of tiles) {
-      const center = worldTileCenter(tile.q, tile.r, mapGrid);
-      const px = ox + center.x * scale;
-      const py = oy + center.y * scale;
-      ctx.moveTo(px + radius, py);
-      ctx.arc(px, py, radius, 0, Math.PI * 2);
-    }
-    ctx.fill();
-  }
-  return layer;
+function toggleLog() {
+  const panel = document.getElementById("logPanel");
+  panel.hidden = !panel.hidden;
+  const tab = document.querySelector('.rw-tab[data-tab="log"]');
+  if (tab) tab.classList.toggle("is-open", !panel.hidden);
 }
-
-// Who holds what, and what is still blank paper.
-function buildMinimapHoldings(canvas) {
-  const layer = document.createElement("canvas");
-  layer.width = canvas.width;
-  layer.height = canvas.height;
-  const ctx = layer.getContext("2d");
-  const { scale, ox, oy, radius } = minimapProjection(canvas);
-
-  // Fog first: everything not yet seen goes back to parchment.
-  if (!hexMap.mapmakingUnlocked) {
-    ctx.fillStyle = "#e2d2b2";
-    ctx.fillRect(0, 0, layer.width, layer.height);
-    ctx.globalCompositeOperation = "destination-out";
-    ctx.beginPath();
-    for (const tile of hexMap.getSeenTiles()) {
-      const center = worldTileCenter(tile.q, tile.r, mapGrid);
-      const px = ox + center.x * scale;
-      const py = oy + center.y * scale;
-      ctx.moveTo(px + radius * 1.4, py);
-      ctx.arc(px, py, radius * 1.4, 0, Math.PI * 2);
-    }
-    ctx.fill();
-    ctx.globalCompositeOperation = "source-over";
-  }
-
-  const byColor = new Map();
-  for (const [owner, ids] of hexMap.tilesByOwner) {
-    const color = owner === "player" ? "#c29339" : villageColor(owner) || "#888888";
-    if (!byColor.has(color)) byColor.set(color, []);
-    for (const id of ids) {
-      const tile = hexMap.getTile(id);
-      if (tile && hexMap.isRevealed(id)) byColor.get(color).push(tile);
-    }
-  }
-  for (const [color, tiles] of byColor) {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    for (const tile of tiles) {
-      const center = worldTileCenter(tile.q, tile.r, mapGrid);
-      const px = ox + center.x * scale;
-      const py = oy + center.y * scale;
-      ctx.moveTo(px + radius, py);
-      ctx.arc(px, py, radius, 0, Math.PI * 2);
-    }
-    ctx.fill();
-  }
-
-  // Where the villages stand.
-  for (const village of villagesGet()) {
-    const homeTile = hexMap.getTile(village.homeTileId);
-    if (!homeTile || !hexMap.isRevealed(homeTile.id)) continue;
-    const center = worldTileCenter(homeTile.q, homeTile.r, mapGrid);
-    const px = ox + center.x * scale;
-    const py = oy + center.y * scale;
-    ctx.fillStyle = village.kind === "garlock" ? "#8c1f1f" : village.kind === "player" ? "#f2c14e" : "#2a4d3a";
-    ctx.beginPath();
-    ctx.arc(px, py, 2.6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-  }
-  return layer;
-}
-
-// Called whenever land changes hands, so the holdings layer is rebuilt then
-// rather than on every frame of a drag.
-function invalidateMinimap() {
-  minimapHoldingsKey = "";
-}
-
-function drawMinimap() {
-  const canvas = document.getElementById("minimap");
-  if (!canvas || !world || !viewport) return;
-  const ctx = canvas.getContext("2d");
-
-  if (!minimapTerrain) minimapTerrain = buildMinimapTerrain(canvas);
-  const key = `${hexMap.seenTiles.size}|${hexMap.claimOrder.length}|${hexMap.mapmakingUnlocked}`;
-  if (key !== minimapHoldingsKey) {
-    minimapHoldings = buildMinimapHoldings(canvas);
-    minimapHoldingsKey = key;
-  }
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(minimapTerrain, 0, 0);
-  if (minimapHoldings) ctx.drawImage(minimapHoldings, 0, 0);
-
-  ctx.strokeStyle = "#cbb28d";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
-
-  // Camera viewport indicator
-  const stage = document.getElementById("mapstage");
-  if (!stage) return;
-  const { scale, ox, oy } = minimapProjection(canvas);
-  const sRect = stage.getBoundingClientRect();
-  const fit = Math.min(sRect.width / world.width, sRect.height / world.height);
-  const offsetX = (sRect.width - world.width * fit) / 2;
-  const offsetY = (sRect.height - world.height * fit) / 2;
-  const view = viewport.getView();
-
-  const worldLeft = (-view.translateX / view.scale - offsetX) / fit;
-  const worldTop = (-view.translateY / view.scale - offsetY) / fit;
-  const worldW = (sRect.width / view.scale) / fit;
-  const worldH = (sRect.height / view.scale) / fit;
-
-  const vx = ox + worldLeft * scale;
-  const vy = oy + worldTop * scale;
-  const vw = worldW * scale;
-  const vh = worldH * scale;
-
-  ctx.strokeStyle = "#8c2a1c";
-  ctx.lineWidth = 1.8;
-  ctx.strokeRect(vx, vy, vw, vh);
-  ctx.fillStyle = "#8c2a1c";
-  const cs = 3;
-  ctx.fillRect(vx - 1, vy - 1, cs, cs);
-  ctx.fillRect(vx + vw - cs + 1, vy - 1, cs, cs);
-  ctx.fillRect(vx - 1, vy + vh - cs + 1, cs, cs);
-  ctx.fillRect(vx + vw - cs + 1, vy + vh - cs + 1, cs, cs);
-}
-
-function onMinimapClick(event) {
-  if (!viewport || !world) return;
-  const canvas = document.getElementById("minimap");
-  const rect = canvas.getBoundingClientRect();
-  const clickX = event.clientX - rect.left;
-  const clickY = event.clientY - rect.top;
-
-  const scale = Math.min(canvas.width / world.width, canvas.height / world.height);
-  const ox = (canvas.width - world.width * scale) / 2;
-  const oy = (canvas.height - world.height * scale) / 2;
-
-  const worldX = (clickX - ox) / scale;
-  const worldY = (clickY - oy) / scale;
-
-  const current = viewport.getView();
-  viewport.focusOn({ x: worldX, y: worldY }, { width: world.width, height: world.height }, current.scale);
-}
-
-// ---------------------------------------------------------------------------
-// Menu actions the HUD calls by name
-// ---------------------------------------------------------------------------
 
 function saveNow() {
-  const ok = saveGame(worldSeed);
-  updatelog(ok ? "Game saved." : "Could not save — this browser is not letting the page store anything.", ok ? "good" : "bad");
+  const ok = callLegacy("saveGame", worldSeed);
+  callLegacy("updatelog", ok ? "Game saved." : "Could not save — this browser is not letting the page store anything.", ok ? "good" : "bad");
 }
 
 function newGame() {
-  clearSavedGame();
+  callLegacy("clearSavedGame");
   location.search = "";
 }
 
-// Which way the garlocks are coming from, for the log and the raid alarm.
-// Returns something like " from the north-east", or "" if their camp has
-// not been found yet.
-function garlockDirectionText() {
-  if (!hexMap || typeof villagesGet !== "function") return "";
-  const camp = villagesGet().find((village) => village.kind === "garlock");
-  if (!camp) return "";
-  const home = hexMap.getAllTiles().find((tile) => tile.isStartingTile);
-  const campTile = hexMap.getTile(camp.homeTileId);
-  if (!home || !campTile) return "";
-  return ` from the ${directionBetween(home, campTile, mapGrid)}`;
-}
-
 function focusVillage() {
-  if (!viewport) return;
-  const current = viewport.getView();
-  viewport.focusOn(villageCenter(), { width: world.width, height: world.height }, Math.max(7, current.scale));
+  if (!renderer) return;
+  const centre = villageCenter();
+  renderer.camera.focusOn(centre.x, centre.y, Math.max(1.2, renderer.camera.zoom), { animate: true });
 }
 
 function focusSelectedTile() {
-  if (!viewport || !hexMap) return;
+  if (!renderer || !hexMap) return;
   const tile = hexMap.getSelectedTile();
   if (!tile) return;
-  const current = viewport.getView();
-  viewport.focusOn(worldTileCenter(tile.q, tile.r, mapGrid), { width: world.width, height: world.height }, Math.max(6, current.scale));
+  const centre = worldTileCenter(tile.q, tile.r, world.grid);
+  renderer.camera.focusOn(centre.x, centre.y, Math.max(1.0, renderer.camera.zoom), { animate: true });
 }
 
 function selectBestFrontier() {
   if (!hexMap) return;
   const frontier = hexMap.getFrontierTiles("player")
-    .filter((tile) => !["ocean", "lake"].includes(tile.terrainType));
+    .filter((tile) => !isWaterTerrain(tile.terrainType) || tile.terrainType === "river");
   if (!frontier.length) return;
   const worth = (tile) => Object.values(tile.resources || {}).reduce((total, entry) => total + (entry.amount || 0), 0);
   frontier.sort((a, b) => worth(b) - worth(a));
@@ -778,4 +1036,11 @@ function selectBestFrontier() {
   focusSelectedTile();
 }
 
-window.addEventListener("DOMContentLoaded", initGame);
+// The engine loads PixiJS with a top-level await, so this module can finish
+// evaluating AFTER DOMContentLoaded has already fired — in which case the
+// listener would never run. Start straight away if the page is ready.
+if (document.readyState === "loading") {
+  window.addEventListener("DOMContentLoaded", initGame);
+} else {
+  initGame();
+}

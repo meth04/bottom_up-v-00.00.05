@@ -1,11 +1,12 @@
 {
-  "_readme": "The world is generated from a seed (js/map/worldGen.js) in the style of Sếp's drawing, and painted by js/map/worldPainter.js. What you can change here: how big the world is, how many villages it has, what the player's home starts with, and what each kind of ground holds. NOTE: the grid is three times finer than it used to be — 216x144 hexes of 9.33px instead of 72x48 of 28px — so the island is the same size of paper with nine times as many hexes on it. Every terrain therefore holds about a ninth of what it used to, and one expedition claims a whole district of hexes rather than a single one (js/territory.js).",
+  "_readme": "The world is generated from a seed (js/world/worldGen.js, run in a Web Worker): several continents on a wide sea with mountain spines, rivers, lakes, deserts in the rain shadow and cold tundra in the north. What you can change here: how big the world is, how many villages and continents it has, what the player's home starts with, and what each kind of ground holds. NOTE: the grid is 360x240 hexes of 24 world units; a hex is a field, not a county, and one expedition claims a whole district of hexes (js/territory.js).",
 
   "world": {
-    "cols": 216,
-    "rows": 144,
-    "hexSize": 9.3333,
-    "villageCount": 30
+    "cols": 360,
+    "rows": 240,
+    "hexSize": 24,
+    "villageCount": 42,
+    "continents": 4
   },
 
   "_startingTile": "The hall's own hex. The village now begins holding the whole valley around it (js/territory.js, VILLAGE_RADIUS), so this no longer has to carry a whole game's worth of stores on its own — the thirty-odd hexes around it supply the rest, and because the hall is the oldest claim it is still the ground the village works dry first.",
@@ -81,6 +82,17 @@
     "lake": {
       "clay": { "amount": 20, "renewable": false }
     },
-    "ocean": {}
+    "ocean": {},
+    "hills": {
+      "grain": { "amount": 6, "renewable": true },
+      "stone": { "amount": 5, "renewable": false }
+    },
+    "desert": {
+      "stone": { "amount": 2, "renewable": false }
+    },
+    "cliffs": {
+      "stone": { "amount": 9, "renewable": false }
+    },
+    "shallows": {}
   }
 }

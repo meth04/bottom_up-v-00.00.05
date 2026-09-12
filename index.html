@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#1a2a38">
   <title>bottom up — A Village Survival Story</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -22,16 +23,47 @@
     </div>
   </div>
 
-  <!-- The world fills the window; everything else floats over it. -->
-  <div class="stage season--spring" id="mapstage">
-    <div class="mapviewport" id="mapviewport">
-      <div id="mapArtworkHost" class="maplayer"></div>
-      <div id="mapSettlementsHost" class="maplayer maplayer--passive"></div>
-      <div id="hexMapSvgHost" class="maplayer"></div>
-      <div id="mapVillagersHost" class="maplayer maplayer--passive"></div>
-      <div id="mapEffectsHost" class="maplayer maplayer--passive"></div>
+  <!-- The world fills the window; everything else floats over it.
+       js/engine/renderer.js puts its WebGL canvas inside this element. -->
+  <div class="stage season--spring" id="mapstage"></div>
+
+  <!-- Map tools: grid, lenses, and - once the village has learned to plan -
+       placing buildings and drawing roads by hand. Filled by js/main.js. -->
+  <div class="rw-maptools" id="mapTools" hidden>
+    <button class="rw-tool" id="toolGrid" onclick="toggleMapGrid()"
+            data-tip-title="Hex grid (G)" data-tip="Show the hexes the land is made of.">
+      <span class="rw-tool__icon">&#x2B21;</span><span class="rw-tool__label">Grid</span>
+    </button>
+    <button class="rw-tool" id="toolLens" onclick="toggleLensMenu()"
+            data-tip-title="Lenses (L)" data-tip="Colour the map by what it yields, who holds it, what is left, and which of your land the roads reach.">
+      <span class="rw-tool__icon">&#x25D0;</span><span class="rw-tool__label">Lens</span>
+    </button>
+    <div class="rw-lensmenu" id="lensMenu" hidden>
+      <button onclick="setMapLens(null); toggleLensMenu()">None</button>
+      <button onclick="setMapLens('yields'); toggleLensMenu()">Yields</button>
+      <button onclick="setMapLens('territory'); toggleLensMenu()">Territory</button>
+      <button onclick="setMapLens('resources'); toggleLensMenu()">What is left</button>
+      <button onclick="setMapLens('roads'); toggleLensMenu()">Roads</button>
+    </div>
+    <button class="rw-tool" id="toolBuild" hidden onclick="toggleBuildPalette()"
+            data-tip-title="Place buildings (B)" data-tip="Choose where a house, a barn or a work site stands instead of letting the village decide.">
+      <span class="rw-tool__icon">&#x2302;</span><span class="rw-tool__label">Place</span>
+    </button>
+    <button class="rw-tool" id="toolRoad" hidden onclick="toggleRoadTool()"
+            data-tip-title="Draw roads (R)" data-tip="Click where a road starts and where it ends. Land the roads reach yields more, and carts carry the goods home." data-tip-cost="1 wood per hex &middot; 1 hour per 4 hexes">
+      <span class="rw-tool__icon">&#x2307;</span><span class="rw-tool__label">Road</span>
+    </button>
+    <button class="rw-tool" id="toolFps" onclick="toggleFpsMeter()"
+            data-tip-title="Frame rate (F3)" data-tip="How smoothly the map is drawing, and the detail level the game picked for this device.">
+      <span class="rw-tool__icon">&#x25D4;</span><span class="rw-tool__label">FPS</span>
+    </button>
+    <div class="rw-buildpalette" id="buildPalette" hidden>
+      <div class="rw-pane__head">Place <small>then click a hex on the map</small></div>
+      <div class="rw-pane__body" id="buildPaletteBody"></div>
     </div>
   </div>
+  <div class="rw-toolhint" id="toolHint" hidden></div>
+  <div class="rw-fps" id="fpsMeter" hidden>&mdash; fps</div>
 
   <!-- ================================================================= -->
   <!-- Colonist bar — every soul in the village, across the top          -->
@@ -575,9 +607,18 @@
           <input type="checkbox" id="settingsToggleMotion" checked onchange="setMotion(this.checked)">
           Enable living map animations (rivers, clouds, smoke)
         </label>
-        <label class="rw-check rw-check--row" style="margin-bottom: 16px;">
+        <label class="rw-check rw-check--row" style="margin-bottom: 8px;">
           <input type="checkbox" id="settingsToggleHelper" onchange="toggleHelperFromSettings(this.checked)">
           Silence learning helper
+        </label>
+        <label class="rw-check rw-check--row" style="margin-bottom: 16px;">
+          Map detail
+          <select id="settingsQuality" onchange="setQualityPreference(this.value)" style="margin-left:auto;">
+            <option value="auto">automatic</option>
+            <option value="low">low (phones, old laptops)</option>
+            <option value="mid">medium</option>
+            <option value="high">high</option>
+          </select>
         </label>
 
         <h4 style="margin: 0 0 10px; font-family: var(--font-display);">Keyboard Shortcuts</h4>
@@ -586,6 +627,8 @@
           <div><b>7</b> — Open Turn History</div>
           <div><b>Space</b> — End Turn</div>
           <div><b>Esc</b> — Close dialog or open Menu</div>
+          <div><b>G</b> — Hex grid &middot; <b>L</b> — Lenses &middot; <b>B</b> — Place &middot; <b>R</b> — Road &middot; <b>F3</b> — Frame rate</div>
+          <div><b>Drag</b> pan &middot; <b>Wheel / pinch</b> zoom &middot; <b>Double-tap</b> zoom in &middot; <b>Long press</b> centre a hex</div>
         </div>
       </div>
     </div>
@@ -625,15 +668,15 @@
           <li><b>Stone:</b> houses, the school, the army camp. <b>Finite:</b> stone never regrows once mined.</li>
           <li><b>Grain:</b> on plains and terraced hills; becomes food once Farming is researched.</li>
         </ul>
-        <p>The island runs from cold tundra and snowfields in the north to dry badlands in the south, with marshes in the wet lowlands, forests and birch woods between, and a shore all the way round. Open sea and deep lakes cannot be settled.</p>
-        <p><b>A hex is a field, not a county.</b> The map is 216 by 144 hexes — about thirty-one thousand of them — so an expedition does not trudge out to claim one field: it settles a whole <b>district</b>, the tile you picked and the wild ground around it. Seizing works the same way.</p>
+        <p>The world runs from snowfields and tundra in the north to deserts and badlands in the south, with mountain ranges and their foothills, rivers that widen as they gather tributaries and fall over waterfalls, marshes in the wet lowlands, forests and birch woods between, sea cliffs and beaches on the coasts, and shallows where boats can work. Open sea and deep lakes cannot be settled.</p>
+        <p><b>A hex is a field, not a county.</b> The world is 360 by 240 hexes — more than eighty thousand of them, across several continents — so an expedition does not trudge out to claim one field: it settles a whole <b>district</b>, the tile you picked and the wild ground around it. Seizing works the same way.</p>
         <p>And a village is founded on a <b>valley</b>, not a hex: you begin holding about thirty-seven hexes — the hall, the cottages, the fields that feed them and the commons beyond. The hall's own ground is the oldest claim, so it is still the first patch you work dry.</p>
 
         <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">Your Town</h3>
         <p>A settlement is drawn at its own size, spilling over the hexes it stands on, and it grows in stages you can read from across the map: a <b>clearing</b> with a hall and a market square; a <b>fenced village</b> once three buildings stand, with a palisade and ploughed fields beyond it; and a <b>walled town</b> at seven, with a stone curtain wall, towers and a gatehouse. Smoke rises from the roofs, and a jetty runs out into any water next door.</p>
         <p>Rival villages are built by the same rules, so how much land one has taken is visible at a glance. Garlock camps are not villages at all: a ring of stakes, war tents, a carved totem and heaps of bone.</p>
         <p>The figures walking your land are your villagers, and you can see what they are: a forester carries an axe, a mason a hammer, a farmer a hoe, a scholar a book. Each goes where their trade is — the forester to your woods, the mason to your rock — and <b>does the work</b> when they get there. Soldiers patrol the border instead. A few townsfolk never leave the square: somebody at the well, somebody minding a stall, children by the fire.</p>
-        <p>Out on land you hold, a <b>working district</b> stands about every ninth field — a fishery on the water, a lumber camp in the woods, a smithy and quarry in the rock, a farmstead on open ground — and roads run from your gate to each of them.</p>
+        <p>Out on land you hold, a <b>work site</b> stands about every ninth field — a fishery on the water, a lumber camp in the woods, a quarry in the rock, a farm or pasture on open ground — and roads run from your gate to each of them. Carts carry the goods home along those roads, boats fish off the docks, and <b>land the roads reach yields more</b>. The old tracks between the villages are roads too: a neighbour your roads reach becomes a trading partner and sends a caravan every turn. From Act III you may place buildings and draw roads yourself (the Place and Road tools above the map).</p>
 
         <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">Trades</h3>
         <p>Once a <b>school</b> or an <b>army camp</b> stands, a villager can be taken off the work rota to learn a trade. They are gone for a turn or two — and still eat — then come back better at one job: farmers, foresters and masons gather more per hour, scholars make research cheaper, scouts make expeditions cheaper, captains stiffen the shield line. Only the first three of any trade add to its bonus.</p>
@@ -696,17 +739,8 @@
     </div>
   </div>
 
+  <!-- The rules: classic scripts sharing plain globals (see js/bridge.js). -->
   <script src="js/icons.js"></script>
-  <script src="js/map/hexMath.js"></script>
-  <script src="js/map/hexMap.js"></script>
-  <script src="js/map/hexRenderer.js"></script>
-  <script src="js/map/artStyle.js"></script>
-  <script src="js/map/worldGen.js"></script>
-  <script src="js/map/worldPainter.js"></script>
-  <script src="js/map/settlements.js"></script>
-  <script src="js/map/mapEffects.js"></script>
-  <script src="js/map/mapViewport.js"></script>
-  <script src="js/map/villagers.js"></script>
   <script src="js/villages.js"></script>
   <script src="js/save.js"></script>
   <script src="js/territory.js"></script>
@@ -717,6 +751,8 @@
   <script src="js/empire.js"></script>
   <script src="js/game.js"></script>
   <script src="js/ui.js"></script>
-  <script src="js/main.js"></script>
+  <script src="js/bridge.js"></script>
+  <!-- The world and the engine: ES modules (PixiJS). -->
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 // territory.js
 //
-// The bridge between the map (js/map/) and the village logic in game.js.
+// The bridge between the map (js/world/hexMap.js) and the village logic in game.js.
 // Everything the village gathers comes off the tiles it holds; exploring a
 // wild tile next door claims it; seizing takes a tile off another village.
 // Sếp's core loop:
@@ -278,6 +278,90 @@ function territorySeize(tileId) {
   working_hours -= SEIZE_WORK_HOURS;
   territoryChangedCallback({ kind: "seize", tile, from: previousOwner });
   return tile;
+}
+
+// ---- Roads and trade ----------------------------------------------------------
+//
+// The road network (js/world/roads.js) is built by main.js and put on
+// window as `roadNetwork`. Everything below works without it — before the
+// map has loaded, or in a test — and simply gives the plain answer.
+
+// A village whose fields are joined to its hall by road brings more home
+// in the same hours: up to +30% with every resource tile connected.
+const ROAD_GATHER_BONUS = 0.3;
+
+// Every fifteen hexes of connected road are worth a point of defence
+// (patrols move faster, word travels), up to three.
+const ROAD_DEFENCE_PER_TILES = 15;
+const ROAD_DEFENCE_CAP = 3;
+
+// What a trading partner sends each turn.
+const TRADE_FOOD_PER_PARTNER = 2;
+const TRADE_WOOD_PER_PARTNER = 1;
+
+function territoryRoadNetwork() {
+  return typeof roadNetwork !== "undefined" && roadNetwork ? roadNetwork : null;
+}
+
+function territoryRoadMultiplier() {
+  const network = territoryRoadNetwork();
+  if (!network) return 1;
+  return 1 + ROAD_GATHER_BONUS * network.efficiencyFor("player");
+}
+
+// How many hexes the hall can reach by road (the hall itself counts).
+function territoryConnectedCount() {
+  const network = territoryRoadNetwork();
+  return network ? network.connectedToTown("player").size : 0;
+}
+
+function territoryRoadDefence() {
+  return Math.min(ROAD_DEFENCE_CAP, Math.floor(territoryConnectedCount() / ROAD_DEFENCE_PER_TILES));
+}
+
+// Whether a village trades with us over the sea: a sea lane joins the two
+// and the player has built a dock. Sea lanes come from the generated
+// world, which main.js puts on window as `world`; without it there is no
+// sea trade, only the roads.
+function territorySeaPartner(village) {
+  if (typeof world === "undefined" || !world || !Array.isArray(world.seaLanes)) return false;
+  if (!territoryMap) return false;
+  let dock = false;
+  for (const type of territoryMap.getBuildings("player").values()) if (type === "dock") dock = true;
+  if (!dock) return false;
+  return world.seaLanes.some((lane) =>
+    (lane.from === "player" && lane.to === village.id) || (lane.to === "player" && lane.from === village.id));
+}
+
+// Once a turn, from main.js's afterTurnEnded(): every rival village whose
+// hall the road network reaches (or a sea lane with a dock) sends a little
+// food and wood. Returns the partners' ids so the map can show the carts.
+function territoryTradeTurn() {
+  if (!territoryMap || typeof villagesGet !== "function") return [];
+  const network = territoryRoadNetwork();
+  const connected = network ? network.connectedToTown("player") : new Set();
+  const partners = [];
+  for (const village of villagesGet()) {
+    if (village.kind !== "rival") continue;
+    if (!territoryMap.isRevealed(village.homeTileId)) continue;
+    if (connected.has(village.homeTileId) || territorySeaPartner(village)) partners.push(village.id);
+  }
+  if (!partners.length) return partners;
+
+  // Food only fits if there is room in the barns; wood keeps anywhere.
+  const foodOffered = TRADE_FOOD_PER_PARTNER * partners.length;
+  const room = Math.max(0, storage_capacity - timbermellow_count);
+  const foodTaken = Math.min(room, foodOffered);
+  const woodTaken = TRADE_WOOD_PER_PARTNER * partners.length;
+  timbermellow_count += foodTaken;
+  wood += woodTaken;
+
+  const names = partners.map((id) => villageName(id)).join(", ");
+  if (typeof updatelog === "function") {
+    updatelog(`Traders from ${names} came up the road with ${foodTaken} timbermellow${foodTaken === 1 ? "" : "s"} and ${woodTaken} wood.`, "good");
+  }
+  if (typeof turnReportNote === "function") turnReportNote(`trade brought ${foodTaken} food and ${woodTaken} wood`, "good");
+  return partners;
 }
 
 // One-line description of what a tile holds, for the log and tile panel.

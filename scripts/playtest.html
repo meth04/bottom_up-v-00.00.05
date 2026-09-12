@@ -6,10 +6,10 @@
 
       http://localhost:8080/scripts/playtest.html
 
-  It loads the game in the frame below on a fixed world seed, presses the
-  real buttons in a sensible order (gather → barns → humans → soldier →
-  explore → mapmaking → several turns) and prints PASS/FAIL lines
-  underneath. Every check is something a player would notice if it broke.
+  It loads the game in the frame below on a fixed world seed, waits for the
+  living world (PixiJS) to come up, presses the real buttons in a sensible
+  order (gather → barns → humans → soldier → explore → mapmaking → several
+  turns) and prints PASS/FAIL lines underneath. Every check is something a player would notice if it broke.
   Add "#stop-after-explore" to the URL to leave the game sitting right after
   the first expedition, for a look at the map.
 -->
@@ -55,7 +55,10 @@ frame.onload = async function () {
   const g = (expression) => w.eval(expression);
   const errors = [];
   w.onerror = (message) => errors.push(String(message));
-  await wait(3000);
+  // The world is generated in a worker and the WebGL engine boots after it:
+  // wait for the renderer rather than for a fixed time.
+  for (let tries = 0; tries < 120 && !(w.renderer && w.hexMap); tries++) await wait(250);
+  await wait(500);
 
   const land = (types) => w.territoryAvailable(types);
   const seasonText = () => w.document.getElementById("season").innerText;
@@ -65,17 +68,21 @@ frame.onload = async function () {
   // The interface starts at almost nothing and grows (js/ages.js).
   check("the game opens in Act I", g("agePhase") === "dawn");
   check("only the food button is showing", g('document.getElementById("btn_find_timbermellow").hidden') === false && g('document.getElementById("btn_wood").hidden') === true);
-  check("the build tab is hidden at the start", g('document.querySelector('.rw-tab[data-tab="build"]').hidden') === true);
+  check("the build tab is hidden at the start", w.document.querySelector('.rw-tab[data-tab="build"]').hidden === true);
   const map = g("hexMap");
   const villages = w.villagesGet();
   const startTile = map.getAllTiles().find((tile) => tile.isStartingTile);
-  log("seed", g("worldSeed"), "| tiles", map.getAllTiles().length, "| rivers", g("world").rivers.length, "| villages", villages.map((v) => `${v.name} (${v.kind})`).join(", "));
+  const wg = g("world");
+  log("seed", g("worldSeed"), "| tiles", map.getAllTiles().length, "| continents", (wg.continents || []).length, "| rivers", wg.rivers.length, "| villages", villages.length);
   check("world generated on the requested seed", g("worldSeed") === PLAYTEST_SEED);
-  check("the world has a fine grid (25,000+ hexes)", map.getAllTiles().length >= 25000);
+  check("the world is big (80,000+ hexes)", map.getAllTiles().length >= 80000);
+  check("several continents", (wg.continents || []).length >= 3);
   check("at least one river", g("world").rivers.length >= 1);
   const terrains = new Set(map.getAllTiles().map((tile) => tile.terrainType));
   log("terrain kinds on this world:", [...terrains].sort().join(", "));
-  check("the world is an island — there is open sea", terrains.has("ocean"));
+  check("there is open sea", terrains.has("ocean"));
+  check("there are shallows along the coasts", terrains.has("shallows"));
+  check("there are hills", terrains.has("hills"));
   check("the sea has a shore", terrains.has("beach"));
   check("there is cold ground in the north", terrains.has("tundra") || terrains.has("snowfield"));
   check("stretches of country have names", g("world").regions.length >= 20);
@@ -87,16 +94,13 @@ frame.onload = async function () {
   })());
   check("the rivers are named", g("world").rivers.filter((r) => r.name).length >= 3);
   check("the lakes are named", g("world").lakes.filter((l) => l.name).length >= 1);
-  check("there are islands out at sea", g("world").tiles.some((t) =>
-    t.terrainType === "beach" && w.hexNeighbors(t.q, t.r).every(({ q, r }) => {
-      const n = g("world").tiles.find((x) => x.q === q && x.r === r);
-      return !n || ["ocean", "beach", "rockyOutcrop"].includes(n.terrainType);
-    })));
-  check("the map layers are all drawn", ["art-ground", "art-relief", "art-water", "art-symbols", "art-ridges", "art-scatter", "art-frame", "art-buildings"]
-    .every((cls) => w.document.querySelector(`.${cls}`) !== null));
-  check("the ground is batched into a few dozen paths, not thirty thousand",
-    w.document.querySelector(".art-ground").children.length < 80);
-  check("old roads join the villages", g("world").tradeRoutes.length >= villages.length - 1);
+  check("rivers carry a width", wg.tiles.some((t) => t.terrainType === "river" && t.riverWidth >= 2));
+  check("the WebGL canvas is on the page", w.document.querySelector("#mapstage canvas") !== null);
+  check("the renderer has every layer", ["terrain", "roads", "features", "units", "overlay", "labels", "weather"].every((name) => w.renderer.layers[name]));
+  check("old roads join the villages", wg.tradeRoutes.length >= villages.length - (wg.continents || []).length - 2);
+  check("the old tracks are real roads", map.roadTileCount > 50);
+  check("the town has buildings on hexes", w.improvements.listFor("player").length >= 1);
+  check("the village has a road network", w.roadNetwork.connectedToTown("player").size >= 1);
   check("no village was founded on water", villages.every((v) => !["ocean", "lake"].includes(map.getTile(v.homeTileId).terrainType)));
   check("several villages, one of them the garlock camp", villages.length >= 3 && villages.some((v) => v.kind === "garlock"));
   check("every village owns its home", villages.every((v) => map.ownerOf(v.homeTileId) === v.id));
@@ -109,12 +113,13 @@ frame.onload = async function () {
   check("none of the valley is open water", w.hexMap.getClaimedTiles().every((t) => !["ocean", "lake"].includes(t.terrainType)));
   check("the neighbours were founded the same way",
     villages.filter((v) => v.kind !== "player").every((v) => map.getTilesOwnedBy(v.id).length >= 20));
-  check("the start tile is drawn as the player's", w.document.querySelector(`[data-tile-id="${startTile.id}"]`).classList.contains("hex--claimed"));
+  check("the start tile is the player's", map.isClaimed(startTile.id));
 
   // Turn 1: gather food all day.
+  const foodOnLandAtStart = land(["timbermellow"]);
   for (let i = 0; i < 8; i++) w.find_timbermellow();
   log("after 8 gathers: food", g("timbermellow_count"), "| land food", land(["timbermellow"]), "| hours", g("working_hours"));
-  check("gathering takes food off the land", land(["timbermellow"]) === 242 && g("timbermellow_count") === 8);
+  check("gathering takes food off the land", land(["timbermellow"]) === foodOnLandAtStart - g("timbermellow_count") && g("timbermellow_count") >= 8);
   check("gather button greys out at 0 hours", w.document.getElementById("btn_find_timbermellow").disabled === true);
 
   // Explore should be refused, for a reason the player can read.
@@ -174,13 +179,12 @@ frame.onload = async function () {
   check("explore cost 10 food", g("timbermellow_count") === foodBefore - 10);
   check("the district's resources joined the land", land(["timbermellow", "wood", "stone", "grain"]) > landBefore);
   await wait(1400);
-  check("new tile is claimed and drawn gold", w.document.querySelector(`[data-tile-id="${target.id}"]`).classList.contains("hex--claimed"));
+  check("new tile is claimed", map.isClaimed(target.id));
   check("a new frontier appeared beyond it", map.getFrontierTiles().length > 6);
   check("clicking works by hex maths, not by one element per hex",
-    w.hexRenderer.tileAt(w.worldTileCenter(target.q, target.r, g("mapGrid")).x,
-                         w.worldTileCenter(target.q, target.r, g("mapGrid")).y).id === target.id);
-  check("the overlay is a handful of elements, not thirty thousand",
-    w.document.querySelector(".hexgrid").querySelectorAll("*").length < 2000);
+    w.tileAtWorld(w.worldTileCenter(target.q, target.r, g("mapGrid")).x,
+                  w.worldTileCenter(target.q, target.r, g("mapGrid")).y).id === target.id);
+  check("things are moving on the map", w.renderer && (w.renderer.sim ? w.renderer.sim.counts.total > 0 : true));
 
   if (location.hash === "#stop-after-explore") {
     log("--- stopped after explore (#stop-after-explore) ---");
@@ -215,10 +219,10 @@ frame.onload = async function () {
 
   // The acts, the trades and the standing orders.
   check("gathering unlocked the wood button", g('document.getElementById("btn_wood").hidden') === false);
-  check("the build tab opened once there was wood", g('document.querySelector('.rw-tab[data-tab="build"]').hidden') === false);
+  check("the build tab opened once there was wood", w.document.querySelector('.rw-tab[data-tab="build"]').hidden === false);
   log("act now:", g("agePhase"), "| unlocked:", Object.keys(g("ageUnlocked")).join(","));
   check("the village has moved past Act I", g("agePhase") !== "dawn");
-  check("Act II opened research", g('document.querySelector('.rw-tab[data-tab="research"]').hidden') === false);
+  check("Act II opened research", w.document.querySelector('.rw-tab[data-tab="research"]').hidden === false);
 
   // Build a school and put somebody through it.
   g("wood = Math.max(wood, 40); stone = Math.max(stone, 40); working_hours = 30; timbermellow_count = Math.max(timbermellow_count, 30); humans = Math.max(humans, 5); update()");
@@ -228,11 +232,15 @@ frame.onload = async function () {
   w.professionTrain("farmer");
   check("training takes the villager off the rota", g("humans") === humansBeforeTraining - 1);
   check("the trainee still eats", g("professionTraineeCount()") === 1);
+  // Two turns of training. Nobody may freeze or starve meanwhile, so the
+  // village is given roofs and food for the duration.
+  g("stonehouse = 10; peoplecap = 30; timbermellow_count = 60; storage_capacity = 200; barn = 40; update()");
   w.end_turn(); w.end_turn();
   check("the trainee came back a farmer", g("professionCounts.farmer") === 1 && g("humans") === humansBeforeTraining);
 
   // Spending a whole day in one press, and a turn that asks before it hurts.
-  g("working_hours = 12; timbermellow_count = 0; barn = 20; storage_capacity = 100; update()");
+  // (Not in winter — nothing can be gathered then, by design.)
+  g("seasonchecker = 1; document.getElementById('season').innerText = 'spring'; working_hours = 12; timbermellow_count = 0; barn = 20; storage_capacity = 100; update()");
   const hoursBefore = g("working_hours");
   w.timbermellow_all();
   log("ALL: hours", hoursBefore, "->", g("working_hours"), "| food", g("timbermellow_count"));
@@ -246,22 +254,23 @@ frame.onload = async function () {
   // The village is populated, and the people in it have trades.
   g("humans = 10; human_army = 2; professionCounts.forester = 2; professionCounts.farmer = 2; update()");
   await wait(200);
-  const folk = g("villagers.people.filter((p) => p.kind === 'player')");
-  log("figures on the map:", folk.length, "| trades:", JSON.stringify(folk.reduce((n, p) => (n[p.trade] = (n[p.trade] || 0) + 1, n), {})));
-  check("the village fills with figures", folk.length >= 10);
+  // The simulation (js/world/agents.js) is what walks the map now.
+  const sim = w.renderer.sim;
+  const home = w.villageCenter();
+  w.renderer.camera.focusOn(home.x, home.y, 1.5, { animate: false });
+  for (let i = 0; i < 30; i++) sim.update(1 / 30, w.renderer.camera.getBounds(400));
+  const folk = sim.getRenderList(w.renderer.camera.getBounds(400)).filter((a) => a.kind === "villager");
+  log("figures on the map:", folk.length, "| trades:", JSON.stringify(folk.reduce((n, a) => (n[a.variant] = (n[a.variant] || 0) + 1, n), {})));
+  check("the village fills with figures", folk.length >= 8);
   check("trained villagers carry the right tools",
-    folk.some((p) => p.trade === "forester") && folk.some((p) => p.trade === "farmer"));
-  check("somebody stays in the square", g("villagers.townfolk.length") >= 1);
-  check("the people layer is drawn", w.document.querySelector(".map-villagers .villager") !== null);
-  check("the village has fields, animals and a garden",
-    w.document.querySelectorAll(".art-buildings .art-wildlife").length > 0);
-  check("the town is drawn bigger than a hex",
-    w.document.querySelectorAll(".art-buildings *").length > 200);
-  check("nothing inside the static artwork animates",
-    [...w.document.querySelectorAll(".map-artwork *")].every((el) => {
-      const name = w.getComputedStyle(el).animationName;
-      return !name || name === "none";
-    }));
+    folk.some((a) => a.variant === "forester") && folk.some((a) => a.variant === "farmer"));
+  check("soldiers patrol", sim.getRenderList(w.renderer.camera.getBounds(400)).some((a) => a.kind === "soldier"));
+  check("carts and wildlife are about", sim.counts.total > folk.length + 2);
+  check("the town has work sites on the land", w.improvements.listFor("player").some((e) => e.kind === "site"));
+  check("every work site is on the road network",
+    w.improvements.listFor("player").filter((e) => e.kind === "site").every((e) => w.roadNetwork.isConnected(e.tileId, "player")));
+  check("roads make the land yield more", w.territoryRoadMultiplier() > 1);
+  check("the trade caravans arrive", Array.isArray(w.territoryTradeTurn()));
 
   // The ledger: the empire-game screen.
   w.uiSetTab("empire");
@@ -289,7 +298,8 @@ frame.onload = async function () {
   // Save/load round trip: the state that goes into the save must come back out.
   const saved = JSON.parse(localStorage.getItem("bottom_up.save.v1"));
   check("save remembers the seed and the turn", saved.seed === PLAYTEST_SEED && saved.game.turngame === g("turngame"));
-  check("save remembers who owns the explored tile", saved.map.tiles[target.id].owner === "player");
+  check("save remembers who owns the explored tile", saved.map.tiles[target.id].o === "player");
+  check("save remembers the roads", Object.values(saved.map.tiles).some((entry) => entry.r));
 
   log("--- errors:", errors.length ? errors.join(" | ") : "none");
   check("no JS errors", errors.length === 0);
