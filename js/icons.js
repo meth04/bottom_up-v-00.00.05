@@ -223,6 +223,21 @@ const GAME_ICONS = {
     <path d="M8 7h8M8 11h6" stroke="#eed8b2" stroke-width="1.5"/>
   </svg>`,
 
+  shield: `<svg viewBox="0 0 24 24" class="game-icon" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/>
+    <path d="M12 3v18"/>
+    <path d="M5 11h14"/>
+  </svg>`,
+  tower: `<svg viewBox="0 0 24 24" class="game-icon" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 21V9h8v12"/>
+    <path d="M6 9V5h3v2h2V5h2v2h2V5h3v4"/>
+    <path d="M11 21v-4h2v4"/>
+  </svg>`,
+  raid: `<svg viewBox="0 0 24 24" class="game-icon" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 20l7-7"/><path d="M14 4l6 6"/><path d="M13 5l6 6"/>
+    <path d="M20 20l-7-7"/><path d="M10 4l-6 6"/><path d="M11 5l-6 6"/>
+    <path d="M9 9l6 6"/>
+  </svg>`,
   close: `<svg viewBox="0 0 24 24" class="game-icon" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
     <line x1="18" y1="6" x2="6" y2="18"/>
     <line x1="6" y1="6" x2="18" y2="18"/>

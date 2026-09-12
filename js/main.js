@@ -265,6 +265,8 @@ async function boot() {
 
   if (saved) {
     callLegacy("gameSetState", saved.game);
+    if (saved.raids) callLegacy("raidsSetState", saved.raids);
+    if (saved.objectives) callLegacy("objectivesSetState", saved.objectives);
     callLegacy("updatelog", `Welcome back — turn ${saved.game.turngame}, saved ${new Date(saved.savedAt).toLocaleString()}.`, "good");
   } else {
     callLegacy("updatelog", "Your village stands in a single timbermellow grove. When it starts to run dry, explore the land around it — and mind the neighbours.", "good");
@@ -313,6 +315,7 @@ function installBridge() {
     refreshTilePanel, refreshVillagesPanel, refreshMapEffects, afterTurnEnded,
     onHexTileClick, onLogEntry, toggleLog, focusVillage, focusSelectedTile,
     selectBestFrontier, saveNow, newGame, garlockDirectionText, onGarlockRaid,
+    raidFromPanel, onRaidLaunched, onRaidIncoming, onRaidResolved, focusVillageById,
     homeTile, villageCenter, regionOfTile, terrainClimateNote,
     tileAtWorld, setMapLens, toggleMapGrid, setMapTool, cancelMapTool, toggleFpsMeter,
     toggleLensMenu, toggleBuildPalette, toggleRoadTool, setQualityPreference,
@@ -400,11 +403,14 @@ function terrainClimateNote(tile) {
 
 function playerCounters() {
   const state = legacy();
+  const defences = callLegacy("raidDefenceCounters") || {};
   return {
     houses: state.stonehouse || 1,
     barns: state.barn || 1,
     schools: state.school || 0,
     camps: state.armycamp || 0,
+    palisades: defences.palisades || 0,
+    watchtowers: defences.watchtowers || 0,
   };
 }
 
@@ -501,6 +507,9 @@ function onTerritoryChanged(event) {
 // game.js calls this at the end of end_turn().
 function afterTurnEnded() {
   const state = legacy();
+  // Raids resolve first: the warbands that set out last turn arrive before
+  // anybody settles new land (js/raids.js).
+  callLegacy("raidsTakeTurn");
   callLegacy("villagesTakeTurn", hexMap, world.grid, state.turngame, worldSeed, window.updatelog);
   const partners = callLegacy("territoryTradeTurn");
   if (partners && partners.length && sim) sim.onEvent({ kind: "trade", partners });
@@ -508,14 +517,98 @@ function afterTurnEnded() {
   refreshTilePanel();
   refreshVillagesPanel();
   minimap.invalidate();
+  // Raids and trade changed the stores after update() ran: redraw the HUD
+  // so the alert list and the readout are not a turn behind.
+  callLegacy("update");
   callLegacy("saveGame", worldSeed);
 
-  if ((state.humans || 0) <= 0 && (state.human_army || 0) <= 0) {
-    const year = Math.floor((state.turngame - 1) / 8) + 1;
+  const after = legacy();
+  if ((after.humans || 0) <= 0 && (after.human_army || 0) <= 0) {
+    const year = Math.floor((after.turngame - 1) / 8) + 1;
     callLegacy("showGameOverScreen",
       "Famine and the bitter elements have claimed the final settler. The fires in the village have gone cold.",
-      { year, turns: state.turngame, tiles: hexMap.countClaimed() });
+      { year, turns: after.turngame, tiles: hexMap.countClaimed() });
+    return;
   }
+  if (callLegacy("raidsCheckVictory") === true) {
+    const report = callLegacy("raidsContinentReport") || {};
+    callLegacy("showVictoryScreen", {
+      year: Math.floor((after.turngame - 1) / 8) + 1,
+      turns: after.turngame,
+      tiles: hexMap.countClaimed(),
+      vassals: report.vassals || 0,
+      raidsWon: report.raidsWon || 0,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Raids: the inspect pane's Raid button and the warbands on the map
+// ---------------------------------------------------------------------------
+
+function raidFromPanel() {
+  const tile = hexMap && hexMap.getSelectedTile();
+  if (!tile || !tile.owner || tile.owner === "player") return;
+  const blocker = callLegacy("raidBlocker", tile.owner);
+  if (blocker) {
+    callLegacy("updatelog", blocker, "bad");
+    return;
+  }
+  callLegacy("raidLaunch", tile.owner);
+  refreshTilePanel();
+}
+
+function villageHomeCenter(villageId) {
+  const village = (callLegacy("villagesGet") || []).find((candidate) => candidate.id === villageId);
+  const tile = village ? hexMap.getTile(village.homeTileId) : null;
+  return tile ? worldTileCenter(tile.q, tile.r, world.grid) : null;
+}
+
+function focusVillageById(villageId) {
+  const centre = villageHomeCenter(villageId);
+  if (centre && renderer) renderer.camera.focusOn(centre.x, centre.y, Math.max(1.0, renderer.camera.zoom), { animate: true });
+}
+
+// raids.js: your soldiers set out. They are seen marching to the village.
+function onRaidLaunched(villageId, soldiers) {
+  if (sim) sim.onEvent({ kind: "warband", fromVillageId: "player", toVillageId: villageId, unit: "soldier", count: Math.min(8, soldiers || 2), thenBack: true });
+  const centre = villageCenter();
+  if (renderer) renderer.floatText(centre.x, centre.y - HEX_SIZE * 2, `${soldiers} soldiers march`, "bad");
+}
+
+// raids.js: scouts from a neighbour were seen; their warband is on the road.
+function onRaidIncoming(villageId, turn) {
+  const centre = villageHomeCenter(villageId);
+  if (centre && renderer) renderer.flashTile(hexMap.homeTileOf(villageId) ? hexMap.homeTileOf(villageId).id : null, 0xd9534f);
+}
+
+// raids.js: a raid resolved, ours or theirs.
+function onRaidResolved(result) {
+  if (!result) return;
+  const village = (callLegacy("villagesGet") || []).find((candidate) => candidate.id === result.villageId);
+  const unit = village && village.kind === "garlock" ? "garlock" : "rival";
+  if (result.incoming) {
+    if (sim) sim.onEvent({ kind: "warband", fromVillageId: result.villageId, toVillageId: "player", unit, count: 5, thenBack: !!result.won });
+    const home = homeTile();
+    if (renderer && home) {
+      renderer.flashTile(home.id, result.won ? 0xf2c14e : 0xd9534f);
+      const centre = villageCenter();
+      renderer.floatText(centre.x, centre.y - HEX_SIZE * 2, result.won ? "raid repelled!" : "raided!", result.won ? "good" : "bad");
+    }
+  } else {
+    const centre = villageHomeCenter(result.villageId);
+    const target = hexMap.homeTileOf(result.villageId);
+    if (renderer && target) renderer.flashTile(target.id, result.won ? 0xf2c14e : 0xd9534f);
+    if (renderer && centre) {
+      const loot = result.loot || {};
+      const text = result.won
+        ? `+${loot.food || 0} 🌰 +${loot.wood || 0} 🪵 +${loot.stone || 0} 🪨`
+        : `${result.lost || 0} soldiers lost`;
+      renderer.floatText(centre.x, centre.y - HEX_SIZE * 2, text, result.won ? "good" : "bad");
+    }
+  }
+  refreshVillagesPanel();
+  refreshTilePanel();
 }
 
 // game.js calls this as a raid resolves: the warband is seen marching.
@@ -848,13 +941,30 @@ function refreshTilePanel() {
   const foreign = tile.owner && tile.owner !== "player";
   const connected = tile.owner === "player" && roads ? roads.isConnected(tile.id, "player") : false;
 
+  const raidInfo = foreign && revealed ? callLegacy("raidVillageInfo", tile.owner) : null;
+  const raidBlocker = foreign ? callLegacy("raidBlocker", tile.owner) : "";
+  const raidUnlocked = callLegacy("ageHas", "raiding") === true;
   const key = [
     tile.id, revealed, claimed, frontier, foreign, tile.owner, tile.road, tile.improvement, tile.building, connected,
     Object.keys(tile.resources).map((type) => tile.resources[type].amount + "/" + tile.resources[type].max).join(","),
     foreign ? callLegacy("territorySeizeBlocker", tile.id) : callLegacy("territoryExploreBlocker", tile.id),
+    raidInfo ? JSON.stringify(raidInfo) : "", raidBlocker, raidUnlocked,
   ].join("|");
   if (key === tilePanelKey) return;
   tilePanelKey = key;
+
+  // The Raid gizmo only shows for another village's land, once raiding is
+  // unlocked (js/ages.js). Its tooltip carries the odds.
+  const raidButton = document.getElementById("raidButton");
+  if (raidButton) {
+    raidButton.hidden = !(foreign && revealed && raidUnlocked);
+    raidButton.disabled = !!raidBlocker;
+    raidButton.dataset.tipBlock = raidBlocker || "";
+    if (raidInfo) {
+      raidButton.dataset.tipTitle = `Raid ${raidInfo.name}`;
+      raidButton.dataset.tipCost = `${window.RAID_MIN_SOLDIERS || 2}+ soldiers · ${window.RAID_FOOD_COST || 6} food · ${window.RAID_WORK_HOURS || 4} hours · their defence ${raidInfo.defence}, your attack ${raidInfo.attack} (${raidInfo.odds})`;
+    }
+  }
 
   if (!revealed) {
     info.innerHTML = `
@@ -879,12 +989,20 @@ function refreshTilePanel() {
     if (tile.improvement) details.push(buildingName(tile.improvement));
     if (tile.road) details.push(claimed ? (connected ? "road to the village" : "road, not yet joined to yours") : "an old track");
     if (tile.snowCapped) details.push("snow-capped");
+    let raidLine = "";
+    if (raidInfo) {
+      const tone = raidInfo.vassal ? "rw-raidinfo--good" : raidInfo.odds === "hopeless" || raidInfo.odds === "risky" ? "rw-raidinfo--bad" : raidInfo.odds === "even" ? "" : "rw-raidinfo--good";
+      raidLine = raidInfo.vassal
+        ? `<p class="rw-raidinfo rw-raidinfo--good"><b>Your vassal</b> — pays tribute every turn.</p>`
+        : `<p class="rw-raidinfo ${tone}">Defence <b>${raidInfo.defence}</b> · your attack <b>${raidInfo.attack}</b> · a raid looks <b>${raidInfo.odds}</b>${raidInfo.grudge ? ` · grudge ${raidInfo.grudge}` : ""}${raidInfo.reachable === false ? " · across the sea" : ""}</p>`;
+    }
     info.innerHTML = `
       <div class="rw-tileinfo__name">${TERRAIN_NAMES[tile.terrainType] || tile.terrainType}</div>
       ${region ? `<div class="rw-tileinfo__region">${region.name}${continent ? ` · ${continent.name}` : ""}</div>` : (continent ? `<div class="rw-tileinfo__region">${continent.name}</div>` : "")}
       <div class="rw-tileinfo__state ${stateClass}">${chip}${state}</div>
       ${climate ? `<div class="rw-tileinfo__climate">${climate}</div>` : ""}
       ${details.length ? `<div class="rw-tileinfo__climate">${details.join(" · ")}</div>` : ""}
+      ${raidLine}
       ${resourceBars(tile)}`;
   }
 
@@ -965,12 +1083,14 @@ function refreshVillagesPanel() {
     const tiles = hexMap.countOwnedBy(village.id);
     const known = village.kind === "player" || hexMap.isRevealed(village.homeTileId);
     const partner = village.kind === "rival" && known && connected.has(village.homeTileId);
+    const info = known && village.kind !== "player" ? callLegacy("raidVillageInfo", village.id) : null;
+    const status = info ? (info.vassal ? " · vassal" : ` · defence ${info.defence}${info.grudge ? ` · grudge ${info.grudge}` : ""}`) : "";
     return `
-      <li class="villagelist__row villagerow ${known ? "" : "villagelist__row--unknown"}">
+      <li class="villagelist__row villagerow ${known ? "" : "villagelist__row--unknown"}" ${known ? `onclick="focusVillageById('${village.id}')" style="cursor:pointer"` : ""}>
         <span>
           <i class="chip" style="background:${village.color}"></i>
           <b>${known ? village.name : "Uncharted Settlement"}</b>
-          <small style="color:var(--ink-faint); margin-left:6px;">(${kinds[village.kind] || village.kind}${partner ? " · trading" : ""})</small>
+          <small style="color:var(--ink-faint); margin-left:6px;">(${kinds[village.kind] || village.kind}${partner ? " · trading" : ""}${status})</small>
         </span>
         <span style="display:flex; align-items:center; gap:4px;">
           <b>${known ? tiles : "?"}</b> ${tileIcon}

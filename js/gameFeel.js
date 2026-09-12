@@ -109,6 +109,8 @@ function showSeasonBanner(seasonName, year) {
  * Triggers screen shake and red danger vignette when Garlocks raid
  * @param {string} direction - direction from which attack comes
  */
+// `direction` is where the garlocks are coming from; a rival village passes
+// its own name instead (js/raids.js), and the horn names them.
 function triggerRaidAlarm(direction) {
   const stage = document.getElementById("mapstage");
   const vignette = document.getElementById("dangerVignette");
@@ -125,8 +127,12 @@ function triggerRaidAlarm(direction) {
 
   // Toast
   if (typeof uiToast === "function") {
+    const who = String(direction || "the dark");
+    const isDirection = /^(north|south|east|west)/i.test(who) || who === "the dark";
     uiToast(
-      `WAR HORNS SOUND! Garlock raiding party spotted advancing from the ${direction.toUpperCase()}!`,
+      isDirection
+        ? `WAR HORNS SOUND! Garlock raiding party spotted advancing from the ${who.toUpperCase()}!`
+        : `WAR HORNS SOUND! Raiders from ${who} are on the road to your barns!`,
       "bad"
     );
   }

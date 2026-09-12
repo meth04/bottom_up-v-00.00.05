@@ -170,6 +170,15 @@
       <canvas id="minimap" width="294" height="186"></canvas>
     </section>
 
+    <!-- Objectives: what to do next, as a checklist (js/objectives.js) -->
+    <section class="rw-panel rw-objectives" id="objectivePanel" hidden>
+      <div class="rw-panel__head">
+        <span>Objectives</span>
+        <small class="rw-hint" id="objectiveCount"></small>
+      </div>
+      <ul class="rw-objectives__list" id="objectiveList"></ul>
+    </section>
+
     <!-- Learning helper: tells the player what to do next -->
     <section class="rw-panel rw-tutor" id="tutorPanel" hidden>
       <div class="rw-panel__head">
@@ -207,6 +216,12 @@
               data-tip="Picks the richest piece of wild ground touching yours and takes you to it.">
         <span class="rw-gizmo__icon" data-icon="explore"></span>
         <span class="rw-gizmo__label">Find land</span>
+      </button>
+      <button class="rw-gizmo rw-gizmo--danger" id="raidButton" hidden onclick="raidFromPanel()"
+              data-tip-title="Raid this village"
+              data-tip="Send your soldiers to plunder their barns. Win and you carry off food, wood and stone; lose and you bury soldiers. They will remember it.">
+        <span class="rw-gizmo__icon" data-icon="raid"></span>
+        <span class="rw-gizmo__label">Raid</span>
       </button>
       <button class="rw-gizmo" id="focusButton" onclick="focusSelectedTile()"
               data-tip-title="Centre the view"
@@ -323,6 +338,22 @@
               <span class="rw-gizmo__icon" data-icon="soldier"></span>
               <span class="rw-gizmo__label">Army camp</span>
               <span class="rw-gizmo__cost">10🪵 8🪨</span>
+            </button>
+            <button class="rw-gizmo" id="btn_palisade" hidden onclick="make_palisade()"
+                    data-tip-title="Palisade"
+                    data-tip="A ring of stakes round the village. Every ring adds 3 to your defence when raiders come. Up to three rings."
+                    data-tip-cost="12 wood · 2 hours">
+              <span class="rw-gizmo__icon" data-icon="shield"></span>
+              <span class="rw-gizmo__label">Palisade</span>
+              <span class="rw-gizmo__cost">12🪵 2h</span>
+            </button>
+            <button class="rw-gizmo" id="btn_watchtower" hidden onclick="make_watchtower()"
+                    data-tip-title="Watchtower"
+                    data-tip="Sees raiders coming a turn earlier and adds 2 to your defence. Up to three towers."
+                    data-tip-cost="6 wood · 4 stone · 1 hour">
+              <span class="rw-gizmo__icon" data-icon="tower"></span>
+              <span class="rw-gizmo__label">Watchtower</span>
+              <span class="rw-gizmo__cost">6🪵 4🪨</span>
             </button>
           </div>
         </div>
@@ -471,6 +502,8 @@
                     data-tip-title="New world" data-tip="Throws this save away and rolls a brand new world.">New World</button>
             <button class="rw-btn" onclick="openCodexModal()"
                     data-tip-title="Codex" data-tip="Read the survival rules and game lore.">Survival Codex</button>
+            <button class="rw-btn" onclick="showIntroModal()"
+                    data-tip-title="How to play" data-tip="The five things to know, again.">How to Play</button>
             <button class="rw-btn" onclick="openSettingsModal()"
                     data-tip-title="Settings" data-tip="Adjust preferences and seed.">Settings</button>
             <label class="rw-check rw-check--row">
@@ -681,6 +714,11 @@
         <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">Trades</h3>
         <p>Once a <b>school</b> or an <b>army camp</b> stands, a villager can be taken off the work rota to learn a trade. They are gone for a turn or two — and still eat — then come back better at one job: farmers, foresters and masons gather more per hour, scholars make research cheaper, scouts make expeditions cheaper, captains stiffen the shield line. Only the first three of any trade add to its bonus.</p>
 
+        <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">Raids, Walls and Vassals</h3>
+        <p><b>The goal:</b> make every village on your continent your vassal. Once you have two soldiers, select any land of a village you have found and press <b>Raid</b>: your warband marches out, and next turn it fights their defence. Win and you carry off food, wood and stone; lose and you bury soldiers. Beat a village twice, or crush it outright, and it <b>bends the knee</b> — a vassal pays tribute every turn and never raids you.</p>
+        <p>They remember. A village you have raided holds a <b>grudge</b> and sends raiders of its own; a rich village with weak defence tempts them anyway. Your <b>defence</b> is soldiers (3 each), captains (2), army camps (1), <b>palisades</b> (3 each, up to three rings), <b>watchtowers</b> (2 each, and they spot raiders a turn earlier) and roads to your borders. Their defence grows with their land — you can read it in the inspect pane and the Villages tab before you march.</p>
+        <p>The <b>Objectives</b> panel on the right always shows the next three things worth doing; click one to be taken to the button that does it.</p>
+
         <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">The Garlocks</h3>
         <p>From Act III they raid roughly every six turns, from the direction of their camp. Each soldier is worth 3 to your defence, each captain 2 more, each army camp 1. Match their strength and they break on your line; fall short and they take food, wood and barns. Stand undefended long enough and the village is sacked.</p>
 
@@ -705,6 +743,39 @@
         <div style="display:flex; gap:10px; margin-top:18px;">
           <button class="title-btn title-btn--primary" onclick="cancelEndTurn()" style="flex:1;">Go back</button>
           <button class="title-btn" onclick="confirmEndTurn()" style="flex:1;">End turn anyway</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- How to play, shown once after Begin Journey (js/objectives.js) -->
+  <div id="introModal" class="modal-backdrop" hidden>
+    <div class="modal-window" style="max-width: 560px;">
+      <div class="modal-window__head">
+        <span>How to play</span>
+        <button class="rw-x" onclick="closeIntroModal()">✕</button>
+      </div>
+      <div class="modal-window__body">
+        <ol class="rw-intro" id="introSteps"></ol>
+        <div style="display:flex; gap:10px; margin-top:16px;">
+          <button class="title-btn title-btn--primary" onclick="closeIntroModal()" style="flex:1;">Let's go</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Victory: the continent is yours -->
+  <div id="victoryModal" class="modal-backdrop" hidden>
+    <div class="modal-window" style="max-width: 480px; text-align: center;">
+      <div class="modal-window__head" style="justify-content: center; background: #3a6829; color: #fff;">
+        <span>THE CONTINENT IS YOURS</span>
+      </div>
+      <div class="modal-window__body">
+        <p id="victoryCause" style="font-size: 15px; font-style: italic; color: #2f5a23; margin: 8px 0 16px;"></p>
+        <div id="victoryStats" class="summary-stats"></div>
+        <div style="display: flex; gap: 10px; margin-top: 18px;">
+          <button class="title-btn title-btn--primary" onclick="closeVictoryScreen()" style="flex: 1;">Keep playing</button>
+          <button class="title-btn" onclick="newGame()" style="flex: 1;">Seek New World</button>
         </div>
       </div>
     </div>
@@ -745,12 +816,14 @@
   <script src="js/save.js"></script>
   <script src="js/territory.js"></script>
   <script src="js/professions.js"></script>
+  <script src="js/raids.js"></script>
   <script src="js/ages.js"></script>
   <script src="js/gameFeel.js"></script>
   <script src="js/turnReport.js"></script>
   <script src="js/empire.js"></script>
   <script src="js/game.js"></script>
   <script src="js/ui.js"></script>
+  <script src="js/objectives.js"></script>
   <script src="js/bridge.js"></script>
   <!-- The world and the engine: ES modules (PixiJS). -->
   <script type="module" src="js/main.js"></script>

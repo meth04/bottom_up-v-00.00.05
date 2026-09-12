@@ -298,6 +298,7 @@ const ROAD_DEFENCE_CAP = 3;
 // What a trading partner sends each turn.
 const TRADE_FOOD_PER_PARTNER = 2;
 const TRADE_WOOD_PER_PARTNER = 1;
+const TRADE_MAX_PARTNERS = 4;
 
 function territoryRoadNetwork() {
   return typeof roadNetwork !== "undefined" && roadNetwork ? roadNetwork : null;
@@ -344,7 +345,14 @@ function territoryTradeTurn() {
   for (const village of villagesGet()) {
     if (village.kind !== "rival") continue;
     if (!territoryMap.isRevealed(village.homeTileId)) continue;
+    // A village you have raided sends no traders (js/raids.js), and a
+    // vassal pays tribute instead of trading.
+    if (typeof raidGrudge !== "undefined" && raidGrudge[village.id] > 0) continue;
+    if (typeof raidVassals !== "undefined" && raidVassals[village.id]) continue;
     if (connected.has(village.homeTileId) || territorySeaPartner(village)) partners.push(village.id);
+    // A road network that reaches the whole continent is not a trade
+    // empire on turn one: only the nearest few markets send caravans.
+    if (partners.length >= TRADE_MAX_PARTNERS) break;
   }
   if (!partners.length) return partners;
 

@@ -199,6 +199,22 @@ const AGE_UNLOCKS = [
     when: () => ageAtLeast("famine"),
   },
   {
+    // With a soldier standing, the village starts thinking about walls —
+    // and about the neighbours' barns (js/raids.js).
+    id: "defences",
+    show: ["btn_palisade", "btn_watchtower"],
+    title: "Walls and Watchtowers",
+    note: "A ring of stakes and a tower to see over them. Every palisade adds 3 to your defence, every watchtower 2, and a tower spots raiders a turn earlier.",
+    when: () => human_army >= 1,
+  },
+  {
+    id: "raiding",
+    show: ["raidButton"],
+    title: "The Neighbours' Barns",
+    note: "Two soldiers can be sent to plunder a village you have found. Select any of its land and press Raid. Win and you carry off their stores; they will remember it, and they will come for yours.",
+    when: () => human_army >= 2,
+  },
+  {
     // Town planning: until now the village decided where things stood.
     // From the raids onward the player may place buildings and draw roads
     // by hand (the Place and Road tools above the map, js/main.js).

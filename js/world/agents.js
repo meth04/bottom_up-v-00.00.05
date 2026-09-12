@@ -5,7 +5,8 @@
 // on the roads, the boats off the fisheries, the trade ships on the sea
 // lanes, the deer in the woods and the birds overhead — and the one-off
 // processions the rules trigger: an expedition marching out to newly
-// claimed land, a garlock warband coming for the barns.
+// claimed land, a garlock warband coming for the barns, a raiding party
+// marching on a neighbour's hall (or a neighbour's on ours).
 //
 // None of it changes a rule. game.js never asks an agent anything; this is
 // the picture of the numbers, kept in step by syncPopulation() and nudged
@@ -748,9 +749,32 @@ export class AgentSim {
       case "seize":
         this.startExpedition(home, event.tileId);
         break;
-      case "raid":
-        this.startWarband(home, event.fromVillageId, !!event.repelled);
+      case "raid": {
+        // The garlocks come for the barns: their camp to the hall, and
+        // back into the trees if they were repelled.
+        const camp = this.villageTile(event.fromVillageId);
+        if (camp && camp !== home) {
+          this.startWarband({ fromTileId: camp.id, toTileId: home.id, kind: "garlock", count: 5, seconds: 6, thenBack: !!event.repelled, flee: !!event.repelled });
+        }
         break;
+      }
+      case "warband": {
+        // A raid between villages (js/raids.js): the player's soldiers
+        // marching on a neighbour's hall and home again, or a neighbour's
+        // raiders on the road here.
+        const from = this.villageTile(event.fromVillageId);
+        const to = this.villageTile(event.toVillageId);
+        if (!from || !to || from === to) break;
+        const village = (this.world.villages || []).find((x) => x.id === event.fromVillageId);
+        const unit = event.unit || (event.fromVillageId === "player" ? "soldier" : village && village.kind === "garlock" ? "garlock" : "rival");
+        this.startWarband({
+          fromTileId: from.id, toTileId: to.id, kind: unit,
+          count: clamp(Math.round(event.count || 4), 2, 8),
+          color: village ? village.color : null,
+          seconds: 6, thenBack: !!event.thenBack,
+        });
+        break;
+      }
       case "gather": {
         // Somebody near the hall is seen bringing the load in.
         const icon = YIELD_ICON[event.type] || null;
@@ -789,26 +813,50 @@ export class AgentSim {
     }
   }
 
-  // Five garlocks from their camp to the hall in about six seconds, then gone.
-  startWarband(home, fromVillageId, repelled) {
-    const camp = this.hexMap.homeTileOf(fromVillageId) ||
-      (() => { const v = (this.world.villages || []).find((x) => x.id === fromVillageId); return v ? this.hexMap.getTile(v.homeTileId) : null; })();
-    if (!camp) return;
-    const ids = this.roads.findPath(camp.id, home.id, { preferRoads: true, allowWater: false, maxCost: 900 });
-    const points = this.pointsFor(ids || [camp.id, home.id]);
+  // A village's hall tile. The player's is homeTile(); anyone else's comes
+  // from the map, or from the generated village record if the land under
+  // the hall has changed hands.
+  villageTile(villageId) {
+    if (villageId === "player") return this.homeTile();
+    const tile = this.hexMap.homeTileOf(villageId);
+    if (tile) return tile;
+    const village = (this.world.villages || []).find((x) => x.id === villageId);
+    return village ? this.hexMap.getTile(village.homeTileId) : null;
+  }
+
+  // A party marches from one hall to another in about `seconds`, then is
+  // gone — or, with `thenBack`, pauses at the far hall and marches home
+  // first. `flee` is the repelled garlock warband: it turns at the gate
+  // and runs. `kind` picks the figure: garlocks, the player's soldiers, or
+  // a rival's people (carriers tinted the village colour).
+  //
+  //   { fromTileId, toTileId, kind: "garlock"|"soldier"|"rival", count, color?, seconds, thenBack, flee }
+  startWarband({ fromTileId, toTileId, kind = "garlock", count = 5, color = null, seconds = 6, thenBack = false, flee = false }) {
+    const from = this.hexMap.getTile(fromTileId);
+    const to = this.hexMap.getTile(toTileId);
+    if (!from || !to) return;
+    const ids = this.roads.findPath(from.id, to.id, { preferRoads: true, allowWater: false, maxCost: 1500 });
+    const points = this.pointsFor(ids || [from.id, to.id]);
     if (points.length < 2) return;
     let length = 0;
     for (let i = 1; i < points.length; i++) length += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
-    const speed = Math.max(SPEED.garlock, length / 6);
-    for (let i = 0; i < 5; i++) {
+    const figure = kind === "rival" ? "villager" : kind === "soldier" ? "soldier" : "garlock";
+    const variant = kind === "rival" ? "carrier" : null;
+    const tint = kind === "rival" && color ? colorToNumber(color) : null;
+    const speed = Math.max(SPEED[figure] || SPEED.garlock, length / Math.max(1, seconds));
+    const mode = flee ? "warband-repelled" : thenBack ? "warband-return" : "warband";
+    for (let i = 0; i < count; i++) {
       const p = this.jitter(points[0].x, points[0].y, 0.6);
-      const agent = this.acquire("garlock", null, p.x, p.y);
+      const agent = this.acquire(figure, variant, p.x, p.y);
       agent.group = "event";
-      agent.mode = repelled ? "warband-repelled" : "warband";
+      agent.mode = mode;
       agent.data = points;
+      agent.tint = tint;
       agent.speed = agent.baseSpeed = speed * (0.96 + i * 0.02);
       agent.timer = i * 0.15;
       this.events.push(agent);
+      // Animals run from people; garlocks are not people.
+      if (figure !== "garlock") this.people.push(agent);
     }
   }
 
@@ -1182,7 +1230,10 @@ export class AgentSim {
         break;
       case "warband":
       case "warband-repelled":
-        agent.mode = agent.mode === "warband" ? "warband-march" : "warband-march-repelled";
+      case "warband-return":
+        agent.mode = agent.mode === "warband" ? "warband-march"
+          : agent.mode === "warband-repelled" ? "warband-march-repelled"
+          : "warband-march-return";
         this.follow(agent, points, 1, "walk");
         break;
       case "warband-arrived":
@@ -1193,6 +1244,11 @@ export class AgentSim {
         this.follow(agent, points, -1, "walk");
         agent.speed = agent.baseSpeed * 1.2;
         agent.timer = 1.5;
+        break;
+      case "warband-home":
+        // Done at the far hall: the same road back, then gone.
+        agent.mode = "warband-gone";
+        this.follow(agent, points, -1, "walk");
         break;
       case "trade-out":
         agent.mode = "trade-going";
@@ -1224,6 +1280,11 @@ export class AgentSim {
         agent.mode = "warband-flee";
         agent.state = "idle";
         agent.timer = 0.6;
+        break;
+      case "warband-march-return":
+        agent.mode = "warband-home";
+        agent.state = "work";                 // at the far hall's stores
+        agent.timer = 1.5;
         break;
       case "trade-going":
         agent.mode = "trade-there";

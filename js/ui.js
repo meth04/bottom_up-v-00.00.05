@@ -425,6 +425,23 @@ function uiBuildAlerts() {
     });
   }
 
+  // Raids under way and raiders on the road (js/raids.js). They matter
+  // more than idle hours, so they go in front of everything but starvation.
+  if (typeof raidsAlerts === "function") {
+    const raidAlerts = raidsAlerts() || [];
+    for (const alert of raidAlerts) {
+      if (!alert.icon) alert.icon = typeof getIcon === "function" ? getIcon(alert.level === "bad" ? "raid" : "shield") : "⚔";
+    }
+    const urgent = raidAlerts.filter((alert) => alert.level === "bad");
+    const rest = raidAlerts.filter((alert) => alert.level !== "bad");
+    alerts.splice(alerts.length && alerts[0].level === "bad" ? 1 : 0, 0, ...urgent);
+    alerts.push(...rest);
+  }
+
+  // The next objective, at the bottom: the checklist panel already shows
+  // it, this is just so the alert column is never empty of things to do.
+  if (typeof objectivesAlerts === "function") alerts.push(...(objectivesAlerts() || []));
+
   return alerts;
 }
 
@@ -700,6 +717,8 @@ function startGameFromTitle(loadSaved) {
     setTimeout(() => { titleScreen.hidden = true; }, 500);
   }
   if (typeof focusVillage === "function") focusVillage();
+  // The first time in this browser: how to play, in five lines (js/objectives.js).
+  if (typeof objectivesMaybeIntro === "function") setTimeout(objectivesMaybeIntro, 600);
 }
 
 function openSettingsModal() {

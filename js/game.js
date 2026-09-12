@@ -1110,4 +1110,7 @@
 
             //the colonist bar, the alerts and the tooltips (js/ui.js)
             if (typeof uiRefresh === "function") uiRefresh();
+
+            //the objective checklist (js/objectives.js)
+            if (typeof objectivesRefresh === "function") objectivesRefresh();
         }

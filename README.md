@@ -76,9 +76,30 @@ for the frame-rate readout.
 
 ### The goal
 
-There is no score and no ending yet. The story is a village outgrowing its
-environment, and it runs in **four acts** (see below). How far you get
-before the garlocks, the winter or the famine catch up with you is the game.
+**Rule the continent.** Survive the four acts of the First Age (below),
+then bring every village on your continent to its knees: raid them until
+they become your vassals and pay you tribute. The **Objectives** panel on
+the right always lists the next three things worth doing, and clicking one
+takes you to the button that does it. Lose everyone to the winter, the
+famine or the garlocks and the village falls.
+
+### Raids, walls and vassals
+
+* **Raiding.** With two soldiers you can select any land of a village you
+  have found and press **Raid**. The warband is seen marching across the
+  map; next turn it meets their defence. Win: you carry off food, wood and
+  stone in proportion to their land. Lose: you bury soldiers. Beat a village
+  twice — or crush it outright — and it becomes your **vassal**: tribute
+  every turn, and it never raids you.
+* **They raid back.** A village you have wronged holds a grudge and sends
+  raiders on a rhythm; a rich village with a weak defence tempts them
+  anyway. Scouts are seen a turn ahead — two with a watchtower.
+* **Defence** = soldiers (3 each) + captains (2) + army camps (1) +
+  **palisades** (3 each, up to three rings) + **watchtowers** (2 each) +
+  roads to your borders. The neighbours' defence grows with their land; the
+  inspect pane and the Villages tab show it before you march.
+* **Victory** comes when every rival and garlock camp on your continent is
+  your vassal. The other continents are still out there.
 
 ### The four acts of the First Age
 

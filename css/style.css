@@ -2606,3 +2606,49 @@ body {
   .rw-buildpalette { left: 0; right: auto; width: calc(100vw - 8px); }
   .rw-lensmenu { left: 0; right: auto; }
 }
+
+/* ---------------------------------------------------------------------- */
+/* Objectives, intro, raids                                               */
+/* ---------------------------------------------------------------------- */
+
+.rw-objectives { border-color: var(--edge-gold); }
+.rw-objectives__list { list-style: none; margin: 0; padding: 4px 6px 6px; display: flex; flex-direction: column; gap: 3px; }
+.rw-objective {
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border: 1px solid var(--edge-soft);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.35);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  text-align: left;
+  color: var(--ink-primary);
+  cursor: pointer;
+}
+.rw-objective:hover { background: rgba(255, 255, 255, 0.7); }
+.rw-objective__mark { font-size: 14px; text-align: center; color: var(--ink-faint); }
+.rw-objective--done { opacity: 0.6; }
+.rw-objective--done .rw-objective__mark { color: var(--accent-green); }
+.rw-objective--done .rw-objective__title { text-decoration: line-through; }
+.rw-objective__title { font-weight: 600; line-height: 1.2; }
+.rw-objective__hint { display: block; font-weight: 400; font-size: 11.5px; color: var(--ink-secondary); }
+.rw-objective__progress { font-size: 11px; color: var(--ink-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rw-objective__bar { grid-column: 2 / 4; height: 3px; background: var(--edge-soft); border-radius: 2px; overflow: hidden; }
+.rw-objective__bar i { display: block; height: 100%; background: var(--accent-green); }
+.rw-objective--new { animation: rw-flash 1.6s ease 1; }
+
+.rw-intro { margin: 0; padding-left: 22px; font-size: 14.5px; line-height: 1.45; }
+.rw-intro li { margin-bottom: 8px; }
+.rw-intro b { color: #7a3811; }
+
+.rw-raidinfo { font-family: var(--font-ui); font-size: 12.5px; color: var(--ink-secondary); margin: 4px 0 0; }
+.rw-raidinfo b { color: var(--ink-primary); }
+.rw-raidinfo--good b { color: var(--accent-green); }
+.rw-raidinfo--bad b { color: var(--accent-wax-red); }
+
+@media (max-width: 600px) {
+  .rw-objectives { display: none; }
+}

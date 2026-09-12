@@ -19,6 +19,10 @@ function saveGame(seed) {
     game: gameGetState(),
     map: hexMap.serialize(),
     villages: villagesGet(),
+    // Raids, defences and grudges (js/raids.js); the objective checklist
+    // (js/objectives.js). Both are optional so an older save still loads.
+    raids: typeof raidsGetState === "function" ? raidsGetState() : null,
+    objectives: typeof objectivesGetState === "function" ? objectivesGetState() : null,
   };
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(state));

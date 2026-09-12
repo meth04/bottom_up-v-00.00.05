@@ -51,6 +51,7 @@ export const IMPROVEMENTS = {
   armyCamp:      { name: "Army camp",     kind: "town", counter: "camps",   spriteBase: "building/armyCamp" },
   market:        { name: "Market",        kind: "town", spriteBase: "building/market" },
   watchtower:    { name: "Watchtower",    kind: "town", spriteBase: "building/watchtower" },
+  palisade:      { name: "Palisade",      kind: "town", spriteBase: "building/palisade" },
   well:          { name: "Well",          kind: "town", spriteBase: "building/well" },
   dock:          { name: "Dock",          kind: "town", needsWater: true, spriteBase: "building/dock" },
   garlock_tent:  { name: "Garlock tent",  kind: "town", spriteBase: "building/garlock_tent" },
@@ -195,6 +196,10 @@ export class Improvements {
   // counters without a counter of their own: a well once there are two
   // houses, a market at four, a watchtower once there is an army camp or
   // the garlocks have come, a dock when the town stands by water.
+  //
+  // The defences follow js/raids.js's counters: `watchtowers` towers (at
+  // least the one the army camp earns) on the edge of town facing out, and
+  // six stakes of palisade per ring built, two hexes out from the hall.
   syncTown(villageId, counters, preferredTileId) {
     const home = this.hexMap.homeTileOf(villageId);
     if (!home) return { placed: [], removed: [] };
@@ -207,8 +212,9 @@ export class Improvements {
       armyCamp: counters.camps || 0,
       well: houses >= 2 ? 1 : 0,
       market: houses >= 4 ? 1 : 0,
-      watchtower: (counters.camps || 0) >= 1 || counters.raided ? 1 : 0,
+      watchtower: Math.max(counters.watchtowers || 0, (counters.camps || 0) >= 1 || counters.raided ? 1 : 0),
       dock: houses >= 3 && this.townHasShore(home, villageId) ? 1 : 0,
+      palisade: (counters.palisades || 0) * 6,
     };
     return this.syncBuildings(villageId, home, "hall", wanted, preferredTileId);
   }
@@ -272,8 +278,9 @@ export class Improvements {
       }
       if (missing <= 0) continue;
       if (!candidates) candidates = this.townPlots(home, villageId);
-      for (let i = 0; i < candidates.length && missing > 0; i++) {
-        const tile = candidates[i];
+      const plots = this.plotsForType(type, candidates, home, villageId);
+      for (let i = 0; i < plots.length && missing > 0; i++) {
+        const tile = plots[i];
         if (tile.building || tile.improvement) continue;
         if (!this.canPlace(type, tile.id, villageId).ok) continue;
         map.setBuilding(tile.id, type);
@@ -285,6 +292,29 @@ export class Improvements {
     map.endBatch();
     if (this.roads && (placed.length || removed.length)) this.roads.invalidate();
     return { placed, removed };
+  }
+
+  // Where a defence stands. Palisade stakes ring the town two hexes out
+  // from the hall (then three, then one, if the ground is short), so they
+  // read as a fence round the houses. Watchtowers go to the edge of town,
+  // on hexes that face somebody else's land or the wild first. Everything
+  // else keeps townPlots' order. A stable sort on the original index keeps
+  // it deterministic.
+  plotsForType(type, candidates, home, villageId) {
+    if (type !== "palisade" && type !== "watchtower") return candidates;
+    const ringOrder = type === "palisade" ? { 2: 0, 3: 1, 1: 2 } : { 3: 0, 2: 1, 1: 2 };
+    const facesOut = (tile) => {
+      if (type !== "watchtower") return 0;
+      for (const neighbor of tile.neighbors) if (neighbor.owner !== villageId) return 1;
+      return 0;
+    };
+    return candidates
+      .map((tile, index) => {
+        const ring = ringOrder[hexDistance(home, tile)];
+        return { tile, index, ring: ring === undefined ? 3 : ring, out: facesOut(tile) };
+      })
+      .sort((a, b) => a.ring - b.ring || b.out - a.out || a.index - b.index)
+      .map((plot) => plot.tile);
   }
 
   // Free hexes around the hall, best first: nearer rings before farther,
@@ -409,23 +439,31 @@ export class Improvements {
 
   // A rival town grows with the land it holds; a garlock camp pitches more
   // tents. Cheap to call every turn: nothing happens until a threshold moves.
+  //
+  // A strong village shows it (js/raids.js gives it the matching defence):
+  // a watchtower once it holds forty hexes, a stub of palisade at eighty,
+  // so the player can see from the map what a raid would be walking into.
   syncRival(village, tilesHeld) {
     if (!village || village.kind === "player") return;
     const held = tilesHeld || 0;
     let wanted;
     let centre;
+    const defences = {
+      watchtower: held >= 40 ? 1 : 0,
+      palisade: held >= 80 ? 4 : 0,
+    };
     if (village.kind === "garlock") {
       centre = "garlock_totem";
-      wanted = { garlock_tent: Math.min(9, 3 + Math.floor(held / 8)) };
+      wanted = Object.assign({ garlock_tent: Math.min(9, 3 + Math.floor(held / 8)) }, defences);
     } else {
       centre = "hall";
       const houses = Math.min(12, 2 + Math.floor(held / 6));
-      wanted = {
+      wanted = Object.assign({
         house: houses,
         barn: Math.floor(houses / 4),
         well: 1,
         market: houses >= 6 ? 1 : 0,
-      };
+      }, defences);
     }
     const key = JSON.stringify(wanted) + "|" + Math.floor(held / 12);
     if (this.rivalKeys.get(village.id) === key) return;
