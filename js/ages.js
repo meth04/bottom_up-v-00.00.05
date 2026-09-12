@@ -40,17 +40,24 @@ const AGE_GROWTH_POPULATION = 3;
 // growth -> raids: the village is worth robbing, and has had room to breathe.
 const AGE_RAIDS_MIN_TURNS_IN_GROWTH = 6;
 const AGE_RAIDS_POPULATION = 7;
-const AGE_RAIDS_TILES = 3;
+// A village is founded holding about thirty-seven hexes (js/territory.js,
+// VILLAGE_RADIUS), so "has grown" has to mean more than that — roughly the
+// home valley plus an expedition beyond it.
+const AGE_RAIDS_TILES = 60;
 
 // raids -> famine. Two ways in: the land genuinely fails, or the village
 // has weathered the raids long enough that the story moves on without it.
 // Act IV is a beat in the story, not only an accident of the numbers.
 const AGE_FAMINE_MIN_TURNS_IN_RAIDS = 8;
 const AGE_FAMINE_POPULATION = 8;
-const AGE_FAMINE_TILES = 6;
+const AGE_FAMINE_TILES = 110;            // the valley plus three expeditions
 const AGE_FAMINE_PATIENCE = 20;          // turns in Act III before it comes anyway
-const AGE_FAMINE_LAND_FRACTION = 0.35;   // of the most food it ever held
-const AGE_FAMINE_LAND_FLOOR = 120;       // ...or simply this little left
+// The fraction is what actually decides it: the land has failed when it
+// holds a third of the most it ever did. The absolute floor is only there
+// for the truly dire case, and has to sit well below what even the poorest
+// founding valley starts with — otherwise a hard seed begins in famine.
+const AGE_FAMINE_LAND_FRACTION = 0.35;
+const AGE_FAMINE_LAND_FLOOR = 45;
 
 // Once the famine has begun the land never fully recovers: every autumn a
 // little of each tile's carrying capacity is gone for good.
@@ -120,9 +127,12 @@ const AGE_UNLOCKS = [
   },
   {
     id: "bulk_five",
-    show: ["btn_timbermellow_5x", "btn_wood_5x", "btn_stone_5x", "btn_human_5x", "btn_soldier_5x"],
+    show: [
+      "btn_timbermellow_5x", "btn_wood_5x", "btn_stone_5x", "btn_human_5x", "btn_soldier_5x",
+      "btn_timbermellow_all", "btn_wood_all", "btn_stone_all",
+    ],
     title: "A Day's Work at Once",
-    note: "There are enough hands now that a whole morning can be spent on one job. The ×5 buttons do five hours in one press.",
+    note: "There are enough hands now that a whole morning can be spent on one job. ×5 does five hours in one press; ALL spends everything you have left.",
     when: () => humans >= 3,
   },
   {
@@ -145,6 +155,13 @@ const AGE_UNLOCKS = [
     title: "A Roof Before the Frost",
     note: "Two stone raises a house, and a house shelters three. Anyone without a roof dies in winter.",
     when: () => stone >= 2,
+  },
+  {
+    id: "empire_panel",
+    tabs: ["empire"],
+    title: "The Ledger",
+    note: "Somebody has started keeping accounts: how many of you there are, what a turn brings in and eats, what your ground is made of, and how the neighbours compare.",
+    when: () => turngame >= 3,
   },
   {
     id: "villages_panel",
@@ -184,8 +201,10 @@ const AGE_UNLOCKS = [
 ];
 
 // Every tab the interface has. Anything not unlocked is hidden outright.
-const AGE_ALL_TABS = ["gather", "build", "people", "research", "villages", "log", "menu"];
+const AGE_ALL_TABS = ["gather", "build", "people", "research", "villages", "empire", "log", "menu"];
 const AGE_ALWAYS_TABS = ["log", "menu"];
+
+// The empire ledger appears once there is an empire worth reading about.
 
 // ---------------------------------------------------------------------------
 // State
@@ -354,6 +373,51 @@ function ageApplyVisibility() {
   }
 }
 
+// How close the village is to the next act, and what it is waiting for.
+// Empire games show you the road to the next era; this is that bar.
+function ageProgress() {
+  const population = humans + human_army + professionTraineeCount();
+  const tiles = typeof territoryClaimedCount === "function" ? territoryClaimedCount() : 0;
+  const turnsHere = turngame - ageEnteredTurn;
+  const share = (have, need) => Math.max(0, Math.min(1, need <= 0 ? 1 : have / need));
+
+  if (agePhase === "dawn") {
+    const byTurn = share(turngame, AGE_GROWTH_TURN);
+    const byPeople = share(population, AGE_GROWTH_POPULATION);
+    return {
+      next: AGE_INFO.growth.name,
+      fraction: Math.min(byTurn, byPeople),
+      text: turngame < AGE_GROWTH_TURN
+        ? `live to turn ${AGE_GROWTH_TURN}`
+        : `raise ${AGE_GROWTH_POPULATION - population} more`,
+    };
+  }
+  if (agePhase === "growth") {
+    const byTime = share(turnsHere, AGE_RAIDS_MIN_TURNS_IN_GROWTH);
+    const bySize = Math.max(share(population, AGE_RAIDS_POPULATION), share(tiles, AGE_RAIDS_TILES));
+    return {
+      next: AGE_INFO.raids.name,
+      fraction: Math.min(byTime, bySize),
+      text: bySize < 1 ? `grow to ${AGE_RAIDS_POPULATION} people or ${AGE_RAIDS_TILES} hexes` : "the garlocks are noticing",
+    };
+  }
+  if (agePhase === "raids") {
+    const byTime = share(turnsHere, AGE_FAMINE_MIN_TURNS_IN_RAIDS);
+    const bySize = Math.max(share(population, AGE_FAMINE_POPULATION), share(tiles, AGE_FAMINE_TILES));
+    const landFood = ageLandFood();
+    const byLand = agePeakLandFood > 0
+      ? Math.max(0, Math.min(1, 1 - (landFood - agePeakLandFood * AGE_FAMINE_LAND_FRACTION) /
+          Math.max(1, agePeakLandFood * (1 - AGE_FAMINE_LAND_FRACTION))))
+      : 0;
+    return {
+      next: AGE_INFO.famine.name,
+      fraction: Math.max(Math.min(byTime, bySize), byLand),
+      text: byLand > 0.6 ? "the grove is failing" : "hold on, and keep spreading",
+    };
+  }
+  return { next: null, fraction: 1, text: "the last act of the First Age" };
+}
+
 // game.js calls this at the end of every update().
 function ageRefresh() {
   const landFood = ageLandFood();
@@ -373,6 +437,18 @@ function ageRenderBanner() {
   const info = AGE_INFO[agePhase];
   host.textContent = `${info.act} · ${info.name}`;
   host.className = `rw-agephase rw-agephase--${agePhase}`;
+
+  const progress = ageProgress();
+  const bar = document.getElementById("ageProgressFill");
+  if (bar) bar.style.width = `${Math.round(progress.fraction * 100)}%`;
+  const note = document.getElementById("ageProgressNote");
+  if (note) note.textContent = progress.next ? `next: ${progress.next}` : "the last act";
+
+  const wrap = document.getElementById("ageProgress");
+  if (wrap) {
+    wrap.dataset.tipTitle = `${info.act} — ${info.name}`;
+    wrap.dataset.tip = `${info.blurb}${progress.next ? ` To reach ${progress.next}: ${progress.text}.` : ""}`;
+  }
   host.dataset.tipTitle = `${info.act} — ${info.name}`;
   host.dataset.tip = info.blurb;
 }

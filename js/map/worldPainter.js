@@ -1,14 +1,38 @@
 // worldPainter.js
 //
-// Paints a generated world (worldGen.js) as clean 2D game tiles using the
-// sprites in artStyle.js, and — separately, because it changes during play
-// — the buildings, roads and banners of the villages on it.
+// Paints a generated world (worldGen.js), and — separately, because it
+// changes during play — the buildings, roads and banners of the villages
+// on it.
 //
 //   paintWorld(container, world)                      the ground, once
 //   paintSettlements(container, world, hexMap, stats) buildings + roads, redrawn as the village grows
 //
 // Both draw in the same coordinate space the hex overlay, effects and
 // villagers share.
+//
+// ---------------------------------------------------------------------------
+// How this copes with thirty thousand hexes
+//
+// Two rules, and everything else follows from them.
+//
+// 1. THE GROUND IS BATCHED. Every hex of the same terrain and the same tone
+//    goes into ONE <path>. Because a hexagon's outline is identical for
+//    every hex of a given size, each one costs a single "M x y" plus a
+//    constant tail (hexMath.hexOutlineTail) — so a terrain covering four
+//    thousand hexes is one element and a few kilobytes of path data, not
+//    four thousand elements. The same trick carries the relief, the cliffs,
+//    the sea and the surf.
+//
+// 2. DECORATION IS DRAWN BY AREA, NOT BY TILE. A forest is not "one tree
+//    stamp per hex" — it is a scatter of tree symbols at a density measured
+//    in pixels, which is what a drawn map does, and what keeps the picture
+//    looking the same whether a hex is 28 pixels across or 9. Those symbols
+//    are themselves batched: every conifer on the island is two paths.
+//
+// What stays fully drawn, sprite by sprite, is what the player is meant to
+// stop and look at: villages, landmarks, wildlife and the things people
+// left behind. Those are sized from DETAIL_SCALE rather than from the hex,
+// so they stay legible however fine the grid gets.
 
 const TERRAIN_FILL = {
   plains: ART_COLORS.plains,
@@ -31,27 +55,89 @@ const TERRAIN_FILL = {
   ocean: ART_COLORS.ocean,
 };
 
-// Ground that the undergrowth scatter should leave alone.
-const SCATTER_SKIP = ["ocean", "lake", "river"];
+// The order the ground is laid down in. Whatever is painted later bleeds
+// over what came before, so this is also the order in which one kind of
+// country gives way to another.
+const TERRAIN_PAINT_ORDER = [
+  "beach", "plains", "badlands", "tundra", "flowerMeadow",
+  "overgrownHighlands", "marsh", "birchWood", "forest", "denseBush", "taiga",
+  "timbermellowForest", "rockyOutcrop", "mountains", "snowfield", "lake", "river",
+];
 
-// What little things grow on each kind of ground, and how thickly.
-const SCATTER_RECIPES = {
-  plains:             { count: 5, tuft: "#b79a3e", pebble: 0.15, wildlife: 0.10 },
-  flowerMeadow:       { count: 6, tuft: "#5f8a3c", pebble: 0.08, wildlife: 0.16, flowers: true },
-  timbermellowForest: { count: 5, tuft: "#4d7a30", mushroom: 0.3, log: 0.25, wildlife: 0.12 },
-  forest:             { count: 5, tuft: "#3f6b2c", mushroom: 0.35, log: 0.3, wildlife: 0.14 },
-  birchWood:          { count: 5, tuft: "#6f9a3c", mushroom: 0.25, log: 0.25, wildlife: 0.16 },
-  denseBush:          { count: 6, tuft: "#2f5c2a", mushroom: 0.3, log: 0.2 },
-  taiga:              { count: 5, tuft: "#2b5238", mushroom: 0.2, log: 0.3, wildlife: 0.08 },
-  overgrownHighlands: { count: 4, tuft: "#7c8a3c", pebble: 0.35 },
-  rockyOutcrop:       { count: 5, pebble: 0.75, tuft: "#8a8f6d" },
-  mountains:          { count: 4, pebble: 0.8 },
-  badlands:           { count: 4, pebble: 0.5, tuft: "#8a7539" },
-  tundra:             { count: 5, pebble: 0.4, tuft: "#7f8560" },
-  snowfield:          { count: 3, pebble: 0.25 },
-  marsh:              { count: 4, tuft: "#6e8442", mushroom: 0.2, wildlife: 0.12 },
-  beach:              { count: 4, pebble: 0.6, tuft: "#b9ab74" },
+// Ground that gets the soft bleed into its neighbours.
+const TERRAIN_BLEEDS = new Set([
+  "beach", "plains", "badlands", "tundra", "flowerMeadow", "overgrownHighlands",
+  "marsh", "birchWood", "forest", "denseBush", "taiga", "timbermellowForest",
+  "rockyOutcrop", "mountains", "snowfield",
+]);
+
+// Sprites the player is meant to look at are drawn at this size whatever the
+// hex size is, so a village does not shrink to a smudge on a fine grid.
+const DETAIL_SCALE = 26;
+
+// ---------------------------------------------------------------------------
+// Terrain symbols
+//
+// Each recipe says what a hex of that ground scatters, and how densely. The
+// counts are per hex at the reference size, rescaled by area, so the island
+// carries the same amount of forest however fine the grid is.
+// ---------------------------------------------------------------------------
+
+const SYMBOL_REFERENCE_HEX = 28;
+
+const SYMBOL_RECIPES = {
+  timbermellowForest: { trees: { kind: "round", count: 3.2, color: "#5aa83a", shade: "#2f6b26", size: 0.42 } },
+  forest:             { trees: { kind: "round", count: 3.4, color: "#3f8a33", shade: "#1f5222", size: 0.40 } },
+  birchWood:          { trees: { kind: "round", count: 3.0, color: "#9ec24f", shade: "#5d7f2c", size: 0.36 } },
+  denseBush:          { trees: { kind: "round", count: 4.2, color: "#2d6b2c", shade: "#16401b", size: 0.34 } },
+  taiga:              { trees: { kind: "conifer", count: 3.8, color: "#25523a", shade: "#123024", size: 0.44 } },
+  flowerMeadow:       { tufts: { count: 3.4, color: "#5f8a3c", size: 0.30 }, blooms: 1.6 },
+  plains:             { tufts: { count: 2.6, color: "#b08f37", size: 0.28 }, furrows: 0.5 },
+  overgrownHighlands: { tufts: { count: 2.0, color: "#7c8a3c", size: 0.26 }, terrace: true },
+  tundra:             { tufts: { count: 2.2, color: "#79805c", size: 0.22 }, rocks: 0.7 },
+  marsh:              { reeds: { count: 3.6, color: "#b5a24a", size: 0.34 }, pools: 1.2 },
+  badlands:           { rocks: 1.1, cracks: 1.4 },
+  beach:              { rocks: 0.5, ripples: 1.3 },
+  rockyOutcrop:       { rocks: 2.4 },
+  mountains:          { peaks: 1.0 },
+  snowfield:          { drifts: 1.6 },
 };
+
+// How often something worth stopping for turns up. These are per hex, and
+// deliberately rare — on a thirty-thousand hex map even one in two hundred
+// is a hundred and fifty things to find.
+const DETAIL_CHANCE = {
+  flowerMeadow:       { wildlife: 0.012, beasts: ["sheep", "deer", "birds"], props: 0.005, things: ["beehive", "cairn"] },
+  plains:             { wildlife: 0.010, beasts: ["sheep", "birds"], props: 0.005, things: ["scarecrow", "cairn"] },
+  timbermellowForest: { wildlife: 0.014, beasts: ["deer", "boar"], props: 0.004, things: ["huntersBlind"] },
+  forest:             { wildlife: 0.012, beasts: ["deer", "boar", "birds"], props: 0.006, things: ["huntersBlind", "charcoalBurner"] },
+  birchWood:          { wildlife: 0.012, beasts: ["deer", "birds"], props: 0.004, things: ["huntersBlind"] },
+  denseBush:          { wildlife: 0.008, beasts: ["boar"], props: 0.003, things: ["cairn"] },
+  taiga:              { wildlife: 0.008, beasts: ["boar", "deer"], props: 0.005, things: ["cairn", "charcoalBurner"] },
+  overgrownHighlands: { wildlife: 0.008, beasts: ["sheep"], props: 0.005, things: ["cairn"] },
+  rockyOutcrop:       { wildlife: 0.007, beasts: ["eagle"], props: 0.005, things: ["cairn", "ruin"] },
+  mountains:          { wildlife: 0.009, beasts: ["eagle"], props: 0.003, things: ["cairn"] },
+  badlands:           { wildlife: 0.006, beasts: ["eagle"], props: 0.006, things: ["ruin", "cairn"] },
+  tundra:             { wildlife: 0.008, beasts: ["deer", "birds"], props: 0.005, things: ["cairn"] },
+  snowfield:          { props: 0.004, things: ["cairn"] },
+  marsh:              { wildlife: 0.020, beasts: ["heron", "birds"] },
+  beach:              { wildlife: 0.008, beasts: ["birds"], props: 0.006, things: ["seaStack"] },
+};
+
+// Edge i of a pointy-top hex faces this neighbour (same order hexRenderer
+// uses): corners -30°, 30°, 90°, 150°, 210°, 270°.
+const PAINT_EDGE_DIRECTION = [
+  { q: 1, r: 0 },
+  { q: 0, r: 1 },
+  { q: -1, r: 1 },
+  { q: -1, r: 0 },
+  { q: 0, r: -1 },
+  { q: 1, r: -1 },
+];
+
+// ---------------------------------------------------------------------------
+// Ornament
+// ---------------------------------------------------------------------------
 
 function paintCompassRose(parent, x, y, size) {
   const g = svgEl("g", { class: "art-compass-rose" });
@@ -122,25 +208,78 @@ function paintCartouche(parent, x, y, width, height) {
   parent.appendChild(g);
 }
 
-// Edge i of a pointy-top hex faces this neighbour (same order hexRenderer
-// uses): corners -30°, 30°, 90°, 150°, 210°, 270°.
-const PAINT_EDGE_DIRECTION = [
-  { q: 1, r: 0 },
-  { q: 0, r: 1 },
-  { q: -1, r: 1 },
-  { q: -1, r: 0 },
-  { q: 0, r: -1 },
-  { q: 1, r: -1 },
-];
+// The border of the sheet: a double rule, tick marks like a chart's
+// graticule, and a small rosette in each corner.
+function paintMapFrame(world) {
+  const layer = svgEl("g", { class: "art-frame" });
+  const w = world.width;
+  const h = world.height;
+  const inset = 10;
+  const band = 13;
+
+  layer.appendChild(svgEl("rect", {
+    x: inset, y: inset, width: w - inset * 2, height: h - inset * 2,
+    fill: "none", stroke: "#c49a45", "stroke-width": 3,
+  }));
+  layer.appendChild(svgEl("rect", {
+    x: inset + band, y: inset + band, width: w - (inset + band) * 2, height: h - (inset + band) * 2,
+    fill: "none", stroke: "#8a6526", "stroke-width": 1.2,
+  }));
+
+  const step = Math.max(70, world.grid.hexSize * Math.sqrt(3) * 12);
+  let ticks = "";
+  for (let x = inset + band + step; x < w - inset - band; x += step) {
+    ticks += ` M ${x.toFixed(1)} ${inset} L ${x.toFixed(1)} ${inset + band}` +
+             ` M ${x.toFixed(1)} ${h - inset} L ${x.toFixed(1)} ${h - inset - band}`;
+  }
+  const rowStep = Math.max(70, world.grid.hexSize * 1.5 * 12);
+  for (let y = inset + band + rowStep; y < h - inset - band; y += rowStep) {
+    ticks += ` M ${inset} ${y.toFixed(1)} L ${inset + band} ${y.toFixed(1)}` +
+             ` M ${w - inset} ${y.toFixed(1)} L ${w - inset - band} ${y.toFixed(1)}`;
+  }
+  layer.appendChild(svgEl("path", { d: ticks.trim(), fill: "none", stroke: "#c49a45", "stroke-width": 1.4 }));
+
+  for (const corner of [[inset + band, inset + band], [w - inset - band, inset + band],
+                        [inset + band, h - inset - band], [w - inset - band, h - inset - band]]) {
+    layer.appendChild(svgEl("circle", { cx: corner[0], cy: corner[1], r: 7, fill: "#edd9b4", stroke: "#8a6526", "stroke-width": 1.2 }));
+    layer.appendChild(svgEl("circle", { cx: corner[0], cy: corner[1], r: 2.6, fill: "#8c2a1c" }));
+  }
+  return layer;
+}
+
+// ---------------------------------------------------------------------------
+// The ground
+// ---------------------------------------------------------------------------
 
 function paintWorld(container, world) {
-  const random = createRandom(world.seed + 99);
   const size = world.grid.hexSize;
+  const tail = hexOutlineTail(size);
   const tileById = new Map(world.tiles.map((tile) => [tile.id, tile]));
   const tileByCoord = new Map(world.tiles.map((tile) => [hexKey(tile.q, tile.r), tile]));
   const neighborAt = (tile, edge) => {
     const dir = PAINT_EDGE_DIRECTION[edge];
     return tileByCoord.get(hexKey(tile.q + dir.q, tile.r + dir.r)) || null;
+  };
+  // Every hex centre, worked out once and shared by every layer.
+  const centerOf = new Map();
+  for (const tile of world.tiles) centerOf.set(tile.id, worldTileCenter(tile.q, tile.r, world.grid));
+  const hexAt = (tile) => {
+    const c = centerOf.get(tile.id);
+    const start = hexOutlineStart(c.x, c.y, size);
+    return `M${start[0].toFixed(1)} ${start[1].toFixed(1)}${tail}`;
+  };
+
+  // The hillshade is a soft wash — it does not need the full grid. Because
+  // axialToPixel(3q, 3r, s) is exactly axialToPixel(q, r, 3s), hexes three
+  // times the size at every third coordinate tile the plane perfectly, so
+  // relief can be drawn on a grid a ninth the size with no seams and no
+  // visible difference. That is a megabyte of path data saved.
+  const RELIEF_STEP = 3;
+  const reliefTail = hexOutlineTail(size * RELIEF_STEP);
+  const reliefHexAt = (tile) => {
+    const c = centerOf.get(tile.id);
+    const start = hexOutlineStart(c.x, c.y, size * RELIEF_STEP);
+    return `M${start[0].toFixed(1)} ${start[1].toFixed(1)}${reliefTail}`;
   };
 
   const svg = svgEl("svg", {
@@ -152,91 +291,156 @@ function paintWorld(container, world) {
   });
   svg.appendChild(svgEl("rect", { x: 0, y: 0, width: world.width, height: world.height, fill: ART_COLORS.oceanDeep }));
 
-  // The ground is static — everything that moves lives in other layers —
-  // so the browser can paint it once and leave it alone. It is built up in
-  // passes so the whole map reads as one picture rather than 3,500 stamps:
-  //
-  //   ground  → the flat hex of colour
-  //   relief  → hillshade and contour rings
-  //   water   → sea texture, rivers, lakes, the foam along every shore
-  //   sprites → the one big thing on the tile (trees, a mountain, a mesa)
-  //   scatter → the small things underfoot (tufts, pebbles, deer, mushrooms)
-  const ground = svgEl("g", { class: "art-ground" });
-  const relief = svgEl("g", { class: "art-relief" });
-  const water = svgEl("g", { class: "art-water" });
-  const sprites = svgEl("g", { class: "art-sprites" });
-  const scatter = svgEl("g", { class: "art-scatter" });
+  // ---- pass 1: sort every hex into a bucket ---------------------------------
+  // One bucket per (terrain, tone). Three tones per terrain is enough to stop
+  // a wide plain reading as a single swatch of paint, and cheap enough that
+  // the whole island is still under sixty elements.
+  const groundBuckets = new Map();
+  const reliefBuckets = new Map();
+  let cliffPath = "";
+  let foamPath = "";
+  let depthPath = "";
+  let shelfPath = "";
 
   for (const tile of world.tiles) {
-    const center = worldTileCenter(tile.q, tile.r, world.grid);
-    const isSea = tile.terrainType === "ocean";
+    const terrain = tile.terrainType;
 
-    paintHexBase(ground, center.x, center.y, size, TERRAIN_FILL[tile.terrainType] || ART_COLORS.plains);
-
-    if (isSea) {
-      // How far from land this water is, for the depth tint.
-      const touchingLand = countLandNeighbours(tile, tileByCoord);
-      paintOceanSurface(water, center.x, center.y, size, touchingLand > 0 ? 0.2 : 0.75, random);
-      const shoreEdges = [];
+    if (terrain === "ocean") {
+      // The open sea is the background rectangle — drawing seven thousand
+      // identical blue hexagons on top of it would be the single largest
+      // path on the map and would look no different. Only the shelf, where
+      // the water shallows against the land, is worth drawing.
+      const c = centerOf.get(tile.id);
+      let touchesLand = false;
       for (let edge = 0; edge < 6; edge++) {
         const neighbor = neighborAt(tile, edge);
-        if (neighbor && neighbor.terrainType !== "ocean") shoreEdges.push(edge);
+        if (!neighbor || neighbor.terrainType === "ocean") continue;
+        touchesLand = true;
+        const corners = hexEdgeCorners(c.x, c.y, size * 0.94, edge);
+        foamPath += ` M${corners[0][0].toFixed(1)} ${corners[0][1].toFixed(1)}` +
+                    ` L${corners[1][0].toFixed(1)} ${corners[1][1].toFixed(1)}`;
       }
-      if (shoreEdges.length) paintCoastFoam(water, center.x, center.y, size, shoreEdges);
+      if (touchesLand) shelfPath += hexAt(tile);
+      else if ((tile.detailSeed || 0) % 23 === 0) depthPath += hexAt(tile);
       continue;
     }
 
-    paintReliefShade(relief, center.x, center.y, size, tile.elevation);
-    if (tile.elevation > 0.66) {
-      paintContourRing(relief, center.x, center.y, size, tile.elevation > 0.78 ? 1 : 0);
+    const tone = ((tile.detailSeed || 0) % 3) - 1;            // -1, 0 or 1
+    const key = `${terrain}|${tone}`;
+    groundBuckets.set(key, (groundBuckets.get(key) || "") + hexAt(tile));
+
+    // Relief, in bands: lit above the halfway mark, shaded below it. The
+    // gentlest band is left out — at five per cent opacity nobody could see
+    // it, and it was a third of all the path data on the map.
+    if (tile.q % RELIEF_STEP === 0 && tile.r % RELIEF_STEP === 0) {
+      const band = Math.max(-3, Math.min(3, Math.round((tile.elevation - 0.5) * 7)));
+      if (Math.abs(band) >= 2) reliefBuckets.set(band, (reliefBuckets.get(band) || "") + reliefHexAt(tile));
     }
 
-    if (tile.terrainType === "lake") {
-      paintLakeSurface(water, center.x, center.y, size, random);
-      continue;
+    // A drop steep enough to need a hand and a foot.
+    if (tile.elevation > 0.45) {
+      const c = centerOf.get(tile.id);
+      for (let edge = 0; edge < 6; edge++) {
+        const neighbor = neighborAt(tile, edge);
+        if (!neighbor || neighbor.terrainType === "lake") continue;
+        if (tile.elevation - neighbor.elevation <= 0.17) continue;
+        const corners = hexEdgeCorners(c.x, c.y, size, edge);
+        cliffPath += ` M${corners[0][0].toFixed(1)} ${corners[0][1].toFixed(1)}` +
+                     ` L${corners[1][0].toFixed(1)} ${corners[1][1].toFixed(1)}`;
+      }
     }
-
-    paintTileSprites(sprites, tile, center, size, random);
-    paintTileScatter(scatter, tile, center, size);
   }
 
+  // ---- the ground itself ----------------------------------------------------
+  const ground = svgEl("g", { class: "art-ground" });
+  if (shelfPath) {
+    ground.appendChild(svgEl("path", {
+      d: shelfPath, fill: ART_COLORS.ocean, class: "art-terrain art-terrain--ocean",
+      stroke: ART_COLORS.oceanShallow, "stroke-width": size * 0.5, "stroke-opacity": 0.55, "stroke-linejoin": "round",
+    }));
+  }
+  for (const terrain of TERRAIN_PAINT_ORDER) {
+    for (const tone of [-1, 0, 1]) {
+      const d = groundBuckets.get(`${terrain}|${tone}`);
+      if (!d) continue;
+      const base = TERRAIN_FILL[terrain] || ART_COLORS.plains;
+      const fill = tone ? shadeColor(base, tone * 0.055) : base;
+      const attributes = { d, fill, class: `art-terrain art-terrain--${terrain}` };
+      // The bleed: a fat stroke of a terrain's own colour spills it over the
+      // hexes it borders, so one kind of country gives way to the next
+      // instead of stopping dead on a hex line.
+      if (TERRAIN_BLEEDS.has(terrain)) {
+        attributes.stroke = fill;
+        attributes["stroke-width"] = size * 0.4;
+        attributes["stroke-opacity"] = 0.5;
+        attributes["stroke-linejoin"] = "round";
+      }
+      ground.appendChild(svgEl("path", attributes));
+    }
+  }
   svg.appendChild(ground);
+
+  // ---- relief and cliffs ----------------------------------------------------
+  const relief = svgEl("g", { class: "art-relief" });
+  for (const [band, d] of reliefBuckets) {
+    relief.appendChild(svgEl("path", {
+      d, fill: band > 0 ? "#ffffff" : "#25190d",
+      opacity: Math.min(0.22, (Math.abs(band) - 1) * 0.085),
+    }));
+  }
+  if (cliffPath) {
+    relief.appendChild(svgEl("path", {
+      d: cliffPath.trim(), fill: "none", stroke: "rgba(58, 42, 26, 0.5)",
+      "stroke-width": Math.max(0.8, size * 0.14), "stroke-linecap": "round",
+    }));
+  }
   svg.appendChild(relief);
 
-  // Rivers run over the ground as one band per watercourse.
+  // ---- water ---------------------------------------------------------------
+  const water = svgEl("g", { class: "art-water" });
+  if (depthPath) {
+    water.appendChild(svgEl("path", {
+      d: depthPath, fill: "none", stroke: "rgba(210, 238, 246, 0.16)",
+      "stroke-width": 0.8, "stroke-dasharray": "4 5",
+    }));
+  }
+  paintOceanTexture(water, world, centerOf, size);
   for (const river of world.rivers) {
-    const ids = river.tileIds || river;                 // tolerate old saves
-    const centers = ids
+    const ids = river.tileIds || river;
+    const points = ids
       .map((id) => tileById.get(id))
       .filter(Boolean)
       .map((tile) => {
-        const c = worldTileCenter(tile.q, tile.r, world.grid);
+        const c = centerOf.get(tile.id);
         return [c.x, c.y];
       });
-    if (centers.length < 2) continue;
-    const halfWidths = centers.map((_, i) => size * (0.16 + 0.2 * (i / Math.max(1, centers.length - 1))));
-    paintRiver(water, centers, halfWidths);
-    const last = tileById.get(ids[ids.length - 1]);
-    if (last && last.specialEffect === "pool") {
-      const c = worldTileCenter(last.q, last.r, world.grid);
-      paintPool(water, c.x, c.y, size);
-    }
+    if (points.length < 2) continue;
+    const halfWidths = points.map((_, i) => size * (0.16 + 0.2 * (i / Math.max(1, points.length - 1))));
+    paintRiver(water, points, halfWidths);
+  }
+  if (foamPath) {
+    water.appendChild(svgEl("path", {
+      d: foamPath.trim(), fill: "none", stroke: ART_COLORS.oceanFoam,
+      "stroke-width": Math.max(1.2, size * 0.16), "stroke-linecap": "round",
+      opacity: 0.7, class: "art-foam",
+    }));
   }
   svg.appendChild(water);
 
-  // The old tracks between the villages, drawn faintly under everything else
-  // that lives on the ground.
-  svg.appendChild(paintTradeRoutes(world, tileById));
+  // The old tracks between the villages, under everything that grows.
+  svg.appendChild(paintTradeRoutes(world, tileById, centerOf));
 
-  svg.appendChild(sprites);
-  svg.appendChild(scatter);
+  // ---- what grows on it -----------------------------------------------------
+  svg.appendChild(paintTerrainSymbols(world, centerOf, size));
+  svg.appendChild(paintMountainRidges(world, tileByCoord, centerOf));
+  svg.appendChild(paintLandmarksAndLife(world, centerOf, size));
 
-  // Names for the big stretches of country.
+  // ---- names and ornament ---------------------------------------------------
   svg.appendChild(paintRegionLabels(world));
-
-  // Ornate Renaissance Map Cartouche & Compass Rose in the ocean
+  svg.appendChild(paintWaterLabels(world, tileById, centerOf));
   paintCompassRose(svg, Math.min(world.width - 100, world.width * 0.94), 90, 56);
   paintCartouche(svg, 140, 52, 190, 42);
+  svg.appendChild(paintMapFrame(world));
 
   // A colour wash css/style.css tunes per season.
   svg.appendChild(svgEl("rect", {
@@ -249,24 +453,428 @@ function paintWorld(container, world) {
   return svg;
 }
 
-function countLandNeighbours(tile, tileByCoord) {
-  let count = 0;
-  for (const { q, r } of hexNeighbors(tile.q, tile.r)) {
-    const neighbor = tileByCoord.get(hexKey(q, r));
-    if (neighbor && neighbor.terrainType !== "ocean") count++;
+// Wave strokes over the open sea, all of them in one element.
+function paintOceanTexture(parent, world, centerOf, size) {
+  let d = "";
+  for (const tile of world.tiles) {
+    if (tile.terrainType !== "ocean") continue;
+    const seed = tile.detailSeed || 0;
+    if (seed % 3 !== 0) continue;                  // not every hex, or it turns to soup
+    const c = centerOf.get(tile.id);
+    const wx = c.x + ((seed >> 3) % 100) / 100 * size - size * 0.5;
+    const wy = c.y + ((seed >> 9) % 100) / 100 * size - size * 0.5;
+    const w = size * (0.22 + ((seed >> 15) % 100) / 100 * 0.2);
+    d += ` M${(wx - w).toFixed(1)} ${wy.toFixed(1)}q${(w * 0.5).toFixed(1)} ${(-size * 0.12).toFixed(1)} ${w.toFixed(1)} 0` +
+         `q${(w * 0.5).toFixed(1)} ${(size * 0.12).toFixed(1)} ${w.toFixed(1)} 0`;
   }
-  return count;
+  if (!d) return;
+  parent.appendChild(svgEl("path", {
+    d: d.trim(), fill: "none", stroke: ART_COLORS.oceanShallow,
+    "stroke-width": Math.max(0.6, size * 0.05), "stroke-linecap": "round", opacity: 0.4,
+  }));
 }
 
+// ---------------------------------------------------------------------------
+// Terrain symbols: the trees, rocks, reeds and tufts that make a map read as
+// forest or fen. Every symbol of a kind is one path, however many there are.
+// ---------------------------------------------------------------------------
+
+function paintTerrainSymbols(world, centerOf, size) {
+  const layer = svgEl("g", { class: "art-symbols" });
+  // How many symbols a hex is worth, now that a hex may be any size. A fine
+  // grid gets proportionally fewer per hex so the island looks the same.
+  const areaFactor = (size * size) / (SYMBOL_REFERENCE_HEX * SYMBOL_REFERENCE_HEX);
+
+  const canopy = new Map();
+  const tufts = new Map();
+  const reeds = new Map();
+  const rocks = { body: "", face: "" };
+  const peaks = { body: "", face: "", snow: "" };
+  let drifts = "";
+  const detail = { blooms: "", furrows: "", cracks: "", ripples: "", pools: "", terrace: "" };
+
+  for (const tile of world.tiles) {
+    const recipe = SYMBOL_RECIPES[tile.terrainType];
+    if (!recipe) continue;
+    const c = centerOf.get(tile.id);
+    const random = createRandom((tile.detailSeed || 1) >>> 0);
+    const spread = () => [
+      c.x + (random() - 0.5) * size * 1.25,
+      c.y + (random() - 0.5) * size * 1.1,
+    ];
+    // A fractional count means "this often", not "round it down to nothing".
+    const howMany = (perHex) => {
+      const wanted = perHex * areaFactor;
+      return Math.floor(wanted) + (random() < wanted % 1 ? 1 : 0);
+    };
+
+    if (recipe.trees) {
+      const spec = recipe.trees;
+      const entry = canopy.get(tile.terrainType) || { body: "", shade: "", spec };
+      for (let i = 0, n = howMany(spec.count); i < n; i++) {
+        const [x, y] = spread();
+        const r = size * spec.size * (0.8 + random() * 0.45);
+        if (spec.kind === "conifer") {
+          entry.shade += coniferGlyph(x + r * 0.22, y + r * 0.28, r);
+          entry.body += coniferGlyph(x, y, r);
+        } else {
+          entry.shade += roundTreeGlyph(x + r * 0.22, y + r * 0.28, r);
+          entry.body += roundTreeGlyph(x, y, r);
+        }
+      }
+      canopy.set(tile.terrainType, entry);
+    }
+
+    if (recipe.tufts) {
+      let d = tufts.get(tile.terrainType) || "";
+      for (let i = 0, n = howMany(recipe.tufts.count); i < n; i++) {
+        const [x, y] = spread();
+        d += grassTuftPath(x, y, size * recipe.tufts.size);
+      }
+      tufts.set(tile.terrainType, d);
+    }
+
+    if (recipe.reeds) {
+      let d = reeds.get(tile.terrainType) || "";
+      for (let i = 0, n = howMany(recipe.reeds.count); i < n; i++) {
+        const [x, y] = spread();
+        const h = size * recipe.reeds.size * (0.7 + random() * 0.6);
+        d += `M${x.toFixed(1)} ${y.toFixed(1)}l${((random() - 0.5) * h * 0.3).toFixed(1)} ${(-h).toFixed(1)}`;
+      }
+      reeds.set(tile.terrainType, d);
+    }
+
+    if (recipe.rocks) {
+      for (let i = 0, n = howMany(recipe.rocks); i < n; i++) {
+        const [x, y] = spread();
+        const r = size * 0.3 * (0.7 + random() * 0.6);
+        rocks.body += rockGlyph(x, y, r);
+        rocks.face += rockFaceGlyph(x, y, r);
+      }
+    }
+
+    if (recipe.peaks) {
+      for (let i = 0, n = Math.max(1, howMany(recipe.peaks)); i < n; i++) {
+        const r = size * (0.62 + random() * 0.25);
+        const x = c.x + (random() - 0.5) * size * 0.4;
+        const y = c.y + (random() - 0.5) * size * 0.3;
+        peaks.body += peakGlyph(x, y, r);
+        peaks.face += peakFaceGlyph(x, y, r);
+        if (tile.snowCapped) peaks.snow += peakSnowGlyph(x, y, r);
+      }
+    }
+
+    if (recipe.drifts) {
+      for (let i = 0, n = howMany(recipe.drifts); i < n; i++) {
+        const [x, y] = spread();
+        const r = size * 0.34 * (0.7 + random() * 0.6);
+        drifts += `M${(x - r).toFixed(1)} ${y.toFixed(1)}` +
+                  `q${(r * 0.5).toFixed(1)} ${(-r * 0.75).toFixed(1)} ${r.toFixed(1)} ${(-r * 0.12).toFixed(1)}` +
+                  `q${(r * 0.5).toFixed(1)} ${(r * 0.45).toFixed(1)} ${r.toFixed(1)} ${(r * 0.12).toFixed(1)}z`;
+      }
+    }
+
+    if (recipe.blooms) {
+      for (let i = 0, n = howMany(recipe.blooms); i < n; i++) {
+        const [x, y] = spread();
+        const r = Math.max(0.6, size * 0.06);
+        detail.blooms += `M${x.toFixed(1)} ${y.toFixed(1)}m${(-r).toFixed(1)} 0` +
+                         `a${r.toFixed(1)} ${r.toFixed(1)} 0 1 0 ${(r * 2).toFixed(1)} 0` +
+                         `a${r.toFixed(1)} ${r.toFixed(1)} 0 1 0 ${(-r * 2).toFixed(1)} 0z`;
+      }
+    }
+    if (recipe.furrows) {
+      for (let i = 0, n = howMany(recipe.furrows); i < n; i++) {
+        const [x, y] = spread();
+        const w = size * 0.5;
+        detail.furrows += `M${(x - w).toFixed(1)} ${y.toFixed(1)}q${w.toFixed(1)} ${(size * 0.12).toFixed(1)} ${(w * 2).toFixed(1)} 0`;
+      }
+    }
+    if (recipe.cracks) {
+      for (let i = 0, n = howMany(recipe.cracks); i < n; i++) {
+        const [x, y] = spread();
+        detail.cracks += `M${x.toFixed(1)} ${y.toFixed(1)}l${(size * 0.2).toFixed(1)} ${(size * 0.1).toFixed(1)}l${(size * 0.14).toFixed(1)} ${(-size * 0.16).toFixed(1)}`;
+      }
+    }
+    if (recipe.ripples) {
+      for (let i = 0, n = howMany(recipe.ripples); i < n; i++) {
+        const [x, y] = spread();
+        const w = size * 0.36;
+        detail.ripples += `M${(x - w).toFixed(1)} ${y.toFixed(1)}q${(w * 0.5).toFixed(1)} ${(-size * 0.1).toFixed(1)} ${w.toFixed(1)} 0`;
+      }
+    }
+    if (recipe.pools) {
+      for (let i = 0, n = howMany(recipe.pools); i < n; i++) {
+        const [x, y] = spread();
+        const rx = size * 0.22 * (0.7 + random() * 0.7);
+        const ry = rx * 0.6;
+        detail.pools += `M${(x - rx).toFixed(1)} ${y.toFixed(1)}` +
+                        `a${rx.toFixed(1)} ${ry.toFixed(1)} 0 1 0 ${(rx * 2).toFixed(1)} 0` +
+                        `a${rx.toFixed(1)} ${ry.toFixed(1)} 0 1 0 ${(-rx * 2).toFixed(1)} 0z`;
+      }
+    }
+    if (recipe.terrace) {
+      for (let i = -1; i <= 1; i++) {
+        const y = c.y + i * size * 0.36;
+        detail.terrace += `M${(c.x - size * 0.6).toFixed(1)} ${y.toFixed(1)}q${(size * 0.6).toFixed(1)} ${(size * 0.14).toFixed(1)} ${(size * 1.2).toFixed(1)} 0`;
+      }
+    }
+  }
+
+  // Everything above, in about twenty elements.
+  if (detail.pools) layer.appendChild(svgEl("path", { d: detail.pools, fill: ART_COLORS.marshWater, opacity: 0.75 }));
+  if (detail.terrace) layer.appendChild(svgEl("path", { d: detail.terrace, fill: "none", stroke: ART_COLORS.terraceLine, "stroke-width": Math.max(0.5, size * 0.06), opacity: 0.5 }));
+  if (detail.furrows) layer.appendChild(svgEl("path", { d: detail.furrows, fill: "none", stroke: ART_COLORS.wheatDark, "stroke-width": Math.max(0.5, size * 0.05), opacity: 0.45 }));
+  if (detail.cracks) layer.appendChild(svgEl("path", { d: detail.cracks, fill: "none", stroke: ART_COLORS.badlandsDark, "stroke-width": Math.max(0.5, size * 0.05), opacity: 0.6 }));
+  if (detail.ripples) layer.appendChild(svgEl("path", { d: detail.ripples, fill: "none", stroke: ART_COLORS.beachWet, "stroke-width": Math.max(0.5, size * 0.07), opacity: 0.6 }));
+
+  for (const [terrain, d] of tufts) {
+    if (!d) continue;
+    layer.appendChild(svgEl("path", {
+      d, fill: "none", stroke: SYMBOL_RECIPES[terrain].tufts.color,
+      "stroke-width": Math.max(0.5, size * 0.075), "stroke-linecap": "round", opacity: 0.8,
+    }));
+  }
+  for (const [terrain, d] of reeds) {
+    if (!d) continue;
+    layer.appendChild(svgEl("path", {
+      d, fill: "none", stroke: SYMBOL_RECIPES[terrain].reeds.color,
+      "stroke-width": Math.max(0.5, size * 0.055), "stroke-linecap": "round", opacity: 0.85,
+    }));
+  }
+  if (detail.blooms) layer.appendChild(svgEl("path", { d: detail.blooms, fill: "#f6e28a", opacity: 0.85 }));
+
+  if (drifts) layer.appendChild(svgEl("path", { d: drifts, fill: ART_COLORS.snow, stroke: ART_COLORS.snowfieldShade, "stroke-width": 0.5, opacity: 0.95 }));
+  if (rocks.body) {
+    layer.appendChild(svgEl("path", { d: rocks.body, fill: ART_COLORS.rock, stroke: ART_COLORS.rockDark, "stroke-width": Math.max(0.4, size * 0.04), "stroke-linejoin": "round" }));
+    layer.appendChild(svgEl("path", { d: rocks.face, fill: ART_COLORS.rockLight, opacity: 0.75 }));
+  }
+  for (const [terrain, entry] of canopy) {
+    layer.appendChild(svgEl("path", { d: entry.shade, fill: entry.spec.shade, opacity: 0.55, class: `art-canopy art-canopy--${terrain}` }));
+    layer.appendChild(svgEl("path", {
+      d: entry.body, fill: entry.spec.color, stroke: entry.spec.shade,
+      "stroke-width": Math.max(0.4, size * 0.035), "stroke-linejoin": "round",
+      class: `art-canopy art-canopy--${terrain}`,
+    }));
+  }
+  if (peaks.body) {
+    layer.appendChild(svgEl("path", { d: peaks.body, fill: "#6d6a66", stroke: "#3b3734", "stroke-width": Math.max(0.4, size * 0.045), "stroke-linejoin": "round" }));
+    layer.appendChild(svgEl("path", { d: peaks.face, fill: "#a5a29d", opacity: 0.85 }));
+    if (peaks.snow) layer.appendChild(svgEl("path", { d: peaks.snow, fill: ART_COLORS.snow, opacity: 0.95 }));
+  }
+  return layer;
+}
+
+// --- the glyphs themselves, as path data ------------------------------------
+
+function roundTreeGlyph(x, y, r) {
+  const rx = r * 0.72;
+  const ry = r * 0.66;
+  return `M${(x - rx).toFixed(1)} ${y.toFixed(1)}` +
+         `a${rx.toFixed(1)} ${ry.toFixed(1)} 0 1 1 ${(rx * 2).toFixed(1)} 0` +
+         `a${rx.toFixed(1)} ${ry.toFixed(1)} 0 1 1 ${(-rx * 2).toFixed(1)} 0z`;
+}
+
+function coniferGlyph(x, y, r) {
+  const w = r * 0.6;
+  return `M${x.toFixed(1)} ${(y - r).toFixed(1)}l${(-w).toFixed(1)} ${(r * 1.5).toFixed(1)}h${(w * 2).toFixed(1)}z`;
+}
+
+function rockGlyph(x, y, r) {
+  return `M${(x - r).toFixed(1)} ${(y + r * 0.5).toFixed(1)}` +
+         `l${(r * 0.55).toFixed(1)} ${(-r * 0.95).toFixed(1)}` +
+         `l${(r * 0.6).toFixed(1)} ${(r * 0.35).toFixed(1)}` +
+         `l${(r * 0.85).toFixed(1)} ${(r * 0.6).toFixed(1)}z`;
+}
+
+function rockFaceGlyph(x, y, r) {
+  return `M${(x - r).toFixed(1)} ${(y + r * 0.5).toFixed(1)}` +
+         `l${(r * 0.55).toFixed(1)} ${(-r * 0.95).toFixed(1)}` +
+         `l${(r * 0.2).toFixed(1)} ${(r * 0.95).toFixed(1)}z`;
+}
+
+function peakGlyph(x, y, r) {
+  return `M${(x - r).toFixed(1)} ${(y + r * 0.62).toFixed(1)}` +
+         `L${x.toFixed(1)} ${(y - r * 0.85).toFixed(1)}` +
+         `L${(x + r).toFixed(1)} ${(y + r * 0.62).toFixed(1)}z`;
+}
+
+function peakFaceGlyph(x, y, r) {
+  return `M${(x - r).toFixed(1)} ${(y + r * 0.62).toFixed(1)}` +
+         `L${x.toFixed(1)} ${(y - r * 0.85).toFixed(1)}` +
+         `L${(x + r * 0.16).toFixed(1)} ${(y + r * 0.62).toFixed(1)}z`;
+}
+
+function peakSnowGlyph(x, y, r) {
+  return `M${(x - r * 0.34).toFixed(1)} ${(y - r * 0.28).toFixed(1)}` +
+         `L${x.toFixed(1)} ${(y - r * 0.85).toFixed(1)}` +
+         `L${(x + r * 0.34).toFixed(1)} ${(y - r * 0.28).toFixed(1)}` +
+         `q${(-r * 0.17).toFixed(1)} ${(r * 0.11).toFixed(1)} ${(-r * 0.34).toFixed(1)} 0` +
+         `q${(-r * 0.17).toFixed(1)} ${(-r * 0.11).toFixed(1)} ${(-r * 0.34).toFixed(1)} 0z`;
+}
+
+// ---------------------------------------------------------------------------
+// Ranges, landmarks and life
+// ---------------------------------------------------------------------------
+
+// Hand-drawn maps do not draw mountains one at a time — they draw a range,
+// one long crest with the peaks hanging off it. This finds each connected
+// group of mountain hexes and walks its longest path, which is as good a
+// definition of a crest as any.
+function paintMountainRidges(world, tileByCoord, centerOf) {
+  const layer = svgEl("g", { class: "art-ridges" });
+  const seen = new Set();
+  const grid = world.grid;
+
+  const neighbours = (tile) =>
+    hexNeighbors(tile.q, tile.r)
+      .map(({ q, r }) => tileByCoord.get(hexKey(q, r)))
+      .filter((n) => n && n.terrainType === "mountains");
+
+  const walk = (start) => {
+    const from = new Map([[start.id, null]]);
+    const order = [start];
+    for (let i = 0; i < order.length; i++) {
+      for (const next of neighbours(order[i])) {
+        if (from.has(next.id)) continue;
+        from.set(next.id, order[i]);
+        order.push(next);
+      }
+    }
+    return { from, order };
+  };
+
+  let crest = "";
+  let lit = "";
+  for (const tile of world.tiles) {
+    if (tile.terrainType !== "mountains" || seen.has(tile.id)) continue;
+    const first = walk(tile);
+    for (const member of first.order) seen.add(member.id);
+    if (first.order.length < 5) continue;
+
+    const farthest = first.order[first.order.length - 1];
+    const second = walk(farthest);
+    let cursor = second.order[second.order.length - 1];
+    const spine = [];
+    while (cursor) {
+      spine.push(cursor);
+      cursor = second.from.get(cursor.id);
+    }
+    if (spine.length < 5) continue;
+
+    const points = spine.map((member) => {
+      const c = centerOf.get(member.id);
+      return [c.x, c.y - grid.hexSize * 0.18];
+    });
+    crest += smoothPath(points, false);
+    lit += smoothPath(points.map(([x, y]) => [x, y - grid.hexSize * 0.16]), false);
+  }
+  if (crest) {
+    layer.appendChild(svgEl("path", {
+      d: crest, fill: "none", stroke: "rgba(48, 40, 34, 0.4)",
+      "stroke-width": grid.hexSize * 0.5, "stroke-linecap": "round", "stroke-linejoin": "round",
+    }));
+    layer.appendChild(svgEl("path", {
+      d: lit, fill: "none", stroke: "rgba(255, 255, 255, 0.3)",
+      "stroke-width": grid.hexSize * 0.2, "stroke-linecap": "round", "stroke-linejoin": "round",
+    }));
+  }
+  return layer;
+}
+
+// Wonders, wildlife and the things people left behind. Drawn at
+// DETAIL_SCALE, not at hex size, so they stay worth finding on a fine grid.
+function paintLandmarksAndLife(world, centerOf, size) {
+  const layer = svgEl("g", { class: "art-scatter" });
+  const scale = Math.max(size, DETAIL_SCALE);
+
+  for (const tile of world.tiles) {
+    const c = centerOf.get(tile.id);
+
+    if (tile.landmark) {
+      paintLandmark(layer, tile.landmark, c.x, c.y, scale);
+      continue;
+    }
+
+    const chance = DETAIL_CHANCE[tile.terrainType];
+    if (!chance) continue;
+    const random = createRandom(((tile.detailSeed || 1) ^ 0x9e3779b9) >>> 0);
+
+    if (chance.wildlife && random() < chance.wildlife) {
+      const beasts = chance.beasts || ["deer"];
+      paintBeast(layer, beasts[Math.floor(random() * beasts.length) % beasts.length], c.x, c.y, scale, random);
+    } else if (chance.props && chance.things && random() < chance.props) {
+      const things = chance.things;
+      paintBiomeProp(layer, things[Math.floor(random() * things.length) % things.length], c.x, c.y, scale, random);
+    }
+  }
+
+  // Two of each, placed by hand, so the empty half of the chart has
+  // something in it.
+  let whales = 2;
+  let sails = 2;
+  for (const tile of world.tiles) {
+    if (tile.terrainType !== "ocean" || (!whales && !sails)) continue;
+    const seed = tile.detailSeed || 0;
+    const c = centerOf.get(tile.id);
+    if (whales && seed % 1499 === 3) { paintWhale(layer, c.x, c.y, scale * 0.9); whales--; }
+    else if (sails && seed % 1487 === 7) { paintSail(layer, c.x, c.y, scale * 0.8); sails--; }
+  }
+  return layer;
+}
+
+function paintLandmark(parent, kind, x, y, scale) {
+  switch (kind) {
+    case "standingStones": return paintStandingStones(parent, x, y, scale * 0.95);
+    case "motherTree":     return paintMotherTree(parent, x, y, scale * 1.05);
+    case "dragonBones":    return paintDragonBones(parent, x, y, scale * 0.9);
+    case "crystalMine":    return paintCrystalMine(parent, x, y, scale * 0.9);
+    case "shipwreck":      return paintShipwreck(parent, x, y, scale * 0.85);
+    case "ruinedTower":    return paintRuinedTower(parent, x, y, scale * 0.9);
+    case "hotSpring":      return paintHotSpring(parent, x, y, scale * 0.85);
+    case "boneOrchard":    return paintBoneOrchard(parent, x, y, scale * 0.85);
+    default:               return undefined;
+  }
+}
+
+function paintBiomeProp(parent, kind, x, y, size, random) {
+  switch (kind) {
+    case "scarecrow":      return paintScarecrow(parent, x, y, size * 0.8);
+    case "beehive":        return paintBeehive(parent, x, y, size * 0.7);
+    case "cairn":          return paintCairn(parent, x, y, size * 0.75);
+    case "ruin":           return paintStandingRuin(parent, x, y, size * 0.8, random);
+    case "huntersBlind":   return paintHuntersBlind(parent, x, y, size * 0.75);
+    case "charcoalBurner": return paintCharcoalBurner(parent, x, y, size * 0.7);
+    case "seaStack":       return paintSeaStack(parent, x, y, size * 0.85);
+    default:               return undefined;
+  }
+}
+
+function paintBeast(parent, kind, x, y, size, random) {
+  switch (kind) {
+    case "sheep":  return paintSheep(parent, x, y, size * 0.7);
+    case "boar":   return paintBoar(parent, x, y, size * 0.7);
+    case "heron":  return paintHeron(parent, x, y, size * 0.8);
+    case "eagle":  return paintEagle(parent, x, y - size * 0.3, size * 0.65);
+    case "birds":  return paintBirdFlock(parent, x, y - size * 0.4, size * 0.9, random);
+    case "deer":
+    default:       return paintDeer(parent, x, y, size * 0.6);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Names and old roads
+// ---------------------------------------------------------------------------
+
 // The pale cart tracks that already joined the villages before you arrived.
-function paintTradeRoutes(world, tileById) {
+function paintTradeRoutes(world, tileById, centerOf) {
   const layer = svgEl("g", { class: "art-traderoutes" });
   for (const route of world.tradeRoutes || []) {
     const points = route.tileIds
       .map((id) => tileById.get(id))
       .filter(Boolean)
       .map((tile) => {
-        const c = worldTileCenter(tile.q, tile.r, world.grid);
+        const c = centerOf.get(tile.id);
         return [c.x, c.y];
       });
     if (points.length < 2) continue;
@@ -274,27 +882,35 @@ function paintTradeRoutes(world, tileById) {
       d: smoothPath(points, false),
       fill: "none",
       stroke: ART_COLORS.road,
-      "stroke-width": Math.max(1.2, world.grid.hexSize * 0.07),
+      "stroke-width": Math.max(1.2, world.grid.hexSize * 0.2),
       "stroke-linecap": "round",
-      "stroke-dasharray": "6 7",
-      opacity: 0.38,
+      "stroke-dasharray": `${(world.grid.hexSize * 0.7).toFixed(1)} ${(world.grid.hexSize * 0.8).toFixed(1)}`,
+      opacity: 0.36,
     }));
   }
   return layer;
 }
 
-// Region names, drawn along a gentle arc in the map's lettering.
+// Only the country big enough to be worth naming gets a name. A label on
+// every small thicket buries the map in text.
+const REGION_LABEL_MIN_TILES = 90;
+const REGION_LABEL_MAX = 26;
+
 function paintRegionLabels(world) {
   const layer = svgEl("g", { class: "art-regionlabels" });
-  for (const region of world.regions || []) {
-    if (region.terrainType === "ocean" && region.tileCount < 40) continue;
-    const scale = Math.min(1.9, 0.7 + region.tileCount / 60);
+  const worth = (world.regions || [])
+    .filter((region) => region.tileCount >= REGION_LABEL_MIN_TILES)
+    .sort((a, b) => b.tileCount - a.tileCount)
+    .slice(0, REGION_LABEL_MAX);
+  for (const region of worth) {
+    if (region.terrainType === "ocean" && region.tileCount < 400) continue;
+    const scale = Math.min(2.4, 0.7 + region.tileCount / 1500);
     const text = svgEl("text", {
       x: region.center.x,
       y: region.center.y,
       "text-anchor": "middle",
       class: "art-region-label",
-      "font-size": (13 * scale).toFixed(1),
+      "font-size": (14 * scale).toFixed(1),
       fill: region.terrainType === "ocean" ? "#bfe0ea" : "#4a3620",
       opacity: 0.55,
     });
@@ -304,343 +920,62 @@ function paintRegionLabels(world) {
   return layer;
 }
 
-// The small stuff underfoot. It is seeded from the tile itself, so the same
-// hex always grows the same tufts no matter when it is drawn.
-function paintTileScatter(parent, tile, center, size, recipeOverride) {
-  if (SCATTER_SKIP.includes(tile.terrainType)) return;
-  const recipe = recipeOverride || SCATTER_RECIPES[tile.terrainType];
-  if (!recipe) return;
-  const random = createRandom(tile.detailSeed || 1);
-  const { x, y } = center;
+// River and lake names, written along the water itself.
+function paintWaterLabels(world, tileById, centerOf) {
+  const layer = svgEl("g", { class: "art-waterlabels" });
+  const defs = svgEl("defs", {});
+  layer.appendChild(defs);
 
-  const tufts = [];
-  const pebbles = [];
-  for (let i = 0; i < recipe.count; i++) {
-    // Kept inside the hex: a point in a slightly squashed disc.
-    const angle = random() * Math.PI * 2;
-    const radius = Math.sqrt(random()) * size * 0.78;
-    const px = x + Math.cos(angle) * radius;
-    const py = y + Math.sin(angle) * radius * 0.86;
-    const roll = random();
+  (world.rivers || []).forEach((river, index) => {
+    if (!river.name) return;
+    const ids = river.tileIds || river;
+    if (!ids || ids.length < 10) return;
+    const points = ids
+      .map((id) => tileById.get(id))
+      .filter(Boolean)
+      .map((tile) => {
+        const c = centerOf.get(tile.id);
+        return [c.x, c.y];
+      });
+    if (points.length < 10) return;
 
-    if (recipe.pebble && roll < recipe.pebble) {
-      pebbles.push([px, py]);
-    } else if (recipe.mushroom && roll < recipe.mushroom + (recipe.pebble || 0)) {
-      paintMushroom(parent, px, py, size * 0.5);
-    } else if (recipe.tuft) {
-      tufts.push([px, py]);
-    }
-  }
-  // All of this tile's grass and loose stone go out as one element each.
-  if (tufts.length) paintGrassTufts(parent, tufts, size * 0.42, recipe.tuft);
-  if (pebbles.length) paintPebbles(parent, pebbles, size * 0.5, random);
+    // A label upside-down is worse than no label, so a course running
+    // right-to-left is reversed before the text is hung on it.
+    const ordered = points[0][0] > points[points.length - 1][0] ? points.slice().reverse() : points;
+    const pathId = `riverline_${world.seed}_${index}`;
+    defs.appendChild(svgEl("path", { id: pathId, d: smoothPath(ordered, false), fill: "none" }));
 
-  if (recipe.log && random() < recipe.log) {
-    paintFallenLog(parent, x + (random() - 0.5) * size * 0.7, y + size * 0.3, size * 0.7, random);
-  }
-  if (recipe.wildlife && random() < recipe.wildlife) {
-    if (random() < 0.55) paintDeer(parent, x + (random() - 0.5) * size * 0.5, y + size * 0.1, size * 0.6);
-    else paintBirdFlock(parent, x, y - size * 0.42, size * 0.9, random);
-  }
-}
-
-function paintTileSprites(parent, tile, center, size, random) {
-  const { x, y } = center;
-
-  // World Wonders & Landmarks take precedence and are visually striking
-  if (tile.landmark) {
-    switch (tile.landmark) {
-      case "standingStones":
-        paintStandingStones(parent, x, y, size * 0.95);
-        return;
-      case "motherTree":
-        paintMotherTree(parent, x, y, size * 1.05);
-        return;
-      case "dragonBones":
-        paintDragonBones(parent, x, y, size * 0.9);
-        return;
-      case "crystalMine":
-        paintCrystalMine(parent, x, y, size * 0.9);
-        return;
-      case "shipwreck":
-        paintShipwreck(parent, x, y, size * 0.85);
-        return;
-      case "ruinedTower":
-        paintRuinedTower(parent, x, y, size * 0.9);
-        return;
-      case "hotSpring":
-        paintHotSpring(parent, x, y, size * 0.85);
-        return;
-      case "boneOrchard":
-        paintBoneOrchard(parent, x, y, size * 0.85);
-        return;
-    }
-  }
-
-  switch (tile.terrainType) {
-    case "beach":
-      paintBeachDetail(parent, x, y, size, random);
-      break;
-    case "marsh":
-      paintMarshReeds(parent, x, y, size, random);
-      break;
-    case "tundra":
-      paintTundraScrub(parent, x, y, size, random);
-      break;
-    case "snowfield":
-      paintSnowDrift(parent, x, y, size, random);
-      if (random() < 0.3) paintTaigaPine(parent, x + size * 0.24, y - size * 0.1, size * 0.5, random);
-      break;
-    case "badlands":
-      paintBadlandsMesa(parent, x, y, size, random);
-      break;
-    case "birchWood":
-      paintDenseGrove(parent, x, y, size, "birch", random);
-      break;
-    case "taiga":
-      paintDenseGrove(parent, x, y, size, "taiga", random);
-      break;
-    case "plains":
-      if (random() < 0.08 && tile.elevation > 0.35) {
-        paintWindmill(parent, x, y, size * 0.72);
-      } else if (random() < 0.55) {
-        paintCropField(parent, x, y, size, random);
-      } else {
-        paintWheat(parent, x, y, size * 0.75, random);
-      }
-      break;
-    case "flowerMeadow":
-      paintFlowerDots(parent, x, y, size, random);
-      if (random() < 0.4) paintBush(parent, x + (random() - 0.5) * size * 0.4, y + size * 0.15, size * 0.65, random);
-      break;
-    case "forest":
-      paintDenseGrove(parent, x, y, size, random() < 0.35 ? "pine" : random() < 0.65 ? "autumn" : "mixed", random);
-      break;
-    case "denseBush":
-      paintDenseGrove(parent, x, y, size, "pine", random);
-      paintBush(parent, x, y + size * 0.18, size * 0.6, random);
-      break;
-    case "rockyOutcrop":
-      paintRock(parent, x - size * 0.16, y + size * 0.1, size * 0.9, random);
-      if (random() < 0.65) paintRock(parent, x + size * 0.2, y - size * 0.12, size * 0.7, random);
-      break;
-    case "mountains":
-      paintMountain(parent, x, y + size * 0.08, size * 0.95, random);
-      if (tile.snowCapped) {
-        parent.appendChild(svgEl("path", {
-          d: `M ${x - size * 0.26} ${y - size * 0.22} L ${x} ${y - size * 0.58} L ${x + size * 0.26} ${y - size * 0.22}` +
-             ` q ${-size * 0.13} ${size * 0.07} ${-size * 0.26} 0 q ${-size * 0.13} ${-size * 0.07} ${-size * 0.26} 0 z`,
-          fill: ART_COLORS.snow, opacity: 0.95,
-        }));
-      }
-      break;
-    case "overgrownHighlands":
-      paintTerraceStripes(parent, x, y, size, random);
-      if (random() < 0.4) {
-        paintPineTree(parent, x + size * 0.22, y - size * 0.12, size * 0.55, random);
-      } else if (random() < 0.5) {
-        paintRock(parent, x - size * 0.18, y + size * 0.12, size * 0.5, random);
-      }
-      break;
-    case "timbermellowForest":
-      // Vibrant dense grove on starting/home forest
-      paintDenseGrove(parent, x, y, size, "oak", random);
-      break;
-    default:
-      break;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Settlements: what changes during play
-// ---------------------------------------------------------------------------
-
-// stats: { houses, barns } for the player's village.
-function paintSettlements(container, world, hexMap, stats) {
-  const random = createRandom(world.seed + 7);
-  const size = world.grid.hexSize;
-  const svg = svgEl("svg", {
-    viewBox: `0 0 ${world.width} ${world.height}`,
-    width: "100%",
-    height: "100%",
-    preserveAspectRatio: "xMidYMid meet",
-    class: "map-settlements",
+    const text = svgEl("text", { class: "art-water-label", "font-size": 12, fill: "#2a5f77" });
+    const onPath = svgEl("textPath", { href: `#${pathId}`, startOffset: "22%" });
+    onPath.textContent = river.name;
+    text.appendChild(onPath);
+    layer.appendChild(text);
   });
 
-  // Dirt paths from the player's village out to every tile it holds,
-  // following the territory so no path crosses land you don't own.
-  const roads = svgEl("g", { class: "art-roads" });
-  const roadWidth = Math.max(1.8, size * 0.1);
-  const home = hexMap.getAllTiles().find((tile) => tile.isStartingTile);
-  if (home) {
-    const parent = new Map([[home.id, null]]);
-    const queue = [home];
-    while (queue.length) {
-      const current = queue.shift();
-      for (const neighbor of hexMap.getNeighbors(current.id)) {
-        if (neighbor.owner !== "player" || parent.has(neighbor.id)) continue;
-        parent.set(neighbor.id, current);
-        queue.push(neighbor);
-      }
+  (world.lakes || []).forEach((lake) => {
+    if (!lake.name || !lake.tileIds || !lake.tileIds.length) return;
+    let sumX = 0;
+    let sumY = 0;
+    let count = 0;
+    for (const id of lake.tileIds) {
+      const center = centerOf.get(id);
+      if (!center) continue;
+      sumX += center.x;
+      sumY += center.y;
+      count++;
     }
-    for (const [id, from] of parent) {
-      if (!from) continue;
-      const a = worldTileCenter(from.q, from.r, world.grid);
-      const to = hexMap.getTile(id);
-      const b = worldTileCenter(to.q, to.r, world.grid);
-      paintRoad(roads, [[a.x, a.y], [b.x, b.y]], roadWidth);
+    if (!count) return;
+    const text = svgEl("text", {
+      x: sumX / count, y: sumY / count + 4, "text-anchor": "middle",
+      class: "art-water-label", "font-size": 12, fill: "#18485c",
+    });
+    text.textContent = lake.name;
+    layer.appendChild(text);
+  });
 
-      // Wooden river bridge where roads cross water
-      if (to.terrainType === "river" || from.terrainType === "river") {
-        paintRiverBridge(roads, (a.x + b.x) / 2, (a.y + b.y) / 2, size * 0.75);
-      }
-    }
-  }
-  svg.appendChild(roads);
-
-  const buildings = svgEl("g", { class: "art-buildings" });
-
-  // ---------------------------------------------------------------------------
-  // Living Districts on Annexed Player Territory
-  // ---------------------------------------------------------------------------
-  const claimedTiles = hexMap.getClaimedTiles().filter((t) => !t.isStartingTile && t.owner === "player");
-  for (const cTile of claimedTiles) {
-    const c = worldTileCenter(cTile.q, cTile.r, world.grid);
-    const neighbors = hexMap.getNeighbors(cTile.id);
-    const isWaterfront = cTile.terrainType === "river" || neighbors.some((n) => n.terrainType === "river");
-    const isFrontierTile = hexMap.isFrontier(cTile.id);
-
-    if (isWaterfront) {
-      // River Fishery & Pier District
-      paintFisheryDock(buildings, c.x, c.y + size * 0.06, size * 0.88);
-      paintHouse(buildings, c.x - size * 0.3, c.y - size * 0.18, size * 0.48, "#785233");
-    } else if (["marsh", "tundra", "snowfield", "badlands", "beach"].includes(cTile.terrainType)) {
-      // Hard country: a hut, a store and somewhere to keep watch. No fields.
-      paintHouse(buildings, c.x - size * 0.26, c.y + size * 0.1, size * 0.5, ART_COLORS.roofDark);
-      paintBarn(buildings, c.x + size * 0.26, c.y - size * 0.1, size * 0.52);
-      paintWatchtower(buildings, c.x + size * 0.34, c.y + size * 0.26, size * 0.62, "#d9a441");
-    } else if (["forest", "denseBush", "timbermellowForest", "birchWood", "taiga"].includes(cTile.terrainType)) {
-      // Lumber & Forestry Camp District
-      paintLumberCamp(buildings, c.x - size * 0.06, c.y + size * 0.06, size * 0.86);
-      paintBarn(buildings, c.x + size * 0.32, c.y - size * 0.18, size * 0.52);
-      paintHouse(buildings, c.x - size * 0.34, c.y + size * 0.22, size * 0.44, ART_COLORS.roofDark);
-    } else if (["mountains", "rockyOutcrop", "overgrownHighlands"].includes(cTile.terrainType)) {
-      // Masonry Quarry & Blacksmith Smithy District
-      paintSmithy(buildings, c.x - size * 0.2, c.y + size * 0.08, size * 0.78);
-      paintQuarryWorks(buildings, c.x + size * 0.22, c.y - size * 0.12, size * 0.72);
-      paintWatchtower(buildings, c.x + size * 0.38, c.y + size * 0.24, size * 0.68, "#d9a441");
-    } else {
-      // Agricultural Farmland, Granary & Livestock District (plains, meadow, highlands)
-      paintBarn(buildings, c.x - size * 0.24, c.y - size * 0.12, size * 0.62);
-      paintAnimalPen(buildings, c.x + size * 0.24, c.y + size * 0.15, size * 0.68);
-      paintHouse(buildings, c.x - size * 0.28, c.y + size * 0.22, size * 0.46, ART_COLORS.roof);
-      if (cTile.terrainType === "plains") {
-        paintHayBale(buildings, c.x + size * 0.2, c.y - size * 0.28, size * 0.6);
-      }
-    }
-
-    // Fortified frontier outpost training grounds
-    if (isFrontierTile && cTile.terrainType !== "mountains" && cTile.terrainType !== "rockyOutcrop") {
-      paintTrainingGround(buildings, c.x + size * 0.28, c.y - size * 0.25, size * 0.62);
-    }
-  }
-
-  for (const village of world.villages) {
-    const tile = hexMap.getTile(village.homeTileId);
-    const c = worldTileCenter(tile.q, tile.r, world.grid);
-    if (village.kind === "player") {
-      paintPlayerVillage(buildings, c.x, c.y, size, stats, random);
-    } else {
-      paintOtherVillage(buildings, c.x, c.y, size, village, random);
-    }
-    const label = svgEl("text", { x: c.x, y: c.y - size * 1.05, class: "art-village-label", "text-anchor": "middle" });
-    label.textContent = village.name;
-    buildings.appendChild(label);
-  }
-  svg.appendChild(buildings);
-
-  container.innerHTML = "";
-  container.appendChild(svg);
-  return svg;
-}
-
-// The player's capital village: Chieftain's Great Hall, stone plaza, village well,
-// market stalls, central bonfire, and growing perimeter cottages
-function paintPlayerVillage(parent, x, y, size, stats, random) {
-  // Paved cobblestone civic plaza
-  paintPlaza(parent, x, y + size * 0.08, size * 1.08);
-
-  // Magnificent Chieftain's Great Hall at the capital center
-  paintChieftainHall(parent, x, y - size * 0.12, size * 0.92);
-
-  // Village well with bucket and shingled roof
-  paintWell(parent, x - size * 0.38, y + size * 0.2, size * 0.66);
-
-  // Flanking medieval market stalls
-  paintMarketStall(parent, x - size * 0.44, y - size * 0.04, "crimson", size * 0.54);
-  paintMarketStall(parent, x + size * 0.44, y - size * 0.04, "azure", size * 0.54);
-
-  // Capital hearth bonfire
-  paintCampfire(parent, x, y + size * 0.28, size * 0.72);
-
-  // Chieftain's golden heraldic banner
-  paintBanner(parent, x + size * 0.24, y + size * 0.26, size * 0.72, "#d9a441");
-
-  const slots = [
-    [-0.58, 0.32], [0.58, 0.32], [-0.35, 0.54], [0.35, 0.54], [0, 0.62],
-    [-0.68, 0.06], [0.68, 0.06], [-0.58, -0.42], [0.58, -0.42],
-    [-0.32, -0.62], [0.32, -0.62], [0, -0.68],
-    [-0.8, 0.28], [0.8, 0.28], [-0.75, 0.55], [0.75, 0.55],
-    [-0.5, 0.72], [0.5, 0.72], [-0.78, -0.22], [0.78, -0.22]
-  ];
-  const houses = stats.houses || 1;
-  const barns = stats.barns || 1;
-
-  let slot = 0;
-  // If additional barns built, place around the perimeter
-  for (let i = 1; i < barns && slot < slots.length; i++, slot++) {
-    paintBarn(parent, x + slots[slot][0] * size, y + slots[slot][1] * size, size * 0.58);
-  }
-  // If additional houses built, place around the perimeter
-  for (let i = 1; i < houses && slot < slots.length; i++, slot++) {
-    paintHouse(parent, x + slots[slot][0] * size, y + slots[slot][1] * size, size * 0.56, i % 3 === 1 ? ART_COLORS.roofDark : ART_COLORS.roof);
-  }
-
-  // Stone watchtower guards the settlement entrance as village prospers
-  if (houses >= 3 || barns >= 2) {
-    paintWatchtower(parent, x + size * 0.52, y - size * 0.42, size * 0.8, "#d9a441");
-  }
-
-  // Schools and army camps stand on the edge of the village once raised
-  // (js/professions.js).
-  const schools = stats.schools || 0;
-  const camps = stats.camps || 0;
-  for (let i = 0; i < Math.min(schools, 3); i++) {
-    paintSchoolhouse(parent, x - size * (0.9 + i * 0.42), y - size * 0.12, size * 0.5);
-  }
-  for (let i = 0; i < Math.min(camps, 3); i++) {
-    const cx = x + size * (0.9 + i * 0.42);
-    paintWarTent(parent, cx, y - size * 0.18, size * 0.5);
-    if (i === 0) paintTrainingGround(parent, cx, y + size * 0.3, size * 0.58);
-  }
-}
-
-function paintOtherVillage(parent, x, y, size, village, random) {
-  if (village.kind === "garlock") {
-    paintSpikes(parent, x, y + size * 0.35, size);
-    paintWarTent(parent, x - size * 0.28, y - size * 0.05, size * 0.7);
-    paintWarTent(parent, x + size * 0.28, y - size * 0.05, size * 0.65);
-    paintCampfire(parent, x, y + size * 0.1, size * 0.7);
-    paintBanner(parent, x, y - size * 0.25, size * 0.7, village.color);
-  } else {
-    paintPlaza(parent, x, y, size * 0.85);
-    paintChieftainHall(parent, x, y - size * 0.12, size * 0.75);
-    paintMarketStall(parent, x - size * 0.35, y + size * 0.12, "emerald", size * 0.48);
-    paintHouse(parent, x + size * 0.35, y + size * 0.12, size * 0.52, ART_COLORS.roof);
-    paintBanner(parent, x, y + size * 0.26, size * 0.65, village.color);
-  }
+  return layer;
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { paintWorld, paintSettlements };
+  module.exports = { paintWorld };
 }

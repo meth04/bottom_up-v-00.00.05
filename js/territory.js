@@ -25,6 +25,50 @@ const EXPLORE_MIN_SOLDIERS = 1;
 const EXPLORE_FOOD_COST = 10;
 const EXPLORE_WORK_HOURS = 4;
 
+// The grid is fine — a hex is a field, not a county — so an expedition does
+// not trudge out to claim one field. It settles the ground around where it
+// stops: the tile you picked and every wild tile within CLAIM_RADIUS of it.
+// One expedition therefore wins about as much land as it always did, and
+// the player does not have to press the button nine times as often.
+// Land nobody can settle, however close it is.
+const UNSETTLEABLE = ["ocean", "lake"];
+
+const CLAIM_RADIUS = 2;
+const SEIZE_RADIUS = 2;
+
+// How much ground a settlement stands on from the day it is founded. A
+// village is a hall, the cottages round it, the fields that feed them and
+// the commons beyond — about thirty-seven hexes on this grid, not one.
+const VILLAGE_RADIUS = 3;
+
+// Gives a village its home ground. Used when a new world is set out.
+function territoryFoundVillage(map, homeTileId, villageId) {
+  const home = map.getTile(homeTileId);
+  if (!home) return 0;
+  // The hall first, so it is the oldest claim and therefore the first
+  // patch of land the village works dry.
+  map.claimTile(home.id, villageId);
+  let claimed = 1;
+  for (const { q, r } of hexSpiral(home, VILLAGE_RADIUS)) {
+    const tile = map.tilesByCoord.get(hexKey(q, r));
+    if (!tile || tile.owner) continue;
+    if (UNSETTLEABLE.includes(tile.terrainType)) continue;
+    map.claimTile(tile.id, villageId);
+    claimed++;
+  }
+  return claimed;
+}
+
+// Every tile within `radius` of the middle one, nearest first.
+function territoryDistrict(middleId, radius) {
+  if (!territoryMap) return [];
+  const middle = territoryMap.getTile(middleId);
+  if (!middle) return [];
+  return hexSpiral(middle, radius)
+    .map(({ q, r }) => territoryMap.tilesByCoord.get(hexKey(q, r)))
+    .filter(Boolean);
+}
+
 // Taking a tile off another village: soldiers in proportion to how strong
 // that village is (see villages.js, villageStrength), one of them lost.
 const SEIZE_MIN_SOLDIERS = 2;
@@ -32,12 +76,14 @@ const SEIZE_SOLDIERS_LOST = 1;
 const SEIZE_FOOD_COST = 8;
 const SEIZE_WORK_HOURS = 4;
 
-// How much renewable resources grow back on the player's tiles each autumn
+// How much of a tile's carrying capacity comes back each autumn
 // (ask.txt, "Resource pool merge behaviour": "different per resource").
+// These are FRACTIONS, so they hold whatever size a tile is — see
+// HexMap.regrow.
 const REGROWTH_PER_AUTUMN = {
-  timbermellow: 60,
-  wood: 40,
-  grain: 80,
+  timbermellow: 0.28,
+  wood: 0.20,
+  grain: 0.32,
 };
 
 // ---------------------------------------------------------------------------
@@ -63,9 +109,25 @@ function territoryFoodTypes() {
     : ["timbermellow"];
 }
 
+// "How much food is left on my land" is asked seven or eight times every
+// time the screen refreshes, and the screen refreshes on every click. The
+// answer only changes when the land does, so it is remembered until then.
+let territoryTotalsVersion = -1;
+let territoryTotals = new Map();
+
 function territoryAvailable(types) {
   if (!territoryMap) return 0;
-  return territoryMap.getAvailable(types);
+  if (territoryMap.resourceVersion !== territoryTotalsVersion) {
+    territoryTotalsVersion = territoryMap.resourceVersion;
+    territoryTotals = new Map();
+  }
+  const key = types.join("+");
+  let total = territoryTotals.get(key);
+  if (total === undefined) {
+    total = territoryMap.getAvailable(types);
+    territoryTotals.set(key, total);
+  }
+  return total;
 }
 
 function territoryTake(types, wanted) {
@@ -83,7 +145,7 @@ function territoryRegrowAutumn() {
   // This is what teaches the player that the resource pool is finite.
   if (typeof ageFamineActive !== "undefined" && ageFamineActive) {
     rates = {};
-    for (const type of Object.keys(REGROWTH_PER_AUTUMN)) rates[type] = Math.round(REGROWTH_PER_AUTUMN[type] * 0.5);
+    for (const type of Object.keys(REGROWTH_PER_AUTUMN)) rates[type] = REGROWTH_PER_AUTUMN[type] * 0.5;
     territoryMap.decayCapacity(["timbermellow"], AGE_FAMINE_MAX_DECAY);
   }
   const grown = territoryMap.regrow(rates);
@@ -109,7 +171,7 @@ function territoryRevealMap() {
 }
 
 function territoryClaimedCount() {
-  return territoryMap ? territoryMap.getClaimedTiles().length : 0;
+  return territoryMap ? territoryMap.countClaimed() : 0;
 }
 
 function territorySelectedTileId() {
@@ -151,15 +213,27 @@ function territoryExploreHours() {
   return typeof professionExploreHourCost === "function" ? professionExploreHourCost() : EXPLORE_WORK_HOURS;
 }
 
-// Claims the tile and pays the expedition's cost. Returns the tile, or null
-// if territoryExploreBlocker() would have refused.
+// Claims the district around the tile and pays the expedition's cost.
+// Returns the tile the player picked, or null if it would have been refused.
 function territoryExplore(tileId) {
   if (territoryExploreBlocker(tileId)) return null;
   const tile = territoryMap.claimTile(tileId, "player");
+  // Everything wild and walkable around it comes with the settlement.
+  for (const neighbour of territoryDistrict(tileId, CLAIM_RADIUS)) {
+    if (neighbour.owner) continue;
+    if (UNSETTLEABLE.includes(neighbour.terrainType)) continue;
+    territoryMap.claimTile(neighbour.id, "player");
+  }
   timbermellow_count -= territoryExploreFood();
   working_hours -= territoryExploreHours();
   territoryChangedCallback({ kind: "claim", tile });
   return tile;
+}
+
+// How many tiles an expedition would actually win, for the button's hint.
+function territoryExploreYield(tileId) {
+  return territoryDistrict(tileId, CLAIM_RADIUS)
+    .filter((tile) => !tile.owner && !UNSETTLEABLE.includes(tile.terrainType)).length;
 }
 
 // ---- Seizing another village's land ---------------------------------------------
@@ -185,12 +259,20 @@ function territorySeizeBlocker(tileId) {
   return null;
 }
 
-// Takes the tile, pays the cost, loses a soldier. Returns the tile or null.
+// Takes the district, pays the cost, loses a soldier. Returns the tile or null.
 function territorySeize(tileId) {
   if (territorySeizeBlocker(tileId)) return null;
   const tile = territoryMap.getTile(tileId);
   const previousOwner = tile.owner;
   territoryMap.claimTile(tileId, "player");
+  // Soldiers take the ground around what they took, but never a village
+  // itself — "you can take the land around a village, never the village".
+  for (const neighbour of territoryDistrict(tileId, SEIZE_RADIUS)) {
+    if (neighbour.owner !== previousOwner) continue;
+    if (neighbour.villageId === previousOwner) continue;
+    if (UNSETTLEABLE.includes(neighbour.terrainType)) continue;
+    territoryMap.claimTile(neighbour.id, "player");
+  }
   human_army -= SEIZE_SOLDIERS_LOST;
   timbermellow_count -= SEIZE_FOOD_COST;
   working_hours -= SEIZE_WORK_HOURS;

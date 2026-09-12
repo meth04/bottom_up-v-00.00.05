@@ -20,18 +20,38 @@
 // TUNING
 // ---------------------------------------------------------------------------
 
-const WORLD_NOISE_SCALE = 12;         // bigger = broader hills and forests
-const WORLD_RIVER_COUNT = 14;
-const WORLD_VILLAGE_SPACING = 8;      // minimum hexes between villages
-const WORLD_LAKE_COUNT = 7;           // how many inland lakes to try for
-const WORLD_MIN_REGION = 10;          // tiles a region needs before it is named
+// ---------------------------------------------------------------------------
+// Everything here is measured in PIXELS or in a fixed fraction of the map,
+// never in hexes. The grid can be made three times finer without the island
+// changing shape: the same coastline, the same ranges, the same rivers, just
+// more and smaller hexes describing them.
+//
+// The one thing that does change with the grid is how much two neighbouring
+// hexes differ in height — on a finer grid they are closer together, so any
+// threshold measured as "a difference in elevation" is scaled by
+// GRADIENT (see generateWorld).
+// ---------------------------------------------------------------------------
+
+const WORLD_FEATURE_PIXELS = 336;     // bigger = broader hills and forests
+const WORLD_RIVER_COUNT = 34;
+const WORLD_VILLAGE_SPACING_PX = 230; // minimum distance between villages
+const WORLD_LAKE_COUNT = 16;          // how many inland lakes to try for
+const WORLD_ISLET_COUNT = 10;         // little islands out in the open sea
+const WORLD_MIN_REGION_PX2 = 5600;    // area a region needs before it is named
+const WORLD_LANDMARKS_EACH = 3;       // how many of each wonder to place
+
+// The reference grid all the per-hex numbers above were chosen against.
+const WORLD_REFERENCE_HEX = 28;
 
 // How far in from the paper's edge the sea reaches. Bigger = smaller island.
 const WORLD_ISLAND_BIAS = 0.04;
 
 const VILLAGE_NAMES = [
   "Ashford", "Brookhollow", "Cairnwick", "Dunmere", "Elmreach", "Fernby", "Greywater", "Hollins",
-  "Oakhaven", "Ironridge", "Stonegate", "Mistveil", "Riverrun", "Windshear"
+  "Oakhaven", "Ironridge", "Stonegate", "Mistveil", "Riverrun", "Windshear", "Barrowfield",
+  "Coldharbour", "Thornwick", "Marrowden", "Highmoor", "Saltcombe", "Netherby", "Applegarth",
+  "Rookstead", "Fallowmere", "Wexbridge", "Duncarrow", "Larkhollow", "Stillwater", "Brackenfell",
+  "Orley", "Pinebarrow", "Redcliffe", "Wraymouth", "Yarnwell", "Crowmarsh", "Bexhollow",
 ];
 const VILLAGE_COLORS = ["#c0392b", "#8e44ad", "#2980b9", "#16a085", "#d35400", "#7f8c8d", "#2c3e50", "#1abc9c"];
 const PLAYER_COLOR = "#d9a441";
@@ -57,6 +77,13 @@ const REGION_WORDS = {
   lake:        { head: ["The"], adj: ["Still", "Deep", "Black", "Clear"], noun: ["Mere", "Tarn", "Water", "Lake"] },
   beach:       { head: ["The"], adj: ["Pale", "Long", "Shell"], noun: ["Strand", "Shore", "Sands"] },
 };
+
+// What the water gets called. Rivers are named the way rivers are: after
+// what lives in them, what colour they run, or who used to own the mill.
+const RIVER_ADJECTIVES = ["Ash", "Cold", "Black", "Silver", "Otter", "Thorn", "Long", "Swift", "Elder", "Quiet", "Salmon", "Willow"];
+const RIVER_NOUNS = ["Water", "Beck", "Run", "Race", "Brook", "Rill", "Flow", "Dike"];
+const LAKE_ADJECTIVES = ["Still", "Deep", "Black", "Clear", "Cold", "Green", "Drowned", "Moon"];
+const LAKE_NOUNS = ["Mere", "Tarn", "Water", "Pool", "Eye"];
 
 // Ground that a village can be founded on.
 const HOMELY_TERRAIN = ["flowerMeadow", "plains", "forest", "birchWood", "overgrownHighlands"];
@@ -134,6 +161,20 @@ function ridgeNoise(x, y, seed, octaves) {
   return 1 - Math.abs(fractalNoise(x, y, seed, octaves) * 2 - 1);
 }
 
+// An adjective-plus-noun name that is not already on the map. Two "Moon
+// Meres" on one sheet reads as a mistake rather than as a coincidence, so
+// every named thing draws from the same pool of used names.
+function uniqueName(used, adjectives, nouns, random) {
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const candidate = `${pick(adjectives, random)} ${pick(nouns, random)}`;
+    if (!used.has(candidate)) {
+      used.add(candidate);
+      return candidate;
+    }
+  }
+  return null;
+}
+
 function clamp01(value) {
   return value < 0 ? 0 : value > 1 ? 1 : value;
 }
@@ -177,6 +218,19 @@ function generateWorld(spec) {
   const width = Math.round(grid.originX * 2 + (cols - 1) * hexWidth + hexWidth / 2);
   const height = Math.round(grid.originY * 2 + (rows - 1) * 1.5 * hexSize);
 
+  // How much less two neighbouring hexes differ in height than they did on
+  // the reference grid. Every "how steep is this" threshold is multiplied by
+  // it, so rivers still run and cliffs still form on a finer grid.
+  const GRADIENT = hexSize / WORLD_REFERENCE_HEX;
+  // The same idea for distances: a rule written in hexes becomes a rule
+  // written in pixels.
+  const hexesPerPixel = 1 / (hexSize * 1.5);
+  const inHexes = (pixels) => Math.max(1, Math.round(pixels * hexesPerPixel));
+  const edgeRing = inHexes(WORLD_REFERENCE_HEX * 1.5);          // the old "2 hexes in"
+
+  // Every name written on this map, so none of them is written twice.
+  const usedNames = new Set();
+
   // ---- Ground -----------------------------------------------------------------
   const tiles = [];
   const byKey = new Map();
@@ -188,8 +242,8 @@ function generateWorld(spec) {
       const q = col - Math.floor(row / 2);
       const r = row;
       const center = worldTileCenter(q, r, grid);
-      const nx = center.x / (hexSize * WORLD_NOISE_SCALE);
-      const ny = center.y / (hexSize * WORLD_NOISE_SCALE);
+      const nx = center.x / WORLD_FEATURE_PIXELS;
+      const ny = center.y / WORLD_FEATURE_PIXELS;
 
       // --- how far out to sea this tile is -----------------------------------
       // A rounded-rectangle island: part square (keeps the corners useful),
@@ -247,7 +301,7 @@ function generateWorld(spec) {
 
   // ---- Sea, then the ground it surrounds --------------------------------------
   for (const tile of tiles) {
-    if (tile.edgeDistance === 0 || tile.landMask <= 0) {
+    if (tile.edgeDistance < edgeRing * 0.5 || tile.landMask <= 0) {
       tile.terrainType = "ocean";
       continue;
     }
@@ -270,7 +324,45 @@ function generateWorld(spec) {
     if (!neighbors.length) continue;
     const water = neighbors.filter((n) => n.terrainType === "ocean").length;
     if (tile.terrainType !== "ocean" && water >= 5) tile.terrainType = "ocean";
-    else if (tile.terrainType === "ocean" && water === 0 && tile.edgeDistance > 0) tile.terrainType = "beach";
+    else if (tile.terrainType === "ocean" && water === 0 && tile.edgeDistance > edgeRing * 0.5) tile.terrainType = "beach";
+  }
+
+  // ---- Islets: something out there besides water ------------------------------
+  // Skerries and sandbars. Nobody can settle them — the sea is impassable —
+  // but an empty ocean reads as unfinished paper, and a chart with islands on
+  // it reads as a chart.
+  const isletSeeds = shuffle(
+    tiles.filter((tile) =>
+      tile.terrainType === "ocean" &&
+      tile.edgeDistance >= edgeRing &&
+      neighborsOf(tile).length === 6 &&
+      neighborsOf(tile).every((n) => n.terrainType === "ocean")),
+    random
+  );
+  const islets = [];
+  for (const seedTile of isletSeeds) {
+    if (islets.length >= WORLD_ISLET_COUNT) break;
+    // Keep them apart, and away from the mainland's own shore.
+    if (!islets.every((other) => hexDistance(other, seedTile) >= inHexes(200))) continue;
+    if (hexSpiral(seedTile, inHexes(84)).some(({ q, r }) => {
+      const tile = byKey.get(hexKey(q, r));
+      return tile && tile.terrainType !== "ocean";
+    })) continue;
+
+    // An islet is a little patch of land, not a single hex — on a fine grid
+    // one hex would be a speck nobody could see.
+    const body = hexSpiral(seedTile, Math.max(1, inHexes(34)))
+      .map(({ q, r }) => byKey.get(hexKey(q, r)))
+      .filter(Boolean);
+    for (const tile of body) {
+      tile.terrainType = "beach";
+      tile.coastal = true;
+    }
+    if (random() < 0.5) {
+      seedTile.terrainType = "rockyOutcrop";
+      for (const tile of neighborsOf(seedTile)) tile.terrainType = "rockyOutcrop";
+    }
+    islets.push(seedTile);
   }
 
   // ---- Rivers: start high, follow the slope, end in a lake or the sea ---------
@@ -278,41 +370,46 @@ function generateWorld(spec) {
   const sourceCandidates = shuffle(
     tiles.filter((tile) =>
       tile.elevation > 0.56 && tile.elevation < 0.80 &&
-      tile.edgeDistance >= 3 && !isWaterTerrain(tile.terrainType)),
+      tile.edgeDistance >= edgeRing * 1.5 && !isWaterTerrain(tile.terrainType)),
     random
   );
   const sources = [];
+  const sourceSpacing = inHexes(140);
   for (const candidate of sourceCandidates) {
     if (sources.length >= WORLD_RIVER_COUNT) break;
-    if (sources.every((source) => hexDistance(source, candidate) >= 5)) sources.push(candidate);
+    if (sources.every((source) => hexDistance(source, candidate) >= sourceSpacing)) sources.push(candidate);
   }
   for (const source of sources) {
     const path = [source];
     let current = source;
     let reachedWater = false;
-    for (let step = 0; step < 90; step++) {
+    for (let step = 0; step < inHexes(2600); step++) {
       const options = neighborsOf(current).filter((tile) => !path.includes(tile));
       if (!options.length) break;
       let next = options[0];
       let nextScore = Infinity;
       for (const option of options) {
         // Downhill, with a little wander so rivers meander.
-        const score = option.elevation + random() * 0.05;
+        const score = option.elevation + random() * 0.05 * GRADIENT;
         if (score < nextScore) { nextScore = score; next = option; }
       }
       if (next.terrainType === "ocean") { path.push(next); reachedWater = true; break; }
       if (next.terrainType === "river" || next.terrainType === "lake") { path.push(next); reachedWater = true; break; }
-      if (next.elevation > current.elevation + 0.035) { current.specialEffect = "pool"; break; }
+      if (next.elevation > current.elevation + 0.035 * GRADIENT) { current.specialEffect = "pool"; break; }
       path.push(next);
       current = next;
-      if (current.edgeDistance === 0) { reachedWater = true; break; }
+      if (current.edgeDistance < edgeRing * 0.5) { reachedWater = true; break; }
     }
     if (path.length < 3) continue;
     for (const tile of path) {
       if (tile.terrainType === "ocean") continue;   // the mouth stays sea
       tile.terrainType = "river";
     }
-    rivers.push({ tileIds: path.map((tile) => tile.id), reachedWater });
+    // Only a watercourse long enough to follow is worth a name on the map.
+    const name = path.length >= inHexes(140)
+      ? uniqueName(usedNames, RIVER_ADJECTIVES, RIVER_NOUNS, random)
+      : null;
+    rivers.push({ tileIds: path.map((tile) => tile.id), reachedWater, name });
   }
 
   // ---- Lakes: water pools where a river stopped, and in closed hollows --------
@@ -321,35 +418,43 @@ function generateWorld(spec) {
   const hollows = shuffle(
     tiles.filter((tile) =>
       !isWaterTerrain(tile.terrainType) && tile.terrainType !== "beach" &&
-      tile.elevation < 0.34 && tile.moisture > 0.55 && tile.edgeDistance >= 4),
+      tile.elevation < 0.34 && tile.moisture > 0.55 && tile.edgeDistance >= edgeRing * 2),
     random
   );
+  const lakeSpacing = inHexes(170);
   for (const candidate of hollows) {
     if (lakeSeeds.length >= WORLD_LAKE_COUNT) break;
-    if (lakeSeeds.every((seedTile) => hexDistance(seedTile, candidate) >= 6)) lakeSeeds.push(candidate);
+    if (lakeSeeds.every((seedTile) => hexDistance(seedTile, candidate) >= lakeSpacing)) lakeSeeds.push(candidate);
   }
   for (const seedTile of lakeSeeds) {
     // Grow a small blob outward through the lowest ground.
     const body = [seedTile];
-    const wanted = 2 + Math.floor(random() * 5);
+    // A lake covers a patch of ground, not a count of hexes, so it is the
+    // same size of water whatever the grid.
+    const wanted = Math.max(2, Math.round((2 + random() * 5) * (WORLD_REFERENCE_HEX / hexSize) ** 2 * 0.55));
+    const inBody = new Set([seedTile.id]);
     while (body.length < wanted) {
       const rim = [];
       for (const tile of body) {
         for (const neighbor of neighborsOf(tile)) {
-          if (body.includes(neighbor)) continue;
-          if (neighbor.terrainType === "ocean" || neighbor.edgeDistance <= 1) continue;
+          if (inBody.has(neighbor.id)) continue;
+          if (neighbor.terrainType === "ocean" || neighbor.edgeDistance <= edgeRing * 0.5) continue;
           rim.push(neighbor);
         }
       }
       if (!rim.length) break;
       rim.sort((a, b) => a.elevation - b.elevation);
       body.push(rim[0]);
+      inBody.add(rim[0].id);
     }
     for (const tile of body) {
       tile.terrainType = "lake";
       tile.specialEffect = null;
     }
-    lakes.push(body.map((tile) => tile.id));
+    lakes.push({
+      tileIds: body.map((tile) => tile.id),
+      name: body.length >= Math.max(3, wanted * 0.5) ? uniqueName(usedNames, LAKE_ADJECTIVES, LAKE_NOUNS, random) : null,
+    });
   }
 
   // Wet ground beside fresh water turns to marsh; slopes beside it terrace.
@@ -357,7 +462,7 @@ function generateWorld(spec) {
     if (isWaterTerrain(tile.terrainType) || tile.terrainType === "beach") continue;
     const besideFresh = neighborsOf(tile).some((n) => n.terrainType === "river" || n.terrainType === "lake");
     if (!besideFresh) continue;
-    if (tile.elevation < 0.38 && tile.moisture > 0.50 && tile.temperature > 0.20) {
+    if (tile.elevation < 0.40 && tile.moisture > 0.50 && tile.temperature > 0.20) {
       tile.terrainType = "marsh";
     } else if (tile.elevation > 0.48 && tile.elevation <= 0.64) {
       tile.terrainType = "overgrownHighlands";
@@ -372,14 +477,16 @@ function generateWorld(spec) {
   // ---- Villages ---------------------------------------------------------------
   const centerX = width / 2;
   const centerY = height / 2;
+  const isletIds = new Set(islets.flatMap((tile) => hexSpiral(tile, 1).map(({ q, r }) => hexKey(q, r))));
   const isHomely = (tile) =>
     HOMELY_TERRAIN.includes(tile.terrainType) &&
-    tile.edgeDistance >= 3 &&
+    !isletIds.has(hexKey(tile.q, tile.r)) &&
+    tile.edgeDistance >= edgeRing * 1.5 &&
     tile.temperature > 0.18 && tile.temperature < 0.88;
   let homely = tiles.filter(isHomely);
   if (homely.length < 4) {
     // A very hostile roll: fall back to anything dry and walkable.
-    homely = tiles.filter((tile) => !isWaterTerrain(tile.terrainType) && tile.terrainType !== "mountains" && tile.edgeDistance >= 2);
+    homely = tiles.filter((tile) => !isWaterTerrain(tile.terrainType) && tile.terrainType !== "mountains" && tile.edgeDistance >= edgeRing);
   }
   homely.sort((a, b) => {
     const da = Math.hypot(worldTileCenter(a.q, a.r, grid).x - centerX, worldTileCenter(a.q, a.r, grid).y - centerY);
@@ -396,7 +503,7 @@ function generateWorld(spec) {
   for (const candidate of others) {
     if (villages.length > wanted) break;
     const homes = villages.map((village) => byKey.get(hexKey(...village.homeTileId.split("_").slice(1).map(Number))));
-    if (homes.every((home) => hexDistance(home, candidate) >= WORLD_VILLAGE_SPACING)) {
+    if (homes.every((home) => hexDistance(home, candidate) >= inHexes(WORLD_VILLAGE_SPACING_PX))) {
       villages.push({
         id: `village${villages.length}`,
         name: VILLAGE_NAMES[(villages.length - 1) % VILLAGE_NAMES.length],
@@ -432,27 +539,44 @@ function generateWorld(spec) {
     home.villageId = village.id;
     home.snowCapped = false;
     // A village always has a little workable ground around it, so nobody
-    // starts hemmed in by rock and water.
-    for (const neighbor of neighborsOf(home)) {
+    // starts hemmed in by rock and water. On a fine grid that means a patch
+    // the size of the old single hex, not one speck.
+    const around = hexSpiral(home, Math.max(1, inHexes(WORLD_REFERENCE_HEX)))
+      .map(({ q, r }) => byKey.get(hexKey(q, r)))
+      .filter(Boolean);
+    for (const neighbor of around) {
+      if (neighbor === home) continue;
       if (neighbor.terrainType === "mountains") neighbor.terrainType = "rockyOutcrop";
+      if (isWaterTerrain(neighbor.terrainType) && neighbor.terrainType !== "river") neighbor.terrainType = "beach";
+      neighbor.snowCapped = false;
     }
   }
 
   // ---- A start you can actually live on ---------------------------------------
-  ensureViableStart(playerHome, byKey);
+  // The valley the player is founded on is the one that has to be liveable —
+  // it is the land they actually hold on turn one (js/territory.js,
+  // VILLAGE_RADIUS). Checking a wider ring than that would let a start be
+  // "fine" while everything within reach was rock.
+  ensureViableStart(playerHome, byKey, 3);
 
   // ---- Trade roads: the tracks that already run between the villages ----------
   const tradeRoutes = buildTradeRoutes(villages, byKey, neighborsOf, grid);
 
   // ---- Procedural Landmarks & World Wonders -----------------------------------
   const landmarkCandidates = shuffle(
-    tiles.filter((t) => !t.villageId && !t.isStartingTile && t.edgeDistance >= 3),
+    tiles.filter((t) => !t.villageId && !t.isStartingTile && t.edgeDistance >= edgeRing * 1.5),
     random
   );
   const placedLandmarks = new Set();
   const tryPlaceLandmark = (type, predicate) => {
-    const match = landmarkCandidates.find((t) => !t.landmark && !placedLandmarks.has(t.id) && predicate(t));
-    if (match) {
+    for (let placed = 0; placed < WORLD_LANDMARKS_EACH; placed++) {
+      const match = landmarkCandidates.find((t) =>
+        !t.landmark && !placedLandmarks.has(t.id) && predicate(t) &&
+        [...placedLandmarks].every((id) => {
+          const other = byKey.get(hexKey(...id.split("_").slice(1).map(Number)));
+          return !other || hexDistance(other, t) >= inHexes(240);
+        }));
+      if (!match) return;
       match.landmark = type;
       placedLandmarks.add(match.id);
     }
@@ -468,7 +592,8 @@ function generateWorld(spec) {
   tryPlaceLandmark("boneOrchard", (t) => t.terrainType === "badlands" || t.terrainType === "beach");
 
   // ---- Regions: name the big stretches of one kind of ground ------------------
-  const regions = nameRegions(tiles, neighborsOf, grid, random);
+  const hexArea = 2.598 * hexSize * hexSize;
+  const regions = nameRegions(tiles, neighborsOf, grid, random, usedNames, Math.round(WORLD_MIN_REGION_PX2 / hexArea));
 
   return { seed, cols, rows, grid, width, height, tiles, rivers, lakes, villages, regions, tradeRoutes };
 }
@@ -478,8 +603,8 @@ function generateWorld(spec) {
 // three people and quietly soft-locks the game — so if the two rings around
 // the player's home are missing food, wood or stone, the least useful tile
 // out there is quietly turned into ground that has it.
-function ensureViableStart(home, byKey) {
-  const near = hexSpiral(home, 2)
+function ensureViableStart(home, byKey, radius) {
+  const near = hexSpiral(home, radius)
     .map(({ q, r }) => byKey.get(hexKey(q, r)))
     .filter((tile) => tile && tile !== home);
 
@@ -496,12 +621,20 @@ function ensureViableStart(home, byKey) {
       donor = open.find((tile) => tile.terrainType === kind);
       if (donor) break;
     }
-    if (!donor) donor = open.find((tile) => hexDistance(tile, home) === 2) || open[0];
+    // Somewhere out towards the rim, but still inside the valley.
+    if (!donor) donor = open.find((tile) => hexDistance(tile, home) === radius - 1) || open[0];
     if (!donor) continue;
 
-    donor.terrainType = repair.becomes;
-    donor.landmark = null;
-    donor.snowCapped = false;
+    // Put down a patch of it, not one hex — one hex of stone on a fine grid
+    // is barely two loads.
+    const patch = hexSpiral(donor, 1)
+      .map(({ q, r }) => byKey.get(hexKey(q, r)))
+      .filter((tile) => tile && !tile.villageId && !tile.isStartingTile && !isWaterTerrain(tile.terrainType));
+    for (const tile of patch) {
+      tile.terrainType = repair.becomes;
+      tile.landmark = null;
+      tile.snowCapped = false;
+    }
   }
 }
 
@@ -611,7 +744,7 @@ function walkRoad(start, goal, neighborsOf) {
 
 // Flood-fills tiles of the same terrain into regions and gives the big ones
 // a name, so the map reads as somewhere rather than as a field of hexes.
-function nameRegions(tiles, neighborsOf, grid, random) {
+function nameRegions(tiles, neighborsOf, grid, random, usedNames, minTiles) {
   const seen = new Set();
   const regions = [];
 
@@ -630,10 +763,14 @@ function nameRegions(tiles, neighborsOf, grid, random) {
         queue.push(neighbor);
       }
     }
-    if (body.length < WORLD_MIN_REGION) continue;
+    if (body.length < minTiles) continue;
 
     const words = REGION_WORDS[kind];
     if (!words) continue;
+
+    const name = uniqueName(usedNames, words.adj, words.noun, random);
+    if (!name) continue;
+
     const id = `region_${regions.length}`;
     let sumX = 0;
     let sumY = 0;
@@ -646,7 +783,7 @@ function nameRegions(tiles, neighborsOf, grid, random) {
     regions.push({
       id,
       terrainType: kind,
-      name: `${pick(words.adj, random)} ${pick(words.noun, random)}`,
+      name,
       tileCount: body.length,
       center: { x: sumX / body.length, y: sumY / body.length },
     });

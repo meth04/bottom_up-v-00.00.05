@@ -7,7 +7,7 @@
 
 function setupMapViewport(stage, viewport) {
   const MIN_SCALE = 0.65;
-  const MAX_SCALE = 5.0;
+  const MAX_SCALE = 16.0;
 
   let scale = 1;
   let translateX = 0;
@@ -34,7 +34,16 @@ function setupMapViewport(stage, viewport) {
     translateX = Math.min(maxX, Math.max(minX, translateX));
     translateY = Math.min(maxY, Math.max(minY, translateY));
     viewport.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+    // Anything caching a screen-space transform has to be told.
+    if (typeof hexRenderer !== "undefined" && hexRenderer && hexRenderer.invalidateTransform) {
+      hexRenderer.invalidateTransform();
+    }
     stage.classList.toggle("is-zoomed", scale > 1.01);
+    // How close the player is looking. The stylesheet uses this to drop the
+    // undergrowth and the river names when they would only be noise, and to
+    // fade the big region names once you are down among the hexes.
+    stage.classList.toggle("is-far", scale < 3.5);
+    stage.classList.toggle("is-near", scale >= 7);
     for (const listener of listeners) listener(getView());
   }
 

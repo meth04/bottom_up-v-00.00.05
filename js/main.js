@@ -97,7 +97,40 @@ const RESOURCE_ICONS = {
 // Boot
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Booting
+//
+// Building the island takes about half a second and painting it takes about
+// as long again. Done in one go that is a second of white screen with the
+// tab frozen, which reads as a broken page. So it is done in stages, with a
+// frame handed back to the browser between each one, and a loading card
+// that says what is being built. The work is the same; the difference is
+// that the player can see it happening.
+// ---------------------------------------------------------------------------
+
+// Hands control back so the browser can paint what has just been set up.
+function nextFrame() {
+  return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+}
+
+function bootStage(caption, fraction) {
+  const screen = document.getElementById("bootScreen");
+  if (!screen) return;
+  const label = document.getElementById("bootCaption");
+  const bar = document.getElementById("bootBarFill");
+  if (label) label.textContent = caption;
+  if (bar) bar.style.width = `${Math.round(fraction * 100)}%`;
+}
+
+function bootDone() {
+  const screen = document.getElementById("bootScreen");
+  if (!screen) return;
+  screen.classList.add("is-gone");
+  setTimeout(() => { screen.hidden = true; }, 700);
+}
+
 async function initGame() {
+  bootStage("Unrolling the paper…", 0.04);
   const response = await fetch("data/map.json");
   const mapData = await response.json();
 
@@ -107,12 +140,11 @@ async function initGame() {
   else if (params.get("seed")) worldSeed = Number(params.get("seed")) >>> 0;
   else worldSeed = Math.floor(Math.random() * 1e9);
 
-  // If a seed was given in URL, bypass the Title Screen directly so automated playtests run cleanly
+  // If a seed was given in URL, bypass the title screen so automated
+  // playtests run cleanly.
   const titleScreen = document.getElementById("titleScreen");
   const continueBtn = document.getElementById("btnContinueGame");
-  if (continueBtn && saved) {
-    continueBtn.style.display = "flex";
-  }
+  if (continueBtn && saved) continueBtn.style.display = "flex";
   if (params.get("seed") || location.hash.includes("stop-after-explore")) {
     if (titleScreen) {
       titleScreen.classList.add("is-hidden");
@@ -120,6 +152,8 @@ async function initGame() {
     }
   }
 
+  bootStage("Raising the land out of the sea…", 0.12);
+  await nextFrame();
   world = generateWorld(Object.assign({}, mapData.world, { seed: worldSeed }));
   mapGrid = world.grid;
 
@@ -127,19 +161,29 @@ async function initGame() {
   const home = world.tiles.find((tile) => tile.isStartingTile);
   home.resources = mapData.startingTile.resources;
 
+  bootStage("Counting what grows on it…", 0.34);
+  await nextFrame();
   hexMap = new HexMap({ terrainDefaults: mapData.terrainDefaults, tiles: world.tiles });
   villagesSet(world.villages);
   if (saved) {
     hexMap.deserialize(saved.map);
     villagesSet(saved.villages);
   } else {
-    for (const village of world.villages) hexMap.claimTile(village.homeTileId, village.id);
+    // Every settlement starts on its own valley, not on a single hex.
+    for (const village of world.villages) {
+      territoryFoundVillage(hexMap, village.homeTileId, village.id);
+    }
   }
   hexMap.selectTile(home.id);
   territorySetMap(hexMap, mapGrid, onTerritoryChanged);
 
+  bootStage("Painting the country…", 0.46);
+  await nextFrame();
   const viewBox = { x: 0, y: 0, width: world.width, height: world.height };
   paintWorld(document.getElementById("mapArtworkHost"), world);
+
+  bootStage("Drawing the borders…", 0.74);
+  await nextFrame();
   hexRenderer = new HexRenderer(hexMap, document.getElementById("hexMapSvgHost"), {
     hexSize: mapGrid.hexSize,
     origin: { x: mapGrid.originX, y: mapGrid.originY },
@@ -152,10 +196,12 @@ async function initGame() {
   const village = villageCenter();
   mapEffects.setVillage(village.x, village.y - mapGrid.hexSize * 0.2);
 
+  bootStage("Setting out the village…", 0.86);
+  await nextFrame();
   viewport = setupMapViewport(document.getElementById("mapstage"), document.getElementById("mapviewport"));
   viewport.onChange(drawMinimap);
   document.getElementById("minimap").addEventListener("click", onMinimapClick);
-  viewport.focusOn(village, { width: world.width, height: world.height }, 2.8);
+  viewport.focusOn(village, { width: world.width, height: world.height }, 7.5);
 
   const seedLabel = document.getElementById("seedLabel");
   if (seedLabel) seedLabel.textContent = worldSeed;
@@ -166,15 +212,19 @@ async function initGame() {
     gameSetState(saved.game);
     updatelog(`Welcome back — turn ${saved.game.turngame}, saved ${new Date(saved.savedAt).toLocaleString()}.`, "good");
   } else {
-    updatelog("Your village stands in a single timbermellow forest. When it starts to run dry, explore the land around it — and mind the neighbours.", "good");
+    updatelog("Your village stands in a single timbermellow grove. When it starts to run dry, explore the land around it — and mind the neighbours.", "good");
   }
 
+  bootStage("Ready.", 1);
   uiInit();
   hexRenderer.render();
   refreshTilePanel();
   refreshVillagesPanel();
   update();
   villagers.start();
+  turnSnapshotTake();
+  await nextFrame();
+  bootDone();
 }
 
 // The named stretch of country a tile belongs to, if it is part of one.
@@ -183,9 +233,21 @@ function regionOfTile(tile) {
   return (world.regions || []).find((region) => region.id === tile.regionId) || null;
 }
 
+// The hearth never moves, so it is found once. It used to be looked up by
+// searching the whole map, which is thirty thousand tiles now and is asked
+// for on every frame of the villagers' animation.
+let homeTileCache = null;
+
+function homeTile() {
+  if (!homeTileCache && hexMap) {
+    homeTileCache = hexMap.getAllTiles().find((candidate) => candidate.isStartingTile) || null;
+  }
+  return homeTileCache;
+}
+
 function villageCenter() {
-  const tile = hexMap.getAllTiles().find((candidate) => candidate.isStartingTile);
-  return worldTileCenter(tile.q, tile.r, mapGrid);
+  const tile = homeTile();
+  return tile ? worldTileCenter(tile.q, tile.r, mapGrid) : { x: 0, y: 0 };
 }
 
 // ---------------------------------------------------------------------------
@@ -218,6 +280,7 @@ function onTerritoryChanged(event) {
     refreshTilePanel();
     refreshVillagesPanel();
     refreshSettlements(true);
+    invalidateMinimap();
     drawMinimap();
     if (mapEffects) {
       const from = villageCenter();
@@ -229,6 +292,7 @@ function onTerritoryChanged(event) {
 
   hexRenderer.render();
   refreshTilePanel();
+  invalidateMinimap();
   drawMinimap();
 }
 
@@ -238,6 +302,7 @@ function afterTurnEnded() {
   hexRenderer.render();
   refreshTilePanel();
   refreshVillagesPanel();
+  invalidateMinimap();
   drawMinimap();
   saveGame(worldSeed);
 
@@ -284,11 +349,13 @@ function refreshMapEffects() {
 
 // Redraws buildings and roads only when something about them changed.
 function refreshSettlements(force) {
-  const key = `${stonehouse}|${barn}|${school}|${armycamp}|${territoryClaimedCount()}`;
+  // The season is in the key because the fields change with it: turned earth
+  // in spring, green in summer, sheaves at harvest, snow-covered stubble.
+  const key = `${stonehouse}|${barn}|${school}|${armycamp}|${territoryClaimedCount()}|${seasonchecker}`;
   if (!force && key === settlementsKey) return;
   settlementsKey = key;
   paintSettlements(document.getElementById("mapSettlementsHost"), world, hexMap, {
-    houses: stonehouse, barns: barn, schools: school, camps: armycamp,
+    houses: stonehouse, barns: barn, schools: school, camps: armycamp, season: seasonchecker,
   });
 }
 
@@ -315,6 +382,8 @@ function toggleLog() {
 // Tile inspection pane and minimap
 // ---------------------------------------------------------------------------
 
+let tilePanelKey = "";
+
 function refreshTilePanel() {
   const info = document.getElementById("tileInfo");
   const button = document.getElementById("exploreButton");
@@ -324,8 +393,16 @@ function refreshTilePanel() {
 
   const tile = hexMap.getSelectedTile();
   if (focusButton) focusButton.disabled = !tile;
+  const findButton = document.getElementById("findLandButton");
+  if (findButton) {
+    const anywhere = hexMap.getFrontierTiles("player")
+      .some((candidate) => !["ocean", "lake"].includes(candidate.terrainType));
+    findButton.disabled = !anywhere;
+    findButton.dataset.tipBlock = anywhere ? "" : "There is no wild land touching yours.";
+  }
 
   if (!tile) {
+    tilePanelKey = "";
     info.innerHTML = `
       <div class="rw-tileinfo__name">Select Land</div>
       <div class="rw-tileinfo__state">Click any hex on the map to survey its terrain and resources.</div>`;
@@ -341,6 +418,17 @@ function refreshTilePanel() {
   const frontier = hexMap.isFrontier(tile.id);
   const revealed = hexMap.isRevealed(tile.id);
   const foreign = tile.owner && tile.owner !== "player";
+
+  // The pane is a chunk of innerHTML; rebuilding it on every click throws
+  // away the player's tooltip and costs a layout for nothing. It only needs
+  // redrawing when the tile, its stores, or what you could do to it change.
+  const key = [
+    tile.id, revealed, claimed, frontier, foreign, tile.owner,
+    Object.keys(tile.resources).map((type) => tile.resources[type].amount + "/" + tile.resources[type].max).join(","),
+    foreign ? territorySeizeBlocker(tile.id) : territoryExploreBlocker(tile.id),
+  ].join("|");
+  if (key === tilePanelKey) return;
+  tilePanelKey = key;
 
   if (!revealed) {
     info.innerHTML = `
@@ -381,14 +469,15 @@ function refreshTilePanel() {
     const blocker = territoryExploreBlocker(tile.id);
     // Scouts make the march cheaper, so quote what it actually costs today.
     const cost = `${EXPLORE_MIN_HUMANS} villagers · ${EXPLORE_MIN_SOLDIERS} soldier · ${territoryExploreFood()} food · ${territoryExploreHours()} hours`;
+    const gained = territoryExploreYield(tile.id);
     setTileGizmo(button, "🚩", "Explore", false);
     button.onclick = explore;
     button.disabled = !!blocker;
     button.dataset.tipTitle = "Send an expedition";
-    button.dataset.tip = "The hex is annexed into your territory, its resources join your stores-on-land, and surrounding lands are revealed.";
+    button.dataset.tip = `An expedition settles a whole district, not one field — about ${gained} hexes around this one. Everything on them joins your stores-on-land, and the country beyond comes into view.`;
     button.dataset.tipCost = cost;
     button.dataset.tipBlock = blocker || "";
-    reason.textContent = blocker || `Requires: ${cost}.`;
+    reason.textContent = blocker || `Requires: ${cost}. Settles about ${gained} hexes.`;
     reason.className = blocker ? "rw-reason rw-reason--blocked" : "rw-reason";
   }
 }
@@ -444,136 +533,179 @@ function refreshVillagesPanel() {
 // Minimap & Camera
 // ---------------------------------------------------------------------------
 
+// The world panel. Three layers, because it is redrawn on every frame of a
+// drag and there are thirty thousand tiles:
+//
+//   terrain   painted once, offscreen — the island never changes
+//   holdings  repainted only when land changes hands or is revealed
+//   the box   the only thing drawn on every viewport change
+let minimapTerrain = null;
+let minimapHoldings = null;
+let minimapHoldingsKey = "";
+
+function minimapProjection(canvas) {
+  const scale = Math.min(canvas.width / world.width, canvas.height / world.height);
+  return {
+    scale,
+    ox: (canvas.width - world.width * scale) / 2,
+    oy: (canvas.height - world.height * scale) / 2,
+    radius: Math.max(0.7, mapGrid.hexSize * scale * 0.9),
+  };
+}
+
+function buildMinimapTerrain(canvas) {
+  const layer = document.createElement("canvas");
+  layer.width = canvas.width;
+  layer.height = canvas.height;
+  const ctx = layer.getContext("2d");
+  const { scale, ox, oy, radius } = minimapProjection(canvas);
+
+  ctx.fillStyle = "#8fb4c4";
+  ctx.fillRect(0, 0, layer.width, layer.height);
+
+  // Grouped by colour: a few dozen fills instead of thirty thousand.
+  const byColor = new Map();
+  for (const tile of hexMap.getAllTiles()) {
+    if (tile.terrainType === "ocean") continue;
+    const color = MINIMAP_TERRAIN_TINT[tile.terrainType] || "rgba(180, 150, 110, 0.5)";
+    if (!byColor.has(color)) byColor.set(color, []);
+    byColor.get(color).push(tile);
+  }
+  for (const [color, tiles] of byColor) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    for (const tile of tiles) {
+      const center = worldTileCenter(tile.q, tile.r, mapGrid);
+      const px = ox + center.x * scale;
+      const py = oy + center.y * scale;
+      ctx.moveTo(px + radius, py);
+      ctx.arc(px, py, radius, 0, Math.PI * 2);
+    }
+    ctx.fill();
+  }
+  return layer;
+}
+
+// Who holds what, and what is still blank paper.
+function buildMinimapHoldings(canvas) {
+  const layer = document.createElement("canvas");
+  layer.width = canvas.width;
+  layer.height = canvas.height;
+  const ctx = layer.getContext("2d");
+  const { scale, ox, oy, radius } = minimapProjection(canvas);
+
+  // Fog first: everything not yet seen goes back to parchment.
+  if (!hexMap.mapmakingUnlocked) {
+    ctx.fillStyle = "#e2d2b2";
+    ctx.fillRect(0, 0, layer.width, layer.height);
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.beginPath();
+    for (const tile of hexMap.getSeenTiles()) {
+      const center = worldTileCenter(tile.q, tile.r, mapGrid);
+      const px = ox + center.x * scale;
+      const py = oy + center.y * scale;
+      ctx.moveTo(px + radius * 1.4, py);
+      ctx.arc(px, py, radius * 1.4, 0, Math.PI * 2);
+    }
+    ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  const byColor = new Map();
+  for (const [owner, ids] of hexMap.tilesByOwner) {
+    const color = owner === "player" ? "#c29339" : villageColor(owner) || "#888888";
+    if (!byColor.has(color)) byColor.set(color, []);
+    for (const id of ids) {
+      const tile = hexMap.getTile(id);
+      if (tile && hexMap.isRevealed(id)) byColor.get(color).push(tile);
+    }
+  }
+  for (const [color, tiles] of byColor) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    for (const tile of tiles) {
+      const center = worldTileCenter(tile.q, tile.r, mapGrid);
+      const px = ox + center.x * scale;
+      const py = oy + center.y * scale;
+      ctx.moveTo(px + radius, py);
+      ctx.arc(px, py, radius, 0, Math.PI * 2);
+    }
+    ctx.fill();
+  }
+
+  // Where the villages stand.
+  for (const village of villagesGet()) {
+    const homeTile = hexMap.getTile(village.homeTileId);
+    if (!homeTile || !hexMap.isRevealed(homeTile.id)) continue;
+    const center = worldTileCenter(homeTile.q, homeTile.r, mapGrid);
+    const px = ox + center.x * scale;
+    const py = oy + center.y * scale;
+    ctx.fillStyle = village.kind === "garlock" ? "#8c1f1f" : village.kind === "player" ? "#f2c14e" : "#2a4d3a";
+    ctx.beginPath();
+    ctx.arc(px, py, 2.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  return layer;
+}
+
+// Called whenever land changes hands, so the holdings layer is rebuilt then
+// rather than on every frame of a drag.
+function invalidateMinimap() {
+  minimapHoldingsKey = "";
+}
+
 function drawMinimap() {
   const canvas = document.getElementById("minimap");
   if (!canvas || !world || !viewport) return;
   const ctx = canvas.getContext("2d");
-  const cw = canvas.width;
-  const ch = canvas.height;
-  ctx.clearRect(0, 0, cw, ch);
 
-  // Background tint: antique parchment look
-  ctx.fillStyle = "#edd9b4";
-  ctx.fillRect(0, 0, cw, ch);
+  if (!minimapTerrain) minimapTerrain = buildMinimapTerrain(canvas);
+  const key = `${hexMap.seenTiles.size}|${hexMap.claimOrder.length}|${hexMap.mapmakingUnlocked}`;
+  if (key !== minimapHoldingsKey) {
+    minimapHoldings = buildMinimapHoldings(canvas);
+    minimapHoldingsKey = key;
+  }
 
-  // Subtle parchment border inside
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(minimapTerrain, 0, 0);
+  if (minimapHoldings) ctx.drawImage(minimapHoldings, 0, 0);
+
   ctx.strokeStyle = "#cbb28d";
   ctx.lineWidth = 1;
-  ctx.strokeRect(1, 1, cw - 2, ch - 2);
-
-  const scale = Math.min(cw / world.width, ch / world.height);
-  const ox = (cw - world.width * scale) / 2;
-  const oy = (ch - world.height * scale) / 2;
-
-  // The sea is drawn whether or not it has been visited, so the island's
-  // shape is always readable — it is the one thing a sailor would know.
-  const radius = Math.max(1.8, mapGrid.hexSize * scale * 0.85);
-  for (const tile of hexMap.getAllTiles()) {
-    if (tile.terrainType !== "ocean") continue;
-    const center = worldTileCenter(tile.q, tile.r, mapGrid);
-    ctx.fillStyle = "#8fb4c4";
-    ctx.beginPath();
-    ctx.arc(ox + center.x * scale, oy + center.y * scale, radius, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // Render rivers
-  if (world.rivers && world.rivers.length) {
-    ctx.strokeStyle = "rgba(74, 119, 122, 0.45)";
-    ctx.lineWidth = Math.max(1, 2 * scale);
-    ctx.lineCap = "round";
-    for (const river of world.rivers) {
-      const ids = river.tileIds || river;
-      if (!ids || ids.length < 2) continue;
-      ctx.beginPath();
-      ids.forEach((id, index) => {
-        const tile = hexMap.getTile(id);
-        if (!tile) return;
-        const center = worldTileCenter(tile.q, tile.r, mapGrid);
-        const px = ox + center.x * scale;
-        const py = oy + center.y * scale;
-        if (index === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      });
-      ctx.stroke();
-    }
-  }
-
-  // Render hexes
-  for (const tile of hexMap.getAllTiles()) {
-    if (!hexMap.isRevealed(tile.id)) continue;
-    const center = worldTileCenter(tile.q, tile.r, mapGrid);
-    const px = ox + center.x * scale;
-    const py = oy + center.y * scale;
-
-    if (tile.owner === "player") {
-      ctx.fillStyle = "#c29339";
-    } else if (tile.owner) {
-      ctx.fillStyle = villageColor(tile.owner);
-    } else if (hexMap.isFrontier(tile.id)) {
-      ctx.fillStyle = "rgba(100, 145, 75, 0.45)";
-    } else if (MINIMAP_TERRAIN_TINT[tile.terrainType]) {
-      ctx.fillStyle = MINIMAP_TERRAIN_TINT[tile.terrainType];
-    } else {
-      ctx.fillStyle = "rgba(180, 150, 110, 0.18)";
-    }
-
-    ctx.beginPath();
-    ctx.arc(px, py, radius, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // Highlight village centers
-  if (typeof villagesGet === "function") {
-    const villages = villagesGet();
-    for (const v of villages) {
-      const homeTile = hexMap.getTile(v.homeTileId);
-      if (!homeTile || !hexMap.isRevealed(homeTile.id)) continue;
-      const center = worldTileCenter(homeTile.q, homeTile.r, mapGrid);
-      const px = ox + center.x * scale;
-      const py = oy + center.y * scale;
-
-      ctx.fillStyle = v.kind === "garlock" ? "#8c1f1f" : "#2a4d3a";
-      ctx.beginPath();
-      ctx.arc(px, py, radius * 1.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "#fff";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
-  }
+  ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
 
   // Camera viewport indicator
   const stage = document.getElementById("mapstage");
-  if (stage) {
-    const sRect = stage.getBoundingClientRect();
-    const fit = Math.min(sRect.width / world.width, sRect.height / world.height);
-    const offsetX = (sRect.width - world.width * fit) / 2;
-    const offsetY = (sRect.height - world.height * fit) / 2;
-    const view = viewport.getView();
+  if (!stage) return;
+  const { scale, ox, oy } = minimapProjection(canvas);
+  const sRect = stage.getBoundingClientRect();
+  const fit = Math.min(sRect.width / world.width, sRect.height / world.height);
+  const offsetX = (sRect.width - world.width * fit) / 2;
+  const offsetY = (sRect.height - world.height * fit) / 2;
+  const view = viewport.getView();
 
-    const worldLeft = (-view.translateX / view.scale - offsetX) / fit;
-    const worldTop = (-view.translateY / view.scale - offsetY) / fit;
-    const worldW = (sRect.width / view.scale) / fit;
-    const worldH = (sRect.height / view.scale) / fit;
+  const worldLeft = (-view.translateX / view.scale - offsetX) / fit;
+  const worldTop = (-view.translateY / view.scale - offsetY) / fit;
+  const worldW = (sRect.width / view.scale) / fit;
+  const worldH = (sRect.height / view.scale) / fit;
 
-    const vx = ox + worldLeft * scale;
-    const vy = oy + worldTop * scale;
-    const vw = worldW * scale;
-    const vh = worldH * scale;
+  const vx = ox + worldLeft * scale;
+  const vy = oy + worldTop * scale;
+  const vw = worldW * scale;
+  const vh = worldH * scale;
 
-    ctx.strokeStyle = "#8c2a1c";
-    ctx.lineWidth = 1.8;
-    ctx.strokeRect(vx, vy, vw, vh);
-
-    // Golden corner accents on camera box
-    ctx.fillStyle = "#8c2a1c";
-    const cs = 3;
-    ctx.fillRect(vx - 1, vy - 1, cs, cs);
-    ctx.fillRect(vx + vw - cs + 1, vy - 1, cs, cs);
-    ctx.fillRect(vx - 1, vy + vh - cs + 1, cs, cs);
-    ctx.fillRect(vx + vw - cs + 1, vy + vh - cs + 1, cs, cs);
-  }
+  ctx.strokeStyle = "#8c2a1c";
+  ctx.lineWidth = 1.8;
+  ctx.strokeRect(vx, vy, vw, vh);
+  ctx.fillStyle = "#8c2a1c";
+  const cs = 3;
+  ctx.fillRect(vx - 1, vy - 1, cs, cs);
+  ctx.fillRect(vx + vw - cs + 1, vy - 1, cs, cs);
+  ctx.fillRect(vx - 1, vy + vh - cs + 1, cs, cs);
+  ctx.fillRect(vx + vw - cs + 1, vy + vh - cs + 1, cs, cs);
 }
 
 function onMinimapClick(event) {
@@ -624,7 +756,7 @@ function garlockDirectionText() {
 function focusVillage() {
   if (!viewport) return;
   const current = viewport.getView();
-  viewport.focusOn(villageCenter(), { width: world.width, height: world.height }, Math.max(2.6, current.scale));
+  viewport.focusOn(villageCenter(), { width: world.width, height: world.height }, Math.max(7, current.scale));
 }
 
 function focusSelectedTile() {
@@ -632,13 +764,13 @@ function focusSelectedTile() {
   const tile = hexMap.getSelectedTile();
   if (!tile) return;
   const current = viewport.getView();
-  viewport.focusOn(worldTileCenter(tile.q, tile.r, mapGrid), { width: world.width, height: world.height }, Math.max(2.2, current.scale));
+  viewport.focusOn(worldTileCenter(tile.q, tile.r, mapGrid), { width: world.width, height: world.height }, Math.max(6, current.scale));
 }
 
 function selectBestFrontier() {
   if (!hexMap) return;
-  const frontier = hexMap.getAllTiles().filter((tile) =>
-    hexMap.isFrontier(tile.id) && !tile.owner && !["ocean", "lake"].includes(tile.terrainType));
+  const frontier = hexMap.getFrontierTiles("player")
+    .filter((tile) => !["ocean", "lake"].includes(tile.terrainType));
   if (!frontier.length) return;
   const worth = (tile) => Object.values(tile.resources || {}).reduce((total, entry) => total + (entry.amount || 0), 0);
   frontier.sort((a, b) => worth(b) - worth(a));

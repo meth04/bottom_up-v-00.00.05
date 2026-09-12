@@ -20,7 +20,9 @@ const VILLAGE_EXPAND_CHANCE = { rival: 0.35, garlock: 0.5 };
 function villageStrength(village, map) {
   const tiles = map.getTilesOwnedBy(village.id).length;
   const base = village.kind === "garlock" ? 4 : 2;
-  return base + tiles * 2;
+  // A tile is a field now, not a county, so it takes a lot more of them to
+  // make a village formidable (js/territory.js, CLAIM_RADIUS).
+  return base + Math.round(tiles / 5) * 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -77,6 +79,15 @@ function villagesTakeTurn(map, grid, turn, seed, log) {
     if (!frontier.length) continue;
     const target = frontier[Math.floor(random() * frontier.length)];
     map.claimTile(target.id, village.id);
+    // A village spreads into a patch of ground, not one field at a time —
+    // a hamlet's worth at once, the same as one of the player's expeditions
+    // (js/territory.js, CLAIM_RADIUS).
+    for (const { q, r } of hexSpiral(target, 2)) {
+      const neighbour = map.tilesByCoord.get(hexKey(q, r));
+      if (!neighbour || neighbour.owner) continue;
+      if (["ocean", "lake", "mountains", "snowfield"].includes(neighbour.terrainType)) continue;
+      if (random() < 0.75) map.claimTile(neighbour.id, village.id);
+    }
 
     // Only worth a log line if the player can actually see it happen.
     if (map.isRevealed(target.id) && playerHome) {

@@ -428,10 +428,18 @@ function uiBuildAlerts() {
   return alerts;
 }
 
+let uiAlertKey = "";
+
 function uiRefreshAlerts() {
   const host = document.getElementById("alertList");
   if (!host) return;
   const alerts = uiBuildAlerts();
+  // Rebuilding ten buttons on every single click is a lot of thrown-away
+  // DOM, and it kills the hover state under the player's cursor. The list
+  // only changes when one of the things it warns about changes.
+  const key = alerts.map((alert) => alert.level + alert.text).join("|");
+  if (key === uiAlertKey) return;
+  uiAlertKey = key;
   host.innerHTML = "";
   alerts.forEach((alert) => {
     const button = document.createElement("button");
@@ -484,6 +492,18 @@ const UI_LESSONS = [
     title: "Winter is Coming",
     body: "In winter nothing can be gathered, everyone still eats, and anyone without a roof dies of exposure. This is the whole of Act I: get everybody through it.",
     when: () => seasonchecker === 3,
+  },
+  {
+    id: "allday",
+    title: "A Whole Day at Once",
+    body: "You have enough hands that clicking one hour at a time is a waste of your evening. ×5 does five hours; ALL spends everything you have left — and stops before the barns overflow.",
+    when: () => ageHas("bulk_five"),
+  },
+  {
+    id: "ledger",
+    title: "What Just Happened",
+    body: "After every turn a short ledger appears above the clock: what you gathered, what was eaten, what spoiled, who arrived and who did not survive. Click it to put it away.",
+    when: () => turngame >= 3,
   },
   {
     id: "explore",
@@ -599,6 +619,13 @@ function uiBlockReasons() {
   reason("btn_wood_5x", working_hours < 5 ? "Needs 5 work hours." : woodOnLand <= 0 ? "No wood left on your land." : "");
   reason("btn_stone", working_hours <= 0 ? noHours : stoneOnLand <= 0 ? "No stone left on your land — stone never grows back." : "");
   reason("btn_stone_5x", working_hours < 5 ? "Needs 5 work hours." : stoneOnLand <= 0 ? "No stone left on your land." : "");
+  reason("btn_timbermellow_all",
+    working_hours <= 0 ? noHours :
+    seasonchecker === 4 ? "Nothing grows in winter." :
+    timbermellow_count >= storage_capacity ? "The barns are full — anything more would spoil." :
+    foodOnLand <= 0 ? "Nothing left to gather on your land — take more land." : "");
+  reason("btn_wood_all", working_hours <= 0 ? noHours : woodOnLand <= 0 ? "No wood left on your land." : "");
+  reason("btn_stone_all", working_hours <= 0 ? noHours : stoneOnLand <= 0 ? "No stone left on your land." : "");
   reason("btn_human", working_hours <= 0 ? noHours : timbermellow_count < 3 ? "Needs 3 timbermellows." : "");
   reason("btn_human_5x", working_hours < 5 ? "Needs 5 work hours." : timbermellow_count < 15 ? "Needs 15 timbermellows." : "");
   reason("btn_soldier", humans < 2 ? "Needs a villager to spare — you would be left with none." : "");
@@ -619,7 +646,7 @@ function uiBlockReasons() {
 // Keyboard
 // ---------------------------------------------------------------------------
 
-const UI_KEYS = { "1": "gather", "2": "build", "3": "people", "4": "research", "5": "villages" };
+const UI_KEYS = { "1": "gather", "2": "build", "3": "people", "4": "research", "5": "villages", "6": "empire" };
 
 function uiInstallKeys() {
   document.addEventListener("click", (event) => {
@@ -632,8 +659,8 @@ function uiInstallKeys() {
     if (event.ctrlKey || event.altKey || event.metaKey) return;
 
     if (UI_KEYS[event.key]) { uiToggleTab(UI_KEYS[event.key]); event.preventDefault(); return; }
-    if (event.key === "6") { toggleLog(); event.preventDefault(); return; }
-    if (event.key === " ") { end_turn(); event.preventDefault(); return; }
+    if (event.key === "7") { toggleLog(); event.preventDefault(); return; }
+    if (event.key === " ") { requestEndTurn(); event.preventDefault(); return; }
     if (event.key === "Escape") {
       const log = document.getElementById("logPanel");
       if (log && !log.hidden) { log.hidden = true; return; }
@@ -641,6 +668,8 @@ function uiInstallKeys() {
       if (settings && !settings.hidden) { closeSettingsModal(); return; }
       const codex = document.getElementById("codexModal");
       if (codex && !codex.hidden) { closeCodexModal(); return; }
+      const endTurn = document.getElementById("endTurnModal");
+      if (endTurn && !endTurn.hidden) { cancelEndTurn(); return; }
       uiToggleTab("menu");
       event.preventDefault();
     }
@@ -719,6 +748,59 @@ function applyCustomSeed() {
   location.search = `?seed=${seedVal}`;
 }
 
+// ---------------------------------------------------------------------------
+// Ending the turn
+//
+// end_turn() itself never asks anything — scripts and tests call it
+// directly. The asking lives here, on the way in from the button and the
+// space bar, so a turn that would starve somebody stops once and says so.
+// ---------------------------------------------------------------------------
+
+let uiPendingEndTurn = false;
+
+function requestEndTurn() {
+  const warnings = typeof endTurnWarnings === "function" ? endTurnWarnings() : [];
+  if (!warnings.length || uiPendingEndTurn) {
+    uiPendingEndTurn = false;
+    uiCloseEndTurnWarning();
+    end_turn();
+    turnReportHide();
+    return;
+  }
+  uiShowEndTurnWarning(warnings);
+}
+
+function uiShowEndTurnWarning(warnings) {
+  const modal = document.getElementById("endTurnModal");
+  if (!modal) { end_turn(); return; }
+  const list = document.getElementById("endTurnWarnings");
+  if (list) {
+    list.innerHTML = warnings.map((warning) => `<li>${warning}</li>`).join("");
+  }
+  uiPendingEndTurn = true;
+  modal.hidden = false;
+  requestAnimationFrame(() => modal.classList.add("is-open"));
+}
+
+function uiCloseEndTurnWarning() {
+  const modal = document.getElementById("endTurnModal");
+  if (!modal || modal.hidden) return;
+  modal.classList.remove("is-open");
+  setTimeout(() => { modal.hidden = true; }, 220);
+}
+
+function cancelEndTurn() {
+  uiPendingEndTurn = false;
+  uiCloseEndTurnWarning();
+}
+
+function confirmEndTurn() {
+  uiCloseEndTurnWarning();
+  uiPendingEndTurn = false;
+  end_turn();
+  turnReportHide();
+}
+
 // The animations switch in the menu and in Settings.
 function setMotion(on) {
   document.body.classList.toggle("no-motion", !on);
@@ -789,6 +871,17 @@ function uiRefresh() {
   const yearLabel = document.getElementById("text_year");
   if (yearLabel) yearLabel.textContent = year;
 
+  // Unspent hours, always on screen. Every builder game keeps its idle-worker
+  // count in front of you, because it is the one number you can always act on.
+  const idle = document.getElementById("idleChip");
+  if (idle) {
+    idle.hidden = working_hours <= 0;
+    const count = document.getElementById("idleChipCount");
+    if (count) count.textContent = working_hours;
+    idle.dataset.tipTitle = `${working_hours} work hours unspent`;
+    idle.dataset.tip = "Hours you do not spend are gone when the turn ends. Click to open Gather.";
+  }
+
   const endturn = document.querySelector(".rw-endturn");
   if (endturn) endturn.classList.toggle("rw-endturn--short", timbermellow_count < humans + human_army);
 
@@ -804,6 +897,7 @@ function uiRefresh() {
   uiRefreshProfessions();
   uiRefreshJobs();
   uiRefreshAlerts();
+  if (typeof empireRefresh === "function") empireRefresh();
   uiRefreshTutor();
   if (uiTipTarget) { uiTipTarget = null; uiUpdateTooltip(); }
 }

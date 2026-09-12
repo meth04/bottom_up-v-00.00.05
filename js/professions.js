@@ -164,7 +164,14 @@ function professionBlocker(id) {
   if (professionSlotsUsed(trade.home) >= professionSlots(trade.home)) {
     return `Every ${buildingName} is already teaching someone. Build another, or wait.`;
   }
-  if (humans < 2) return "You cannot take your last worker off the rota.";
+  // Three of a trade is all the bonus there is (PROFESSION_BONUS_CAP), so a
+  // fourth is a worker lost for two turns and a mouth gained for nothing.
+  // Refusing it outright is kinder than letting the player find out.
+  if ((professionCounts[id] || 0) >= PROFESSION_BONUS_CAP) {
+    return `Three ${trade.name.toLowerCase()}s already teach the village everything they can.`;
+  }
+  // Taking one of three workers off the rota is not a choice, it is a wound.
+  if (humans < 4) return "You need four villagers before you can spare one to train.";
   if (timbermellow_count < trade.food) return `Feeding a trainee costs ${trade.food} timbermellows up front.`;
   return null;
 }
@@ -246,6 +253,10 @@ function professionTotal() {
 
 const JOB_TYPES = ["timbermellow", "wood", "stone"];
 
+// Hours the standing orders may never touch, so the player is never locked
+// out of building.
+const JOB_RESERVED_HOURS = 1;
+
 const JOB_LABELS = {
   timbermellow: "Gathering food",
   wood: "Cutting wood",
@@ -289,8 +300,29 @@ function jobHoursPerVillager() {
 // Run at the start of every turn, after the season has handed out hours.
 // Works out what the assigned villagers bring in without calling the
 // per-click gather functions thousands of times.
+// Standing orders outlive the people who were put on them: a raid or a bad
+// winter can leave three jobs and one villager. Left alone, that one villager
+// works every hour of every turn on the standing orders and the player can
+// never build anything again — so the orders are trimmed to fit.
+function jobNormalise() {
+  let over = jobAssignedTotal() - Math.max(0, humans);
+  if (over <= 0) return 0;
+  const dropped = over;
+  for (let i = JOB_TYPES.length - 1; i >= 0 && over > 0; i--) {
+    const type = JOB_TYPES[i];
+    const take = Math.min(over, jobAssignments[type] || 0);
+    jobAssignments[type] -= take;
+    over -= take;
+  }
+  return dropped;
+}
+
 function jobsRunAuto() {
   if (!ageHas("jobs")) return;
+  const dropped = jobNormalise();
+  if (dropped > 0) {
+    updatelog(`${dropped} standing order${dropped > 1 ? "s were" : " was"} dropped — there are not enough villagers left to work them.`, "bad");
+  }
   const assigned = jobAssignedTotal();
   if (assigned <= 0) return;
 
@@ -300,7 +332,10 @@ function jobsRunAuto() {
   for (const type of JOB_TYPES) {
     const workers = Math.min(jobAssignments[type] || 0, humans);
     if (workers <= 0) continue;
-    let hours = Math.min(workers * perVillager, working_hours);
+    // The headman always keeps an hour back. Without it, a village with
+    // everybody on standing orders has no hours left to build with and no
+    // way out of it — one hour out of many is a cheap guarantee.
+    let hours = Math.min(workers * perVillager, Math.max(0, working_hours - JOB_RESERVED_HOURS));
     if (hours <= 0) break;
 
     if (type === "timbermellow") {

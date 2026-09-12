@@ -27,6 +27,7 @@ const MAP_SCRIPTS = [
   "js/map/artStyle.js",
   "js/map/worldGen.js",
   "js/map/worldPainter.js",
+  "js/map/settlements.js",
   "js/map/mapEffects.js",
   "js/map/mapViewport.js",
   "js/map/villagers.js",
@@ -99,7 +100,7 @@ function build() {
   hexMap.unlockMapmaking();
 
   paintWorld(document.getElementById("mapArtworkHost"), world);
-  paintSettlements(document.getElementById("mapSettlementsHost"), world, hexMap, { houses: 3, barns: 2, schools: 1, camps: 1 });
+  paintSettlements(document.getElementById("mapSettlementsHost"), world, hexMap, { houses: 6, barns: 5, schools: 1, camps: 1, season: 3 });
   hexRenderer = new HexRenderer(hexMap, document.getElementById("hexMapSvgHost"), {
     hexSize: world.grid.hexSize,
     origin: { x: world.grid.originX, y: world.grid.originY },

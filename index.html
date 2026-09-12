@@ -60,6 +60,7 @@
          data-tip="Food. Everyone eats one every turn. The first number is what's in the barns, the second what is still growing on the land you hold.">
       <span class="rw-ico" data-icon="timbermellow"></span>
       <b id="text_timbermellow">0</b>
+      <i class="rw-delta" id="delta_food"></i>
       <small>on land <span id="text_land_food">0</span></small>
     </div>
 
@@ -68,6 +69,7 @@
          data-tip="Barns and most technologies. Grows back every autumn on the tiles you hold.">
       <span class="rw-ico" data-icon="wood"></span>
       <b id="text_wood">0</b>
+      <i class="rw-delta" id="delta_wood"></i>
       <small>on land <span id="text_land_wood">0</span></small>
     </div>
 
@@ -76,6 +78,7 @@
          data-tip="Houses and the stone axe. Stone does NOT grow back — when the rock on your land is gone you must take more land.">
       <span class="rw-ico" data-icon="stone"></span>
       <b id="text_stone">0</b>
+      <i class="rw-delta" id="delta_stone"></i>
       <small>on land <span id="text_land_stone">0</span></small>
     </div>
 
@@ -167,6 +170,12 @@
         <span class="rw-gizmo__icon" data-icon="explore"></span>
         <span class="rw-gizmo__label">Explore</span>
       </button>
+      <button class="rw-gizmo" id="findLandButton" onclick="selectBestFrontier()"
+              data-tip-title="Find land"
+              data-tip="Picks the richest piece of wild ground touching yours and takes you to it.">
+        <span class="rw-gizmo__icon" data-icon="explore"></span>
+        <span class="rw-gizmo__label">Find land</span>
+      </button>
       <button class="rw-gizmo" id="focusButton" onclick="focusSelectedTile()"
               data-tip-title="Centre the view"
               data-tip="Bring the selected tile to the middle of the screen.">
@@ -188,6 +197,15 @@
   <!-- ================================================================= -->
   <div class="rw-bottomright">
 
+    <!-- What just happened, in six lines (js/turnReport.js) -->
+    <section class="rw-panel rw-report" id="turnReport" hidden onclick="turnReportHide()">
+      <div class="rw-panel__head">
+        <span>Turn <b id="turnReportTurn">1</b> — what happened</span>
+        <small class="rw-hint">click to dismiss</small>
+      </div>
+      <ul class="rw-report__body" id="turnReportBody"></ul>
+    </section>
+
     <div class="rw-cmdrow">
 
       <div class="rw-palette" id="palette" hidden>
@@ -206,6 +224,8 @@
               </button>
               <button class="rw-x5" id="btn_timbermellow_5x" onclick="timbermellow_5x()"
                       data-tip-title="Gather ×5" data-tip="Five hours at once." data-tip-cost="5 hours">×5</button>
+              <button class="rw-x5 rw-x5--all" id="btn_timbermellow_all" hidden onclick="timbermellow_all()"
+                      data-tip-title="Gather until the barns are full" data-tip="Spends every hour you have left picking timbermellows, and stops before the barns overflow." data-tip-cost="every remaining hour">ALL</button>
             </div>
             <div class="rw-gizmowrap">
               <button class="rw-gizmo" id="btn_wood" onclick="get_wood()"
@@ -217,6 +237,8 @@
               </button>
               <button class="rw-x5" id="btn_wood_5x" onclick="wood_5x()"
                       data-tip-title="Cut wood ×5" data-tip="Five hours at once." data-tip-cost="5 hours">×5</button>
+              <button class="rw-x5 rw-x5--all" id="btn_wood_all" hidden onclick="wood_all()"
+                      data-tip-title="Cut wood all day" data-tip="Spends every hour you have left cutting wood." data-tip-cost="every remaining hour">ALL</button>
             </div>
             <div class="rw-gizmowrap">
               <button class="rw-gizmo" id="btn_stone" onclick="get_stone()"
@@ -228,6 +250,8 @@
               </button>
               <button class="rw-x5" id="btn_stone_5x" onclick="stone_5x()"
                       data-tip-title="Quarry ×5" data-tip="Five hours at once." data-tip-cost="5 hours">×5</button>
+              <button class="rw-x5 rw-x5--all" id="btn_stone_all" hidden onclick="stone_all()"
+                      data-tip-title="Quarry all day" data-tip="Spends every hour you have left on stone." data-tip-cost="every remaining hour">ALL</button>
             </div>
           </div>
         </div>
@@ -372,6 +396,39 @@
           </div>
         </div>
 
+        <!-- Empire: the ledger ------------------------------------- -->
+        <div class="rw-pane rw-pane--wide" data-pane="empire" hidden>
+          <div class="rw-pane__head">The Ledger <small>everything, counted</small></div>
+          <div class="rw-pane__body rw-pane__body--ledger">
+
+            <section class="rw-ledger">
+              <h4 class="rw-ledger__head">Your people</h4>
+              <div class="rw-ledger__body" id="empirePeople"></div>
+            </section>
+
+            <section class="rw-ledger">
+              <h4 class="rw-ledger__head">A turn, in and out</h4>
+              <div class="rw-ledger__body" id="empireProduction"></div>
+            </section>
+
+            <section class="rw-ledger">
+              <h4 class="rw-ledger__head">Your ground</h4>
+              <div class="rw-ledger__body" id="empireLand"></div>
+            </section>
+
+            <section class="rw-ledger rw-ledger--wide">
+              <h4 class="rw-ledger__head">The island <small>hexes held · strength</small></h4>
+              <ul class="rw-rivals" id="empireRivals"></ul>
+            </section>
+
+            <section class="rw-ledger rw-ledger--wide">
+              <h4 class="rw-ledger__head">The road ahead</h4>
+              <ul class="rw-techlist" id="empireTechs"></ul>
+            </section>
+
+          </div>
+        </div>
+
         <!-- Menu --------------------------------------------------- -->
         <div class="rw-pane" data-pane="menu" hidden>
           <div class="rw-pane__head">Options & Save</div>
@@ -397,12 +454,23 @@
 
       <!-- Clock + End turn -->
       <div class="rw-globals">
+        <button class="rw-idlechip" id="idleChip" hidden onclick="uiPointAt('gather', 'btn_find_timbermellow')">
+          <span class="rw-ico" data-icon="hours"></span>
+          <b id="idleChipCount">0</b>
+          <small>hours unspent</small>
+        </button>
         <div class="rw-clock">
           <div class="rw-agephase" id="agePhase" data-tip-title="The First Age" data-tip="Where the story has got to.">Act I · The First Winter</div>
+          <div class="rw-ageprogress" id="ageProgress"
+               data-tip-title="Progress through the age"
+               data-tip="How close the village is to the next act of the First Age.">
+            <div class="rw-ageprogress__bar"><i id="ageProgressFill"></i></div>
+            <small id="ageProgressNote">next: The Growing Years</small>
+          </div>
           <div class="rw-clock__season"><span id="season" class="season season--spring">spring</span></div>
           <div class="rw-clock__turn">Turn <b id="text_turn">1</b> · Year <b id="text_year">1</b></div>
         </div>
-        <button class="rw-endturn" onclick="end_turn()"
+        <button class="rw-endturn" onclick="requestEndTurn()"
                 data-tip-title="End the turn (Space)"
                 data-tip="Excess food over barn capacity is lost. Everyone consumes 1 timbermellow. Seasons progress and rivals take their turn.">
           <span class="rw-endturn__label">End Turn</span>
@@ -418,7 +486,8 @@
       <button class="rw-tab" data-tab="people"><span class="rw-tab__key">3</span>People</button>
       <button class="rw-tab" data-tab="research"><span class="rw-tab__key">4</span>Research</button>
       <button class="rw-tab" data-tab="villages"><span class="rw-tab__key">5</span>Villages</button>
-      <button class="rw-tab" data-tab="log" onclick="toggleLog()"><span class="rw-tab__key">6</span>History</button>
+      <button class="rw-tab" data-tab="empire"><span class="rw-tab__key">6</span>Ledger</button>
+      <button class="rw-tab" data-tab="log" onclick="toggleLog()"><span class="rw-tab__key">7</span>History</button>
       <button class="rw-tab" data-tab="menu"><span class="rw-tab__key">esc</span>Menu</button>
     </nav>
   </div>
@@ -434,6 +503,32 @@
 
   <!-- One tooltip, moved around -->
   <div class="rw-tip" id="tooltip" hidden></div>
+
+  <!-- ================================================================= -->
+  <!-- Loading card: shown while the island is built and painted          -->
+  <!-- ================================================================= -->
+  <div id="bootScreen" class="boot">
+    <div class="boot__card">
+      <div class="boot__rose" aria-hidden="true">
+        <svg viewBox="0 0 64 64">
+          <circle cx="32" cy="32" r="29" fill="none" stroke="#c49a45" stroke-width="2"/>
+          <circle cx="32" cy="32" r="24" fill="none" stroke="#8a6526" stroke-width="1" stroke-dasharray="2 3"/>
+          <polygon points="32,32 32,5 37,25" fill="#e5c06b"/>
+          <polygon points="32,32 32,5 27,25" fill="#8c2a1c"/>
+          <polygon points="32,32 32,59 37,39" fill="#8c2a1c"/>
+          <polygon points="32,32 32,59 27,39" fill="#c59d48"/>
+          <polygon points="32,32 59,32 39,37" fill="#c59d48"/>
+          <polygon points="32,32 59,32 39,27" fill="#3d2b1f"/>
+          <polygon points="32,32 5,32 25,37" fill="#3d2b1f"/>
+          <polygon points="32,32 5,32 25,27" fill="#e5c06b"/>
+          <circle cx="32" cy="32" r="4" fill="#3a2818" stroke="#e5c06b" stroke-width="1.5"/>
+        </svg>
+      </div>
+      <h1 class="boot__title">BOTTOM UP</h1>
+      <div class="boot__bar"><i id="bootBarFill"></i></div>
+      <div class="boot__caption" id="bootCaption">Unrolling the paper…</div>
+    </div>
+  </div>
 
   <!-- ================================================================= -->
   <!-- Commercial Game Shell: Title Screen                               -->
@@ -487,8 +582,8 @@
 
         <h4 style="margin: 0 0 10px; font-family: var(--font-display);">Keyboard Shortcuts</h4>
         <div style="font-family: var(--font-ui); font-size: 13px; line-height: 1.6; color: var(--ink-secondary);">
-          <div><b>1–5</b> — Open Gather, Build, People, Research, Villages</div>
-          <div><b>6</b> — Open Turn History</div>
+          <div><b>1–6</b> — Open Gather, Build, People, Research, Villages, Ledger</div>
+          <div><b>7</b> — Open Turn History</div>
           <div><b>Space</b> — End Turn</div>
           <div><b>Esc</b> — Close dialog or open Menu</div>
         </div>
@@ -531,6 +626,14 @@
           <li><b>Grain:</b> on plains and terraced hills; becomes food once Farming is researched.</li>
         </ul>
         <p>The island runs from cold tundra and snowfields in the north to dry badlands in the south, with marshes in the wet lowlands, forests and birch woods between, and a shore all the way round. Open sea and deep lakes cannot be settled.</p>
+        <p><b>A hex is a field, not a county.</b> The map is 216 by 144 hexes — about thirty-one thousand of them — so an expedition does not trudge out to claim one field: it settles a whole <b>district</b>, the tile you picked and the wild ground around it. Seizing works the same way.</p>
+        <p>And a village is founded on a <b>valley</b>, not a hex: you begin holding about thirty-seven hexes — the hall, the cottages, the fields that feed them and the commons beyond. The hall's own ground is the oldest claim, so it is still the first patch you work dry.</p>
+
+        <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">Your Town</h3>
+        <p>A settlement is drawn at its own size, spilling over the hexes it stands on, and it grows in stages you can read from across the map: a <b>clearing</b> with a hall and a market square; a <b>fenced village</b> once three buildings stand, with a palisade and ploughed fields beyond it; and a <b>walled town</b> at seven, with a stone curtain wall, towers and a gatehouse. Smoke rises from the roofs, and a jetty runs out into any water next door.</p>
+        <p>Rival villages are built by the same rules, so how much land one has taken is visible at a glance. Garlock camps are not villages at all: a ring of stakes, war tents, a carved totem and heaps of bone.</p>
+        <p>The figures walking your land are your villagers, and you can see what they are: a forester carries an axe, a mason a hammer, a farmer a hoe, a scholar a book. Each goes where their trade is — the forester to your woods, the mason to your rock — and <b>does the work</b> when they get there. Soldiers patrol the border instead. A few townsfolk never leave the square: somebody at the well, somebody minding a stall, children by the fire.</p>
+        <p>Out on land you hold, a <b>working district</b> stands about every ninth field — a fishery on the water, a lumber camp in the woods, a smithy and quarry in the rock, a farmstead on open ground — and roads run from your gate to each of them.</p>
 
         <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">Trades</h3>
         <p>Once a <b>school</b> or an <b>army camp</b> stands, a villager can be taken off the work rota to learn a trade. They are gone for a turn or two — and still eat — then come back better at one job: farmers, foresters and masons gather more per hour, scholars make research cheaper, scouts make expeditions cheaper, captains stiffen the shield line. Only the first three of any trade add to its bonus.</p>
@@ -538,8 +641,28 @@
         <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">The Garlocks</h3>
         <p>From Act III they raid roughly every six turns, from the direction of their camp. Each soldier is worth 3 to your defence, each captain 2 more, each army camp 1. Match their strength and they break on your line; fall short and they take food, wood and barns. Stand undefended long enough and the village is sacked.</p>
 
+        <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">The Ledger</h3>
+        <p>Press <b>6</b> for the empire screen. It counts your people by trade, works out what a turn brings in and what it eats — including <b>food, net a turn</b>, the one number that says whether you are winning — breaks your ground down by terrain, ranks every settlement on the island by how much land it holds, and lays out the whole technology tree including what the locked ones are waiting for.</p>
+
         <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">Standing Orders</h3>
         <p>From Act IV you can assign villagers to a standing job. They work it every turn the moment the turn begins, without a single click — which is the point, once you have twenty people.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ending a turn that will cost somebody something -->
+  <div id="endTurnModal" class="modal-backdrop" hidden>
+    <div class="modal-window" style="max-width: 420px;">
+      <div class="modal-window__head" style="background:#b83928; color:#fff; justify-content:center;">
+        <span>End the turn anyway?</span>
+      </div>
+      <div class="modal-window__body">
+        <p style="margin:0 0 10px;">If you end the turn now:</p>
+        <ul id="endTurnWarnings" class="rw-warnlist"></ul>
+        <div style="display:flex; gap:10px; margin-top:18px;">
+          <button class="title-btn title-btn--primary" onclick="cancelEndTurn()" style="flex:1;">Go back</button>
+          <button class="title-btn" onclick="confirmEndTurn()" style="flex:1;">End turn anyway</button>
+        </div>
       </div>
     </div>
   </div>
@@ -580,6 +703,7 @@
   <script src="js/map/artStyle.js"></script>
   <script src="js/map/worldGen.js"></script>
   <script src="js/map/worldPainter.js"></script>
+  <script src="js/map/settlements.js"></script>
   <script src="js/map/mapEffects.js"></script>
   <script src="js/map/mapViewport.js"></script>
   <script src="js/map/villagers.js"></script>
@@ -589,6 +713,8 @@
   <script src="js/professions.js"></script>
   <script src="js/ages.js"></script>
   <script src="js/gameFeel.js"></script>
+  <script src="js/turnReport.js"></script>
+  <script src="js/empire.js"></script>
   <script src="js/game.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/main.js"></script>

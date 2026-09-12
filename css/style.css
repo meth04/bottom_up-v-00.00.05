@@ -1822,3 +1822,584 @@ body {
   100% { opacity: 0; transform: translateY(-10px); }
 }
 .no-motion .art-steam { animation: none; }
+
+/* Names written on the water itself. */
+.art-water-label {
+  font-family: var(--font-display), serif;
+  font-style: italic;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: rgba(255, 252, 244, 0.6);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+  opacity: 0.8;
+}
+
+/* ---------------------------------------------------------------------------
+   Detail by distance. The map carries far more than can be read at once, so
+   the scale the player is looking at decides what is worth drawing.
+   (js/map/mapViewport.js sets .is-far / .is-near on the stage.)
+   --------------------------------------------------------------------------- */
+/* Far out, the wildlife, the props and the river names are a few pixels
+   across and read as dirt. The forests, the ranges and the region names
+   are what the map is at that distance, so those stay. */
+.stage.is-far .art-scatter,
+.stage.is-far .art-water-label,
+.stage.is-far .art-buildings text { display: none; }
+
+/* The worked-land wash under a village's fields. */
+.art-worked { pointer-events: none; }
+
+.stage.is-near .art-region-label { opacity: 0.22; }
+.stage.is-near .art-frame { opacity: 0.35; }
+
+/* =====================================================================
+   The loading card. Building and painting an island of thirty thousand
+   hexes takes about a second; this is what that second looks like.
+   ===================================================================== */
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 40%, #f0e2c4 0%, #d9c49a 55%, #a98f68 100%);
+  transition: opacity 0.65s ease, visibility 0.65s ease;
+}
+.boot.is-gone { opacity: 0; visibility: hidden; pointer-events: none; }
+
+.boot__card {
+  text-align: center;
+  padding: 34px 48px 30px;
+  border: 2px solid var(--edge-leather, #8a6526);
+  border-radius: 6px;
+  background: rgba(247, 237, 216, 0.82);
+  box-shadow: 0 18px 50px rgba(60, 42, 20, 0.35), inset 0 0 0 4px rgba(196, 154, 69, 0.35);
+}
+
+.boot__rose { width: 74px; height: 74px; margin: 0 auto 14px; animation: boot-spin 9s linear infinite; }
+.boot__rose svg { width: 100%; height: 100%; }
+@keyframes boot-spin { to { transform: rotate(360deg); } }
+
+.boot__title {
+  margin: 0 0 16px;
+  font-family: var(--font-display, Cinzel), serif;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  color: #3b220e;
+  text-indent: 0.3em;
+}
+
+.boot__bar {
+  width: 260px;
+  height: 7px;
+  margin: 0 auto 12px;
+  border: 1px solid #8a6526;
+  border-radius: 4px;
+  background: rgba(90, 66, 36, 0.14);
+  overflow: hidden;
+}
+.boot__bar i {
+  display: block;
+  height: 100%;
+  width: 4%;
+  background: linear-gradient(90deg, #b98a35, #e5c06b);
+  transition: width 0.4s ease;
+}
+
+.boot__caption {
+  font-family: var(--font-ui, system-ui), sans-serif;
+  font-size: 13px;
+  font-style: italic;
+  color: #6b4a1e;
+  min-height: 1.2em;
+}
+
+.no-motion .boot__rose { animation: none; }
+
+/* =====================================================================
+   Reading the turn: the ledger, the per-turn markers, and the dialog
+   that stops a turn from starving somebody by accident.
+   ===================================================================== */
+
+/* --- "+12" beside a store ------------------------------------------- */
+.rw-delta {
+  font-family: var(--font-ui, system-ui), sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  font-style: normal;
+  letter-spacing: 0.02em;
+  margin-left: 5px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.rw-delta:empty { display: none; }
+.rw-delta--up   { color: #2f6b3a; background: rgba(76, 140, 82, 0.16); }
+.rw-delta--down { color: #9c2f1c; background: rgba(180, 60, 40, 0.14); }
+
+/* --- ALL: spend the whole day on one job ---------------------------- */
+.rw-x5--all {
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  font-weight: 800;
+}
+.rw-x5--all:not(:disabled) {
+  border-color: #9a7327;
+  color: #6b4a1e;
+  background: linear-gradient(180deg, rgba(240, 220, 170, 0.95), rgba(214, 186, 130, 0.9));
+}
+.rw-x5--all:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(250, 232, 186, 1), rgba(226, 198, 141, 1));
+}
+
+/* --- the turn ledger ------------------------------------------------- */
+.rw-report {
+  width: 262px;
+  margin: 0 0 6px auto;
+  animation: report-in 0.36s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  transition: opacity 0.36s ease, transform 0.36s ease;
+  cursor: pointer;
+}
+.rw-report.is-leaving { opacity: 0; transform: translateY(8px); }
+@keyframes report-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+.rw-report__body {
+  list-style: none;
+  margin: 0;
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rw-report__line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-ui, system-ui), sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-secondary, #544333);
+  padding: 2px 4px;
+  border-left: 2px solid transparent;
+}
+.rw-report__line--good { color: #2f6b3a; border-left-color: #4c8c52; background: rgba(76, 140, 82, 0.08); }
+.rw-report__line--bad  { color: #9c2f1c; border-left-color: #b83928; background: rgba(184, 57, 40, 0.08); }
+.rw-report__icon { display: flex; flex: 0 0 16px; }
+.rw-report__icon svg { width: 16px; height: 16px; }
+
+/* --- "end the turn anyway?" ------------------------------------------ */
+.rw-warnlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.rw-warnlist li {
+  font-family: var(--font-ui, system-ui), sans-serif;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #8c2a1c;
+  padding: 6px 10px;
+  background: rgba(184, 57, 40, 0.1);
+  border-left: 3px solid #b83928;
+  border-radius: 0 3px 3px 0;
+}
+
+/* =====================================================================
+   Polish: the small things that make a built interface feel finished.
+   ===================================================================== */
+
+/* Keyboard users get to see where they are. Mouse users never see this,
+   because :focus-visible only fires for keyboard focus. */
+.rw-gizmo:focus-visible,
+.rw-x5:focus-visible,
+.rw-tab:focus-visible,
+.rw-btn:focus-visible,
+.rw-endturn:focus-visible,
+.rw-alert:focus-visible,
+.title-btn:focus-visible {
+  outline: 2px solid #e5c06b;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(229, 192, 107, 0.28);
+}
+
+/* A disabled command should read as "not now", not as "broken". */
+.rw-gizmo:disabled,
+.rw-x5:disabled {
+  filter: grayscale(0.55);
+  cursor: not-allowed;
+}
+
+/* Movement, but only where it helps, and never for people who asked for
+   none. */
+.rw-gizmo,
+.rw-x5,
+.rw-tab,
+.rw-alert,
+.rw-btn {
+  transition: transform 0.12s ease, filter 0.12s ease, background-color 0.12s ease, box-shadow 0.12s ease;
+}
+.rw-gizmo:hover:not(:disabled),
+.rw-alert:hover { transform: translateY(-1px); }
+.rw-gizmo:active:not(:disabled) { transform: translateY(1px); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* The act line above the clock earns a little more presence. */
+.rw-agephase {
+  background: linear-gradient(180deg, rgba(224, 206, 175, 0.55), rgba(206, 185, 149, 0.25));
+}
+
+/* The world panel is a picture; stop the browser blurring it as it scales. */
+#minimap { image-rendering: -webkit-optimize-contrast; }
+
+/* =====================================================================
+   People who are actually doing something.
+   The figures are SVG groups (js/map/artStyle.js, paintVillager); every
+   limb hangs off its own joint so this file can move it. transform-box:
+   fill-box makes transform-origin mean "somewhere on this shape" rather
+   than "somewhere in the whole map", which is what SVG defaults to.
+   ===================================================================== */
+
+.villager { pointer-events: none; }
+.villager__leg,
+.villager__arm,
+.villager__body {
+  transform-box: fill-box;
+}
+
+/* --- walking: legs swing from the hip, the body bobs ----------------- */
+.villager__leg { transform-origin: 50% 0%; }
+.villager--walking .villager__leg--left  { animation: stride 0.62s ease-in-out infinite; }
+.villager--walking .villager__leg--right { animation: stride 0.62s ease-in-out infinite reverse; }
+.villager--walking .villager__body       { animation: bob 0.31s ease-in-out infinite; transform-origin: 50% 100%; }
+
+@keyframes stride {
+  0%, 100% { transform: rotate(16deg); }
+  50%      { transform: rotate(-16deg); }
+}
+@keyframes bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6%); }
+}
+
+/* --- working: the arm does the job the trade is named for ------------ */
+.villager__arm { transform-origin: 0% 100%; }
+
+/* An axe or a hammer: raised high, brought down hard, a pause between. */
+.villager--working.villager--chop .villager__arm { animation: swing-chop 1.15s cubic-bezier(0.3, 0, 0.2, 1) infinite; }
+@keyframes swing-chop {
+  0%   { transform: rotate(-12deg); }
+  35%  { transform: rotate(-105deg); }
+  48%  { transform: rotate(24deg); }
+  60%  { transform: rotate(12deg); }
+  100% { transform: rotate(-12deg); }
+}
+
+/* A hoe or a sickle: a long, low sweep. */
+.villager--working.villager--reap .villager__arm { animation: swing-reap 1.5s ease-in-out infinite; }
+@keyframes swing-reap {
+  0%, 100% { transform: rotate(28deg); }
+  50%      { transform: rotate(-34deg); }
+}
+
+/* Reading: the book barely moves. */
+.villager--working.villager--read .villager__arm { animation: swing-read 3.4s ease-in-out infinite; }
+@keyframes swing-read {
+  0%, 100% { transform: rotate(0deg); }
+  50%      { transform: rotate(-7deg); }
+}
+
+/* Carrying, and standing watch: a slight shift of weight. */
+.villager--working.villager--carry .villager__arm { animation: swing-carry 2.1s ease-in-out infinite; }
+@keyframes swing-carry {
+  0%, 100% { transform: rotate(-5deg); }
+  50%      { transform: rotate(7deg); }
+}
+.villager--working.villager--look .villager__body { animation: watch 4.5s ease-in-out infinite; transform-origin: 50% 100%; }
+@keyframes watch {
+  0%, 45%, 100% { transform: none; }
+  55%, 90%      { transform: scaleX(-1); }
+}
+
+/* The children never stop moving. */
+.villager__child { transform-box: fill-box; transform-origin: 50% 100%; animation: skip 1.4s ease-in-out infinite; }
+@keyframes skip {
+  0%, 100% { transform: translateY(0) rotate(-3deg); }
+  50%      { transform: translateY(-9%) rotate(3deg); }
+}
+
+/* --- things around them that move ------------------------------------ */
+.art-sails { transform-box: fill-box; transform-origin: 50% 50%; animation: mill-turn 14s linear infinite; }
+@keyframes mill-turn { to { transform: rotate(360deg); } }
+
+.art-laundry { transform-box: fill-box; transform-origin: 50% 0%; animation: laundry-sway 3.6s ease-in-out infinite; }
+@keyframes laundry-sway {
+  0%, 100% { transform: rotate(-4deg); }
+  50%      { transform: rotate(5deg); }
+}
+
+.art-flame { transform-box: fill-box; transform-origin: 50% 100%; animation: flame-flicker 1.1s ease-in-out infinite; }
+@keyframes flame-flicker {
+  0%, 100% { transform: scale(1, 1); opacity: 0.95; }
+  50%      { transform: scale(0.82, 1.18); opacity: 0.75; }
+}
+
+.no-motion .villager__leg,
+.no-motion .villager__arm,
+.no-motion .villager__body,
+.no-motion .villager__child,
+.no-motion .art-sails,
+.no-motion .art-laundry,
+.no-motion .art-flame { animation: none !important; }
+
+/* =====================================================================
+   Why the map used to stutter, and what fixes it.
+
+   The whole island is one SVG of about three megabytes of path data, and
+   everything — ground, water, buildings, people — used to live inside a
+   single compositing layer. Two animations ran over that layer forever:
+   sixty-eight river paths animating stroke-dashoffset, and one foam path
+   following the entire coastline animating opacity. Neither can be done on
+   the GPU, so both forced the browser to REPAINT THE ENTIRE ISLAND sixty
+   times a second, whether or not anything was happening.
+
+   The rules now:
+     1. Nothing inside the static artwork layer animates. Ever.
+     2. Each map layer is its own compositing layer, so a villager swinging
+        an axe repaints the villagers and nothing else.
+     3. While the map is being dragged, quality gives way to speed.
+   ===================================================================== */
+
+/* 1. The artwork holds still. The dashes stay — they still read as current
+      in the water — they just do not move any more. */
+.art-river-flow { animation: none !important; }
+.art-foam { animation: none !important; }
+
+/* 2. One compositing layer per map layer. `contain` promises the browser
+      that nothing inside affects anything outside, so it can repaint each
+      in isolation. */
+.maplayer {
+  will-change: transform;
+  contain: layout paint;
+  transform: translateZ(0);
+}
+
+/* 3. Antialiasing every one of three thousand paths while the map is
+      moving is the most expensive thing the page does, and during a drag
+      nobody can see the difference. */
+.stage.is-dragging .map-artwork,
+.stage.is-dragging .map-settlements { shape-rendering: optimizeSpeed; }
+
+/* Far out, the people and the chimney smoke are specks. Hiding the layer
+   stops the browser animating twenty figures nobody can make out — and
+   js/map/villagers.js stops stepping them too. */
+.stage.is-far .map-villagers,
+.stage.is-far .art-steam,
+.stage.is-far .art-laundry,
+.stage.is-far .art-flame,
+.stage.is-far .art-sails { display: none; }
+
+/* =====================================================================
+   The Ledger: the empire-game screen.
+   Builders live and die by their numbers, and until now this game showed
+   almost none of them. Everything here is read-only — see js/empire.js.
+   ===================================================================== */
+
+.rw-pane__body--ledger {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(196px, 1fr));
+  gap: 8px;
+  width: min(640px, 90vw);
+  max-width: none;
+  max-height: 58vh;
+  overflow-y: auto;
+  padding: 9px;
+}
+
+.rw-ledger {
+  background: rgba(255, 253, 246, 0.42);
+  border: 1px solid rgba(90, 66, 36, 0.3);
+  border-radius: 3px;
+  /* The carved corner every empire game puts on its panels. */
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.4),
+    inset 3px 3px 0 -2px rgba(196, 154, 69, 0.9),
+    inset -3px -3px 0 -2px rgba(196, 154, 69, 0.9);
+}
+.rw-ledger--wide { grid-column: 1 / -1; }
+
+.rw-ledger__head {
+  margin: 0;
+  padding: 5px 9px 4px;
+  font-family: var(--font-display, Cinzel), serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: #3b2817;
+  border-bottom: 1px solid rgba(90, 66, 36, 0.22);
+  background: linear-gradient(180deg, rgba(224, 206, 175, 0.6), rgba(206, 185, 149, 0.2));
+}
+.rw-ledger__head small {
+  font-family: var(--font-ui, system-ui), sans-serif;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  color: var(--ink-faint, #7a6a55);
+  margin-left: 6px;
+}
+.rw-ledger__body { padding: 5px 8px 7px; }
+
+/* --- one line of the ledger ------------------------------------------ */
+.rw-stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-ui, system-ui), sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-secondary, #544333);
+  padding: 1.5px 0;
+  border-bottom: 1px dotted rgba(90, 66, 36, 0.16);
+}
+.rw-stat:last-child { border-bottom: 0; }
+.rw-stat span { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.rw-stat span svg { width: 14px; height: 14px; flex: 0 0 14px; }
+.rw-stat b { font-variant-numeric: tabular-nums; color: #3b2817; white-space: nowrap; }
+.rw-stat--good b { color: #2f6b3a; }
+.rw-stat--bad  b { color: #9c2f1c; }
+.rw-stat--warn b { color: #9a6b1e; }
+
+/* --- how you compare -------------------------------------------------- */
+.rw-rivals { list-style: none; margin: 0; padding: 5px 8px 7px; }
+.rw-rival {
+  display: grid;
+  grid-template-columns: 12px 1fr 46px 62px;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--font-ui, system-ui), sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-secondary, #544333);
+  padding: 2px 3px;
+  border-bottom: 1px dotted rgba(90, 66, 36, 0.16);
+}
+.rw-rival--you {
+  background: rgba(217, 164, 65, 0.16);
+  color: #6b4a1e;
+  border-left: 2px solid #d9a441;
+}
+.rw-rival--unknown { opacity: 0.5; font-style: italic; }
+.rw-rival__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rw-rival__tiles,
+.rw-rival__strength { text-align: right; font-variant-numeric: tabular-nums; }
+.rw-rival__strength { color: var(--ink-faint, #7a6a55); }
+
+/* --- the tech tree, including what has not arrived -------------------- */
+.rw-techlist { list-style: none; margin: 0; padding: 5px 8px 7px; }
+.rw-techrow {
+  display: grid;
+  grid-template-columns: 22px 1fr 16px;
+  align-items: start;
+  gap: 8px;
+  padding: 4px 3px;
+  border-bottom: 1px dotted rgba(90, 66, 36, 0.16);
+}
+.rw-techrow__icon svg { width: 18px; height: 18px; }
+.rw-techrow__body { display: flex; flex-direction: column; font-family: var(--font-ui, system-ui), sans-serif; min-width: 0; }
+.rw-techrow__body b { font-size: 12.5px; color: #3b2817; }
+.rw-techrow__body small { font-size: 11px; color: #8a6526; font-weight: 600; }
+.rw-techrow__body em { font-size: 11px; font-style: normal; color: var(--ink-faint, #7a6a55); }
+.rw-techrow__mark { text-align: center; font-size: 13px; color: var(--ink-faint, #7a6a55); }
+
+.rw-techrow--done { opacity: 0.66; }
+.rw-techrow--done .rw-techrow__mark { color: #2f6b3a; }
+.rw-techrow--open {
+  background: rgba(217, 164, 65, 0.14);
+  border-left: 2px solid #d9a441;
+}
+.rw-techrow--open .rw-techrow__mark { color: #b98a35; }
+.rw-techrow--locked { opacity: 0.52; }
+.rw-techrow--locked .rw-techrow__icon { filter: grayscale(1); }
+
+/* =====================================================================
+   Progress through the age, and the hours you have not spent.
+   ===================================================================== */
+
+.rw-ageprogress { padding: 0 8px 4px; cursor: help; }
+.rw-ageprogress__bar {
+  height: 4px;
+  border: 1px solid rgba(90, 66, 36, 0.4);
+  border-radius: 3px;
+  background: rgba(90, 66, 36, 0.16);
+  overflow: hidden;
+}
+.rw-ageprogress__bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #9a7327, #e5c06b);
+  transition: width 0.5s ease;
+}
+.rw-ageprogress small {
+  display: block;
+  margin-top: 2px;
+  text-align: center;
+  font-family: var(--font-ui, system-ui), sans-serif;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint, #7a6a55);
+}
+
+.rw-idlechip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 4px;
+  padding: 3px 9px;
+  font-family: var(--font-ui, system-ui), sans-serif;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #6b4a1e;
+  background: linear-gradient(180deg, rgba(247, 226, 170, 0.95), rgba(222, 194, 133, 0.92));
+  border: 1px solid #9a7327;
+  border-radius: 3px;
+  cursor: pointer;
+  animation: idle-nudge 2.6s ease-in-out infinite;
+}
+.rw-idlechip:hover { background: linear-gradient(180deg, #fbeec4, #e6cb93); }
+.rw-idlechip .rw-ico svg { width: 14px; height: 14px; }
+.rw-idlechip b { font-size: 13px; color: #3b2817; font-variant-numeric: tabular-nums; }
+.rw-idlechip small { font-weight: 600; color: var(--ink-faint, #7a6a55); }
+@keyframes idle-nudge {
+  0%, 88%, 100% { transform: none; }
+  93%           { transform: translateY(-2px); }
+}
+.no-motion .rw-idlechip { animation: none; }
+
+@media (max-width: 1100px) {
+  .rw-pane__body--ledger { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+}
+@media (max-width: 760px) {
+  .rw-pane__body--ledger { grid-template-columns: 1fr; }
+}

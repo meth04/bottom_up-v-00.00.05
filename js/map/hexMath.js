@@ -72,6 +72,54 @@ function axialToPixel(q, r, size) {
   return { x, y };
 }
 
+// Rounds fractional axial coordinates to the nearest whole hex, via cube
+// coordinates. Needed to turn a pixel position back into a tile.
+function axialRound(q, r) {
+  let x = q;
+  let z = r;
+  let y = -x - z;
+  let rx = Math.round(x);
+  let ry = Math.round(y);
+  let rz = Math.round(z);
+  const dx = Math.abs(rx - x);
+  const dy = Math.abs(ry - y);
+  const dz = Math.abs(rz - z);
+  if (dx > dy && dx > dz) rx = -ry - rz;
+  else if (dy > dz) ry = -rx - rz;
+  else rz = -rx - ry;
+  return { q: rx, r: rz };
+}
+
+// The inverse of axialToPixel. With thirty thousand hexes on the map it is
+// far cheaper to work out which one the mouse is over than to give every
+// one of them its own clickable element.
+function pixelToAxial(x, y, size) {
+  const q = ((Math.sqrt(3) / 3) * x - (1 / 3) * y) / size;
+  const r = ((2 / 3) * y) / size;
+  return axialRound(q, r);
+}
+
+// The outline of a pointy-top hexagon as relative SVG path commands, ready
+// to follow an "M x y". It is the same for every hex of a given size, so a
+// whole terrain's worth of hexes can be written as one path cheaply.
+function hexOutlineTail(size) {
+  const w = (Math.sqrt(3) / 2) * size;
+  const h = size / 2;
+  // One decimal, and no space before a minus sign — SVG does not need one.
+  // Over thirty thousand hexes those two habits are worth a hundred kilobytes.
+  const n = (value) => {
+    const text = (Math.round(value * 10) / 10).toString();
+    return text;
+  };
+  const sep = (value) => (value < 0 ? "" : " ") + n(value);
+  return `l0 ${n(size)}l${n(-w)}${sep(h)}l${n(-w)}${sep(-h)}l0 ${n(-size)}l${n(w)}${sep(-h)}z`;
+}
+
+// Where an "M" should be placed for hexOutlineTail: the first corner.
+function hexOutlineStart(centerX, centerY, size) {
+  return [centerX + (Math.sqrt(3) / 2) * size, centerY - size / 2];
+}
+
 // Node-friendly export (used by the scratch layout-check script and any
 // future tests); browsers just use the globals above via a plain <script>.
 if (typeof module !== "undefined" && module.exports) {
@@ -83,5 +131,9 @@ if (typeof module !== "undefined" && module.exports) {
     hexRing,
     hexSpiral,
     axialToPixel,
+    axialRound,
+    pixelToAxial,
+    hexOutlineTail,
+    hexOutlineStart,
   };
 }

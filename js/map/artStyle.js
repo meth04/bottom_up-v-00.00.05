@@ -151,6 +151,29 @@ function pick(list, random) {
   return list[Math.floor(random() * list.length) % list.length];
 }
 
+// Lightens (amount > 0) or darkens (amount < 0) a "#rrggbb" colour.
+// Used to give every hex of the same ground a slightly different tone, so a
+// wide plain reads as a plain rather than as one flat swatch of paint.
+function shadeColor(hex, amount) {
+  if (typeof hex !== "string" || hex[0] !== "#" || hex.length < 7) return hex;
+  const channel = (start) => {
+    const value = parseInt(hex.slice(start, start + 2), 16);
+    const shifted = amount >= 0 ? value + (255 - value) * amount : value * (1 + amount);
+    return Math.max(0, Math.min(255, Math.round(shifted))).toString(16).padStart(2, "0");
+  };
+  return `#${channel(1)}${channel(3)}${channel(5)}`;
+}
+
+// The two corners of edge `edge` of a pointy-top hex, in HEX_DIRECTIONS order.
+function hexEdgeCorners(x, y, size, edge) {
+  const a = (Math.PI / 180) * (60 * edge - 30);
+  const b = (Math.PI / 180) * (60 * (edge + 1) - 30);
+  return [
+    [x + size * Math.cos(a), y + size * Math.sin(a)],
+    [x + size * Math.cos(b), y + size * Math.sin(b)],
+  ];
+}
+
 // The "x,y x,y ..." points of a pointy-top hexagon.
 function hexPoints(centerX, centerY, size) {
   const points = [];
@@ -165,11 +188,14 @@ function hexPoints(centerX, centerY, size) {
 // Ground
 // ---------------------------------------------------------------------------
 
-function paintHexBase(parent, x, y, size, fill) {
+// `variation` (-1..1) nudges the fill lighter or darker. It costs nothing —
+// no extra elements — and is the cheapest way to stop a big stretch of one
+// terrain looking like a single flat swatch.
+function paintHexBase(parent, x, y, size, fill, variation) {
   // Base polygon
   parent.appendChild(svgEl("polygon", {
     points: hexPoints(x, y, size),
-    fill,
+    fill: variation ? shadeColor(fill, variation) : fill,
     stroke: ART_COLORS.tileEdge,
     "stroke-width": 0.8,
     "stroke-linejoin": "round",
@@ -207,146 +233,12 @@ function paintHexBase(parent, x, y, size, fill) {
 // Sprites: nature & masterwork terrain
 // ---------------------------------------------------------------------------
 
-function paintTree(parent, x, y, scale, random) {
-  const s = scale;
-  // Soft ground shadow
-  parent.appendChild(svgEl("ellipse", {
-    cx: x + s * 0.05, cy: y + s * 0.3, rx: s * 0.28, ry: s * 0.1,
-    fill: "rgba(25, 40, 15, 0.22)"
-  }));
-  // Trunk with root flares
-  parent.appendChild(svgEl("polygon", {
-    points: `${x - s * 0.06},${y - s * 0.05} ${x + s * 0.06},${y - s * 0.05} ${x + s * 0.1},${y + s * 0.32} ${x - s * 0.1},${y + s * 0.32}`,
-    fill: ART_COLORS.trunk
-  }));
-  // Canopy tiers
-  parent.appendChild(svgEl("circle", { cx: x, cy: y - s * 0.1, r: s * 0.36, fill: ART_COLORS.canopyDark }));
-  parent.appendChild(svgEl("circle", { cx: x - s * 0.1, cy: y - s * 0.2, r: s * 0.28, fill: ART_COLORS.canopy }));
-  parent.appendChild(svgEl("circle", { cx: x + s * 0.1, cy: y - s * 0.14, r: s * 0.24, fill: ART_COLORS.canopy }));
-  parent.appendChild(svgEl("circle", { cx: x - s * 0.15, cy: y - s * 0.28, r: s * 0.14, fill: ART_COLORS.canopyLight, opacity: 0.9 }));
-}
 
-function paintPineTree(parent, x, y, scale, random) {
-  const s = scale;
-  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.35, rx: s * 0.22, ry: s * 0.08, fill: "rgba(20, 35, 20, 0.22)" }));
-  parent.appendChild(svgEl("rect", {
-    x: x - s * 0.05, y: y + s * 0.1, width: s * 0.1, height: s * 0.25, rx: s * 0.02,
-    fill: ART_COLORS.trunk
-  }));
-  parent.appendChild(svgEl("polygon", {
-    points: `${x - s * 0.32},${y + s * 0.18} ${x},${y - s * 0.1} ${x + s * 0.32},${y + s * 0.18}`,
-    fill: ART_COLORS.pineCanopy
-  }));
-  parent.appendChild(svgEl("polygon", {
-    points: `${x - s * 0.25},${y} ${x},${y - s * 0.25} ${x + s * 0.25},${y}`,
-    fill: ART_COLORS.pineCanopy
-  }));
-  parent.appendChild(svgEl("polygon", {
-    points: `${x - s * 0.18},${y - s * 0.15} ${x},${y - s * 0.44} ${x + s * 0.18},${y - s * 0.15}`,
-    fill: ART_COLORS.pineCanopyLight
-  }));
-}
 
-function paintAutumnTree(parent, x, y, scale, random) {
-  const s = scale;
-  parent.appendChild(svgEl("ellipse", { cx: x + s * 0.05, cy: y + s * 0.3, rx: s * 0.28, ry: s * 0.1, fill: "rgba(45, 30, 15, 0.22)" }));
-  parent.appendChild(svgEl("polygon", {
-    points: `${x - s * 0.06},${y - s * 0.05} ${x + s * 0.06},${y - s * 0.05} ${x + s * 0.1},${y + s * 0.32} ${x - s * 0.1},${y + s * 0.32}`,
-    fill: ART_COLORS.trunk
-  }));
-  parent.appendChild(svgEl("circle", { cx: x, cy: y - s * 0.1, r: s * 0.36, fill: "#993a18" }));
-  parent.appendChild(svgEl("circle", { cx: x - s * 0.1, cy: y - s * 0.2, r: s * 0.28, fill: ART_COLORS.autumnCanopy }));
-  parent.appendChild(svgEl("circle", { cx: x + s * 0.1, cy: y - s * 0.14, r: s * 0.24, fill: ART_COLORS.autumnCanopy }));
-  parent.appendChild(svgEl("circle", { cx: x - s * 0.15, cy: y - s * 0.28, r: s * 0.14, fill: ART_COLORS.autumnLight, opacity: 0.95 }));
-}
 
-function paintBush(parent, x, y, scale, random) {
-  const s = scale;
-  parent.appendChild(svgEl("ellipse", { cx: x, cy: y, rx: s * 0.3, ry: s * 0.2, fill: ART_COLORS.canopyDark }));
-  parent.appendChild(svgEl("ellipse", { cx: x - s * 0.08, cy: y - s * 0.06, rx: s * 0.2, ry: s * 0.13, fill: ART_COLORS.canopy }));
-}
 
-function paintRock(parent, x, y, scale, random) {
-  const s = scale;
-  parent.appendChild(svgEl("ellipse", { cx: x + 2, cy: y + s * 0.18, rx: s * 0.32, ry: s * 0.12, fill: "rgba(0,0,0,0.22)" }));
-  parent.appendChild(svgEl("polygon", {
-    points: `${x - s * 0.32},${y + s * 0.16} ${x - s * 0.2},${y - s * 0.18} ${x + s * 0.08},${y - s * 0.24} ${x + s * 0.34},${y + s * 0.04} ${x + s * 0.22},${y + s * 0.18}`,
-    fill: ART_COLORS.rock, stroke: ART_COLORS.rockDark, "stroke-width": 1, "stroke-linejoin": "round",
-  }));
-  parent.appendChild(svgEl("polygon", {
-    points: `${x - s * 0.2},${y - s * 0.18} ${x + s * 0.08},${y - s * 0.24} ${x + s * 0.04},${y - s * 0.02} ${x - s * 0.14},${y}`,
-    fill: ART_COLORS.rockLight, opacity: 0.95,
-  }));
-  // Quartz fissure
-  parent.appendChild(svgEl("line", {
-    x1: x - s * 0.05, y1: y - s * 0.18, x2: x + s * 0.12, y2: y + s * 0.06,
-    stroke: "#ffffff", "stroke-width": 1, opacity: 0.8
-  }));
-}
 
-function paintMountain(parent, x, y, scale, random) {
-  const s = scale;
 
-  // Companion peak
-  const side = random() < 0.5 ? -1 : 1;
-  const cx = x + side * s * 0.3;
-  const cy = y + s * 0.1;
-  const cs = s * 0.65;
-  parent.appendChild(svgEl("polygon", {
-    points: `${cx},${cy - cs * 0.5} ${cx + cs * 0.45},${cy + cs * 0.3} ${cx},${cy + cs * 0.3}`,
-    fill: ART_COLORS.rockDark,
-  }));
-  parent.appendChild(svgEl("polygon", {
-    points: `${cx - cs * 0.45},${cy + cs * 0.3} ${cx},${cy - cs * 0.5} ${cx},${cy + cs * 0.3}`,
-    fill: ART_COLORS.rock,
-  }));
-  parent.appendChild(svgEl("polygon", {
-    points: `${cx - cs * 0.18},${cy - cs * 0.2} ${cx},${cy - cs * 0.5} ${cx + cs * 0.18},${cy - cs * 0.2} ${cx + cs * 0.05},${cy - cs * 0.12} ${cx - cs * 0.06},${cy - cs * 0.15}`,
-    fill: ART_COLORS.snow,
-  }));
-
-  // Main Peak Shadow Face (Southeast)
-  parent.appendChild(svgEl("polygon", {
-    points: `${x},${y - s * 0.52} ${x + s * 0.52},${y + s * 0.35} ${x + s * 0.04},${y + s * 0.38}`,
-    fill: "#484749",
-  }));
-  // Main Peak Sunlit Face (Northwest)
-  parent.appendChild(svgEl("polygon", {
-    points: `${x - s * 0.52},${y + s * 0.35} ${x},${y - s * 0.52} ${x + s * 0.04},${y + s * 0.38}`,
-    fill: "#7a7775",
-  }));
-  // Central ridge line
-  parent.appendChild(svgEl("path", {
-    d: `M ${x} ${y - s * 0.52} Q ${x + s * 0.06} ${y - s * 0.1} ${x + s * 0.04} ${y + s * 0.38}`,
-    fill: "none", stroke: "rgba(25, 20, 15, 0.45)", "stroke-width": 1.2
-  }));
-
-  // Glistening Glacier / Snowcap
-  parent.appendChild(svgEl("polygon", {
-    points: `${x - s * 0.22},${y - s * 0.24} ${x},${y - s * 0.52} ${x + s * 0.02},${y - s * 0.22} ${x - s * 0.08},${y - s * 0.18}`,
-    fill: ART_COLORS.snow,
-  }));
-  parent.appendChild(svgEl("polygon", {
-    points: `${x},${y - s * 0.52} ${x + s * 0.22},${y - s * 0.24} ${x + s * 0.1},${y - s * 0.18} ${x + s * 0.02},${y - s * 0.22}`,
-    fill: ART_COLORS.snowShade,
-  }));
-
-  // Scree & foothill alpine pine trees
-  paintPineTree(parent, x - s * 0.38, y + s * 0.32, s * 0.5, random);
-  paintPineTree(parent, x + s * 0.38, y + s * 0.34, s * 0.45, random);
-  paintRock(parent, x + s * 0.16, y + s * 0.36, s * 0.4, random);
-}
-
-function paintWheat(parent, x, y, scale, random) {
-  const s = scale;
-  for (let i = 0; i < 4; i++) {
-    const bx = x + (i - 1.5) * s * 0.16 + (random() - 0.5) * s * 0.06;
-    parent.appendChild(svgEl("path", {
-      d: `M ${bx} ${y + s * 0.18} L ${bx} ${y - s * 0.12} M ${bx - s * 0.06} ${y - s * 0.04} L ${bx} ${y - s * 0.12} L ${bx + s * 0.06} ${y - s * 0.04}`,
-      fill: "none", stroke: ART_COLORS.wheatDark, "stroke-width": 1.5, "stroke-linecap": "round",
-    }));
-  }
-}
 
 function paintHayBale(parent, x, y, scale) {
   const s = scale;
@@ -356,49 +248,8 @@ function paintHayBale(parent, x, y, scale) {
   parent.appendChild(svgEl("line", { x1: x + s * 0.08, y1: y - s * 0.14, x2: x + s * 0.08, y2: y + s * 0.14, stroke: ART_COLORS.wheatDark, "stroke-width": 1 }));
 }
 
-function paintWindmill(parent, x, y, scale) {
-  const s = scale;
-  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.35, rx: s * 0.28, ry: s * 0.1, fill: "rgba(0,0,0,0.24)" }));
-  parent.appendChild(svgEl("polygon", {
-    points: `${x - s * 0.22},${y + s * 0.35} ${x - s * 0.14},${y - s * 0.25} ${x + s * 0.14},${y - s * 0.25} ${x + s * 0.22},${y + s * 0.35}`,
-    fill: "#ded3bf", stroke: ART_COLORS.ink, "stroke-width": 1.2
-  }));
-  parent.appendChild(svgEl("rect", { x: x - s * 0.06, y: y + s * 0.18, width: s * 0.12, height: s * 0.17, fill: ART_COLORS.door }));
-  parent.appendChild(svgEl("polygon", {
-    points: `${x - s * 0.18},${y - s * 0.25} ${x},${y - s * 0.48} ${x + s * 0.18},${y - s * 0.25}`,
-    fill: ART_COLORS.roofDark, stroke: ART_COLORS.ink, "stroke-width": 1
-  }));
-  const rotor = animatedGroup("art-windmill-sails", x, y - s * 0.25, 0);
-  rotor.appendChild(svgEl("line", { x1: x - s * 0.42, y1: y - s * 0.25, x2: x + s * 0.42, y2: y - s * 0.25, stroke: ART_COLORS.trunk, "stroke-width": 1.6 }));
-  rotor.appendChild(svgEl("line", { x1: x, y1: y - s * 0.67, x2: x, y2: y + s * 0.17, stroke: ART_COLORS.trunk, "stroke-width": 1.6 }));
-  rotor.appendChild(svgEl("rect", { x: x - s * 0.4, y: y - s * 0.32, width: s * 0.34, height: s * 0.07, fill: "#f8f5ee", stroke: ART_COLORS.ink, "stroke-width": 0.8 }));
-  rotor.appendChild(svgEl("rect", { x: x + s * 0.06, y: y - s * 0.25, width: s * 0.34, height: s * 0.07, fill: "#f8f5ee", stroke: ART_COLORS.ink, "stroke-width": 0.8 }));
-  rotor.appendChild(svgEl("rect", { x: x - s * 0.07, y: y - s * 0.65, width: s * 0.07, height: s * 0.34, fill: "#f8f5ee", stroke: ART_COLORS.ink, "stroke-width": 0.8 }));
-  rotor.appendChild(svgEl("rect", { x: x, y: y - s * 0.18, width: s * 0.07, height: s * 0.34, fill: "#f8f5ee", stroke: ART_COLORS.ink, "stroke-width": 0.8 }));
-  rotor.appendChild(svgEl("circle", { cx: x, cy: y - s * 0.25, r: 2.8, fill: ART_COLORS.ink }));
-  parent.appendChild(rotor);
-}
 
-function paintFlowerDots(parent, x, y, scale, random) {
-  const dots = 4 + Math.floor(random() * 4);
-  for (let i = 0; i < dots; i++) {
-    parent.appendChild(svgEl("circle", {
-      cx: x + (random() - 0.5) * scale * 0.9,
-      cy: y + (random() - 0.5) * scale * 0.7,
-      r: 2, fill: pick(ART_COLORS.flowers, random),
-    }));
-  }
-}
 
-function paintTerraceStripes(parent, x, y, scale, random) {
-  for (let i = -1; i <= 1; i++) {
-    const yy = y + i * scale * 0.28;
-    parent.appendChild(svgEl("path", {
-      d: `M ${x - scale * 0.44} ${yy + 2} q ${scale * 0.44} ${-7} ${scale * 0.88} 0`,
-      fill: "none", stroke: ART_COLORS.terraceLine, "stroke-width": 1.6, opacity: 0.85,
-    }));
-  }
-}
 
 // ---------------------------------------------------------------------------
 // World Wonders & Landmarks
@@ -595,22 +446,6 @@ function paintRiver(parent, centerline, halfWidths) {
   }
 }
 
-function paintPool(parent, x, y, size) {
-  parent.appendChild(svgEl("ellipse", { cx: x, cy: y, rx: size * 1.05, ry: size * 0.76, fill: ART_COLORS.sand, opacity: 0.9 }));
-  parent.appendChild(svgEl("ellipse", { cx: x, cy: y, rx: size * 0.92, ry: size * 0.64, fill: ART_COLORS.waterLight }));
-  parent.appendChild(svgEl("ellipse", { cx: x, cy: y, rx: size * 0.72, ry: size * 0.48, fill: ART_COLORS.water }));
-  parent.appendChild(svgEl("ellipse", { cx: x + 2, cy: y + 2, rx: size * 0.42, ry: size * 0.28, fill: ART_COLORS.waterDeep }));
-  for (let i = 0; i < 2; i++) {
-    const ring = svgEl("ellipse", {
-      cx: x, cy: y, rx: size * 0.22, ry: size * 0.14,
-      class: "art-ripple", fill: "none", stroke: ART_COLORS.foam, "stroke-width": 1.5,
-    });
-    ring.style.transformOrigin = `${x}px ${y}px`;
-    ring.style.transformBox = "view-box";
-    ring.style.animationDelay = `${i * 1.5}s`;
-    parent.appendChild(ring);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Sprites: buildings and roads
@@ -730,70 +565,12 @@ function paintSpikes(parent, x, y, scale) {
   }
 }
 
-// A dirt path along a list of points with scale-adaptive width.
-function paintRoad(parent, points, width) {
-  if (points.length < 2) return;
-  const d = points.map((p, i) => `${i ? "L" : "M"} ${p[0]} ${p[1]}`).join(" ");
-  const w = width || 2.4;
-  parent.appendChild(svgEl("path", { d, fill: "none", stroke: ART_COLORS.roadEdge, "stroke-width": w * 1.6, "stroke-linecap": "round", "stroke-linejoin": "round", opacity: 0.75 }));
-  parent.appendChild(svgEl("path", { d, fill: "none", stroke: ART_COLORS.road, "stroke-width": w, "stroke-linecap": "round", "stroke-linejoin": "round" }));
-}
 
 // ---------------------------------------------------------------------------
 // High-Density Clustered Biome Sprites
 // ---------------------------------------------------------------------------
 
-function paintDenseGrove(parent, x, y, scale, theme, random) {
-  const s = scale;
-  // Clustered micro-trees with individual ground shadows
-  const positions = [
-    [-0.24, -0.06],
-    [0.22, -0.1],
-    [-0.06, 0.16],
-    [0.18, 0.2]
-  ];
-  for (let i = 0; i < positions.length; i++) {
-    const [dx, dy] = positions[i];
-    const tx = x + dx * s;
-    const ty = y + dy * s;
-    const ts = s * (0.52 + (random() * 0.12));
-    if (theme === "pine") {
-      paintPineTree(parent, tx, ty, ts, random);
-    } else if (theme === "taiga") {
-      paintTaigaPine(parent, tx, ty, ts * 1.05, random);
-    } else if (theme === "birch") {
-      paintBirchTree(parent, tx, ty, ts, random);
-    } else if (theme === "autumn") {
-      paintAutumnTree(parent, tx, ty, ts, random);
-    } else if (theme === "mixed") {
-      if (i === 0) paintPineTree(parent, tx, ty, ts, random);
-      else if (i === 1) paintAutumnTree(parent, tx, ty, ts, random);
-      else paintTree(parent, tx, ty, ts, random);
-    } else {
-      paintTree(parent, tx, ty, ts, random);
-    }
-  }
-}
 
-function paintCropField(parent, x, y, scale, random) {
-  const s = scale;
-  // Striated ploughed field furrows
-  for (let i = -2; i <= 2; i++) {
-    const fy = y + i * s * 0.14;
-    const span = s * 0.36 - Math.abs(i) * s * 0.05;
-    parent.appendChild(svgEl("line", {
-      x1: x - span, y1: fy, x2: x + span, y2: fy,
-      stroke: i % 2 === 0 ? "#b5902b" : "#c4a342",
-      "stroke-width": 1.1,
-      "stroke-linecap": "round"
-    }));
-  }
-  if (random() < 0.4) {
-    paintHayBale(parent, x + (random() - 0.5) * s * 0.25, y + (random() - 0.5) * s * 0.15, s * 0.55);
-  } else {
-    paintWheat(parent, x, y, s * 0.65, random);
-  }
-}
 
 function paintRiverBridge(parent, x, y, scale) {
   const s = scale;
@@ -1338,288 +1115,156 @@ function paintTrainingGround(parent, x, y, scale) {
 // Sprites: people. Drawn at the origin; the villagers layer moves the group.
 // ---------------------------------------------------------------------------
 
-function paintVillager(parent, scale, tunicColor, isSoldier) {
+// The tools of each trade, drawn in the hand. `paintVillager` hangs one of
+// these off the arm group, which the stylesheet swings while the figure is
+// working — so a forester is visibly chopping and a mason is visibly
+// hammering, rather than both being a coloured blob standing still.
+const VILLAGER_TOOLS = {
+  forester: (s) => [
+    { el: "line", attrs: { x1: 0, y1: 0, x2: 0, y2: -s * 0.46, stroke: ART_COLORS.trunk, "stroke-width": s * 0.05, "stroke-linecap": "round" } },
+    { el: "path", attrs: { d: `M${-s * 0.02} ${-s * 0.46}q${s * 0.16} ${-s * 0.1} ${s * 0.2} ${s * 0.02}l${-s * 0.18} ${s * 0.12}z`, fill: "#b9b3a6", stroke: ART_COLORS.ink, "stroke-width": 0.6 } },
+  ],
+  mason: (s) => [
+    { el: "line", attrs: { x1: 0, y1: 0, x2: 0, y2: -s * 0.38, stroke: ART_COLORS.trunk, "stroke-width": s * 0.05, "stroke-linecap": "round" } },
+    { el: "rect", attrs: { x: -s * 0.1, y: -s * 0.46, width: s * 0.2, height: s * 0.11, rx: s * 0.02, fill: "#8d887e", stroke: ART_COLORS.ink, "stroke-width": 0.6 } },
+  ],
+  farmer: (s) => [
+    { el: "line", attrs: { x1: 0, y1: 0, x2: s * 0.06, y2: -s * 0.48, stroke: ART_COLORS.trunk, "stroke-width": s * 0.045, "stroke-linecap": "round" } },
+    { el: "path", attrs: { d: `M${s * 0.06} ${-s * 0.48}q${s * 0.16} ${s * 0.02} ${s * 0.14} ${s * 0.14}`, fill: "none", stroke: "#b9b3a6", "stroke-width": s * 0.05, "stroke-linecap": "round" } },
+  ],
+  scholar: (s) => [
+    { el: "rect", attrs: { x: -s * 0.02, y: -s * 0.16, width: s * 0.2, height: s * 0.15, rx: s * 0.015, fill: "#efe3c8", stroke: ART_COLORS.ink, "stroke-width": 0.6 } },
+    { el: "line", attrs: { x1: s * 0.08, y1: -s * 0.16, x2: s * 0.08, y2: -s * 0.01, stroke: "#8c2a1c", "stroke-width": 0.8 } },
+  ],
+  scout: (s) => [
+    { el: "line", attrs: { x1: 0, y1: s * 0.1, x2: s * 0.02, y2: -s * 0.55, stroke: "#6f5433", "stroke-width": s * 0.045, "stroke-linecap": "round" } },
+  ],
+  soldier: (s) => [
+    { el: "line", attrs: { x1: 0, y1: s * 0.12, x2: s * 0.02, y2: -s * 0.6, stroke: "#6f5433", "stroke-width": s * 0.05, "stroke-linecap": "round" } },
+    { el: "path", attrs: { d: `M${s * 0.02} ${-s * 0.6}l${-s * 0.05} ${-s * 0.12}l${s * 0.1} 0z`, fill: "#c9c3b4", stroke: ART_COLORS.ink, "stroke-width": 0.5 } },
+  ],
+  carrier: (s) => [
+    { el: "path", attrs: { d: `M${-s * 0.1} ${-s * 0.04}h${s * 0.22}l${-s * 0.03} ${s * 0.16}h${-s * 0.16}z`, fill: "#c9a24a", stroke: ART_COLORS.ink, "stroke-width": 0.6 } },
+    { el: "path", attrs: { d: `M${-s * 0.08} ${-s * 0.04}q${s * 0.09} ${-s * 0.1} ${s * 0.18} 0`, fill: "none", stroke: "#8a6526", "stroke-width": 0.8 } },
+  ],
+};
+
+// Hats and headgear, so a crowd is a crowd of people rather than a row of
+// the same person.
+const VILLAGER_HATS = ["none", "straw", "hood", "cap"];
+
+// Drawn at the origin; the villagers layer moves the whole group. `options`
+// may be a boolean (the old "is this a soldier?") or
+// { soldier, trade, hat, hair }.
+function paintVillager(parent, scale, tunicColor, options) {
   const s = scale;
+  const opts = typeof options === "boolean" ? { soldier: options } : (options || {});
+  const soldier = !!opts.soldier;
+  const trade = opts.trade || (soldier ? "soldier" : "carrier");
+  const hat = opts.hat || "none";
+
   const body = svgEl("g", { class: "villager__body" });
   body.appendChild(svgEl("ellipse", { cx: 0, cy: s * 0.42, rx: s * 0.22, ry: s * 0.07, fill: "rgba(0,0,0,0.25)" }));
-  body.appendChild(svgEl("rect", { x: -s * 0.12, y: s * 0.18, width: s * 0.09, height: s * 0.22, fill: ART_COLORS.ink, class: "villager__leg villager__leg--left" }));
-  body.appendChild(svgEl("rect", { x: s * 0.03, y: s * 0.18, width: s * 0.09, height: s * 0.22, fill: ART_COLORS.ink, class: "villager__leg villager__leg--right" }));
-  body.appendChild(svgEl("rect", { x: -s * 0.17, y: -s * 0.08, width: s * 0.34, height: s * 0.32, rx: s * 0.08, fill: isSoldier ? ART_COLORS.soldier : tunicColor, stroke: ART_COLORS.ink, "stroke-width": 1 }));
-  body.appendChild(svgEl("circle", { cx: 0, cy: -s * 0.2, r: s * 0.14, fill: ART_COLORS.skin, stroke: ART_COLORS.ink, "stroke-width": 1 }));
-  if (isSoldier) {
-    body.appendChild(svgEl("path", { d: `M ${-s * 0.16} ${-s * 0.34} q ${s * 0.16} ${-s * 0.12} ${s * 0.32} 0 v ${s * 0.06} h ${-s * 0.32} z`, fill: ART_COLORS.soldier, stroke: ART_COLORS.ink, "stroke-width": 1 }));
-    body.appendChild(svgEl("path", { d: `M ${s * 0.16} ${-s * 0.04} h ${s * 0.16} v ${s * 0.18} q ${-s * 0.08} ${s * 0.1} ${-s * 0.16} 0 z`, fill: ART_COLORS.shield, stroke: ART_COLORS.ink, "stroke-width": 1 }));
-  } else {
-    body.appendChild(svgEl("path", { d: `M ${-s * 0.15} ${-s * 0.26} q ${s * 0.15} ${-s * 0.14} ${s * 0.3} 0`, fill: "none", stroke: ART_COLORS.trunk, "stroke-width": 2, "stroke-linecap": "round" }));
+
+  // Legs, hung off their hip so the stylesheet can swing them.
+  for (const side of ["left", "right"]) {
+    const leg = svgEl("g", { class: `villager__leg villager__leg--${side}` });
+    leg.appendChild(svgEl("rect", {
+      x: side === "left" ? -s * 0.12 : s * 0.03, y: s * 0.18,
+      width: s * 0.09, height: s * 0.22, fill: ART_COLORS.ink,
+    }));
+    body.appendChild(leg);
   }
+
+  // Tunic.
+  body.appendChild(svgEl("rect", {
+    x: -s * 0.17, y: -s * 0.08, width: s * 0.34, height: s * 0.32, rx: s * 0.08,
+    fill: soldier ? ART_COLORS.soldier : tunicColor, stroke: ART_COLORS.ink, "stroke-width": 1,
+  }));
+  // An apron or a belt, depending on the trade.
+  if (trade === "farmer" || trade === "carrier") {
+    body.appendChild(svgEl("rect", { x: -s * 0.17, y: s * 0.1, width: s * 0.34, height: s * 0.05, fill: "rgba(60,44,28,0.55)" }));
+  }
+
+  // The working arm, with its tool. Two nested groups on purpose: the outer
+  // one carries the transform that puts the shoulder in the right place, so
+  // the inner one is free for the stylesheet to swing without fighting it.
+  const shoulder = svgEl("g", {
+    transform: `translate(${(s * 0.16).toFixed(2)} ${(s * 0.02).toFixed(2)})`,
+  });
+  const arm = svgEl("g", { class: "villager__arm" });
+  arm.appendChild(svgEl("line", {
+    x1: 0, y1: 0, x2: s * 0.02, y2: s * 0.02,
+    stroke: ART_COLORS.skin, "stroke-width": s * 0.07, "stroke-linecap": "round",
+  }));
+  const tool = (VILLAGER_TOOLS[trade] || VILLAGER_TOOLS.carrier)(s);
+  for (const piece of tool) arm.appendChild(svgEl(piece.el, piece.attrs));
+  shoulder.appendChild(arm);
+  body.appendChild(shoulder);
+
+  // Head.
+  body.appendChild(svgEl("circle", { cx: 0, cy: -s * 0.2, r: s * 0.14, fill: ART_COLORS.skin, stroke: ART_COLORS.ink, "stroke-width": 1 }));
+
+  if (soldier) {
+    body.appendChild(svgEl("path", {
+      d: `M${-s * 0.16} ${-s * 0.3}q${s * 0.16} ${-s * 0.14} ${s * 0.32} 0v${s * 0.05}h${-s * 0.32}z`,
+      fill: "#9aa3ae", stroke: ART_COLORS.ink, "stroke-width": 1,
+    }));
+    body.appendChild(svgEl("path", {
+      d: `M${-s * 0.34} ${-s * 0.06}h${-s * 0.14}v${s * 0.2}q${s * 0.07} ${s * 0.1} ${s * 0.14} 0z`,
+      fill: ART_COLORS.shield, stroke: ART_COLORS.ink, "stroke-width": 1,
+    }));
+  } else if (hat === "straw") {
+    body.appendChild(svgEl("ellipse", { cx: 0, cy: -s * 0.29, rx: s * 0.22, ry: s * 0.055, fill: ART_COLORS.wheat, stroke: ART_COLORS.ink, "stroke-width": 0.7 }));
+    body.appendChild(svgEl("path", { d: `M${-s * 0.09} ${-s * 0.29}q${s * 0.09} ${-s * 0.12} ${s * 0.18} 0z`, fill: ART_COLORS.wheatDark }));
+  } else if (hat === "hood") {
+    body.appendChild(svgEl("path", {
+      d: `M${-s * 0.15} ${-s * 0.2}q0 ${-s * 0.2} ${s * 0.15} ${-s * 0.2}q${s * 0.15} 0 ${s * 0.15} ${s * 0.2}q${-s * 0.09} ${-s * 0.06} ${-s * 0.3} 0z`,
+      fill: "#5c4a36", stroke: ART_COLORS.ink, "stroke-width": 0.7,
+    }));
+  } else if (hat === "cap") {
+    body.appendChild(svgEl("path", { d: `M${-s * 0.14} ${-s * 0.26}q${s * 0.14} ${-s * 0.12} ${s * 0.28} 0z`, fill: "#8c4a3a" }));
+  } else {
+    body.appendChild(svgEl("path", {
+      d: `M${-s * 0.15} ${-s * 0.26}q${s * 0.15} ${-s * 0.14} ${s * 0.3} 0`,
+      fill: "none", stroke: ART_COLORS.trunk, "stroke-width": 2, "stroke-linecap": "round",
+    }));
+  }
+
   parent.appendChild(body);
   return body;
 }
+
+// A child: the same figure, smaller, and never given a tool.
+function paintChild(parent, scale, tunicColor) {
+  const group = svgEl("g", { class: "villager__child" });
+  paintVillager(group, scale * 0.62, tunicColor, { trade: "none", hat: "cap" });
+  parent.appendChild(group);
+  return group;
+}
+
 
 // ---------------------------------------------------------------------------
 // Sprites: the sea and the shore
 // ---------------------------------------------------------------------------
 
-// Open water. `depth` (0 shallow … 1 deep) tints the hex, and a few short
-// wave strokes keep it from reading as flat paint.
-function paintOceanSurface(parent, x, y, size, depth, random) {
-  const s = size;
-  parent.appendChild(svgEl("polygon", {
-    points: hexPoints(x, y, s * 1.005),
-    fill: depth > 0.55 ? ART_COLORS.oceanDeep : ART_COLORS.ocean,
-    opacity: 0.55 + depth * 0.35,
-  }));
-  // Every wave on this hex in one element — there are hundreds of sea tiles.
-  const waves = 2 + Math.floor(random() * 3);
-  let d = "";
-  for (let i = 0; i < waves; i++) {
-    const wx = x + (random() - 0.5) * s * 1.05;
-    const wy = y + (random() - 0.5) * s * 1.0;
-    const w = s * (0.18 + random() * 0.18);
-    d += ` M ${wx - w} ${wy} q ${w * 0.5} ${-s * 0.09} ${w} 0 q ${w * 0.5} ${s * 0.09} ${w} 0`;
-  }
-  parent.appendChild(svgEl("path", {
-    d: d.trim(),
-    fill: "none",
-    stroke: ART_COLORS.oceanShallow,
-    "stroke-width": Math.max(0.6, s * 0.035),
-    "stroke-linecap": "round",
-    opacity: 0.45,
-  }));
-}
 
-// The pale line where the sea meets the land. `edges` is the list of hex
-// edge indices (0..5, corner i to corner i+1) that face dry ground.
-function paintCoastFoam(parent, x, y, size, edges) {
-  if (!edges.length) return;
-  let d = "";
-  for (const edge of edges) {
-    const a = (Math.PI / 180) * (60 * edge - 30);
-    const b = (Math.PI / 180) * (60 * (edge + 1) - 30);
-    d += ` M ${x + size * 0.93 * Math.cos(a)} ${y + size * 0.93 * Math.sin(a)}` +
-         ` L ${x + size * 0.93 * Math.cos(b)} ${y + size * 0.93 * Math.sin(b)}`;
-  }
-  parent.appendChild(svgEl("path", {
-    d: d.trim(),
-    fill: "none",
-    stroke: ART_COLORS.oceanFoam,
-    "stroke-width": Math.max(1.2, size * 0.11),
-    "stroke-linecap": "round",
-    opacity: 0.7,
-    class: "art-foam",
-  }));
-}
 
-// Wet sand, shells and a stick of driftwood.
-function paintBeachDetail(parent, x, y, size, random) {
-  const s = size;
-  parent.appendChild(svgEl("path", {
-    d: `M ${x - s * 0.8} ${y + s * 0.24} q ${s * 0.4} ${-s * 0.16} ${s * 0.8} 0 q ${s * 0.4} ${s * 0.16} ${s * 0.8} 0`,
-    fill: "none", stroke: ART_COLORS.beachWet, "stroke-width": s * 0.09, "stroke-linecap": "round", opacity: 0.65,
-  }));
-  const shells = 2 + Math.floor(random() * 3);
-  for (let i = 0; i < shells; i++) {
-    const sx = x + (random() - 0.5) * s * 1.1;
-    const sy = y + (random() - 0.5) * s * 0.95;
-    parent.appendChild(svgEl("path", {
-      d: `M ${sx - s * 0.05} ${sy} a ${s * 0.05} ${s * 0.05} 0 0 1 ${s * 0.1} 0 z`,
-      fill: random() < 0.5 ? "#fff6e4" : "#e9c7b0", stroke: ART_COLORS.sandDark, "stroke-width": 0.4,
-    }));
-  }
-  if (random() < 0.45) {
-    parent.appendChild(svgEl("line", {
-      x1: x - s * 0.3, y1: y - s * 0.18, x2: x + s * 0.12, y2: y - s * 0.3,
-      stroke: "#a58a63", "stroke-width": s * 0.07, "stroke-linecap": "round",
-    }));
-  }
-}
 
-// Still inland water: a darker heart and a couple of ripples.
-function paintLakeSurface(parent, x, y, size, random) {
-  const s = size;
-  parent.appendChild(svgEl("polygon", { points: hexPoints(x, y, s * 1.005), fill: ART_COLORS.lake }));
-  parent.appendChild(svgEl("ellipse", {
-    cx: x, cy: y + s * 0.05, rx: s * 0.62, ry: s * 0.46, fill: ART_COLORS.lakeDeep, opacity: 0.55,
-  }));
-  for (let i = 0; i < 2; i++) {
-    const ry = y + (random() - 0.5) * s * 0.7;
-    parent.appendChild(svgEl("path", {
-      d: `M ${x - s * 0.36} ${ry} q ${s * 0.18} ${-s * 0.07} ${s * 0.36} 0 q ${s * 0.18} ${s * 0.07} ${s * 0.36} 0`,
-      fill: "none", stroke: "#bfe6f2", "stroke-width": Math.max(0.6, s * 0.03), opacity: 0.5,
-    }));
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Sprites: wet, cold and dry ground
 // ---------------------------------------------------------------------------
 
-function paintMarshReeds(parent, x, y, size, random) {
-  const s = size;
-  // Standing water in patches
-  for (let i = 0; i < 3; i++) {
-    const px = x + (random() - 0.5) * s * 0.95;
-    const py = y + (random() - 0.5) * s * 0.8;
-    parent.appendChild(svgEl("ellipse", {
-      cx: px, cy: py, rx: s * (0.16 + random() * 0.14), ry: s * (0.09 + random() * 0.07),
-      fill: ART_COLORS.marshWater, opacity: 0.8,
-    }));
-  }
-  // Reeds with brown heads
-  const stems = 5 + Math.floor(random() * 5);
-  for (let i = 0; i < stems; i++) {
-    const sx = x + (random() - 0.5) * s * 1.15;
-    const sy = y + (random() - 0.5) * s * 0.95;
-    const h = s * (0.2 + random() * 0.2);
-    const lean = (random() - 0.5) * s * 0.1;
-    parent.appendChild(svgEl("line", {
-      x1: sx, y1: sy, x2: sx + lean, y2: sy - h,
-      stroke: ART_COLORS.reed, "stroke-width": Math.max(0.6, s * 0.028), "stroke-linecap": "round",
-    }));
-    parent.appendChild(svgEl("rect", {
-      x: sx + lean - s * 0.022, y: sy - h - s * 0.06, width: s * 0.044, height: s * 0.075, rx: s * 0.02,
-      fill: ART_COLORS.reedHead,
-    }));
-  }
-}
 
-function paintTundraScrub(parent, x, y, size, random) {
-  const s = size;
-  // Lichen blotches
-  for (let i = 0; i < 4; i++) {
-    parent.appendChild(svgEl("ellipse", {
-      cx: x + (random() - 0.5) * s * 1.1,
-      cy: y + (random() - 0.5) * s * 0.95,
-      rx: s * (0.1 + random() * 0.12), ry: s * (0.06 + random() * 0.08),
-      fill: random() < 0.5 ? ART_COLORS.tundraScrub : "#cdd3b6", opacity: 0.7,
-    }));
-  }
-  // Low wind-bitten shrubs
-  const shrubs = 2 + Math.floor(random() * 2);
-  for (let i = 0; i < shrubs; i++) {
-    const sx = x + (random() - 0.5) * s * 0.9;
-    const sy = y + (random() - 0.5) * s * 0.7;
-    parent.appendChild(svgEl("path", {
-      d: `M ${sx} ${sy} l ${-s * 0.08} ${-s * 0.1} M ${sx} ${sy} l ${s * 0.09} ${-s * 0.12} M ${sx} ${sy} l 0 ${-s * 0.14}`,
-      stroke: "#6d7350", "stroke-width": Math.max(0.6, s * 0.03), "stroke-linecap": "round", fill: "none",
-    }));
-  }
-  if (random() < 0.4) {
-    parent.appendChild(svgEl("ellipse", {
-      cx: x + s * 0.24, cy: y + s * 0.2, rx: s * 0.14, ry: s * 0.1,
-      fill: ART_COLORS.rock, stroke: ART_COLORS.rockDark, "stroke-width": 0.6,
-    }));
-  }
-}
 
-function paintSnowDrift(parent, x, y, size, random) {
-  const s = size;
-  for (let i = 0; i < 3; i++) {
-    const dx = x + (random() - 0.5) * s * 1.0;
-    const dy = y + (random() - 0.5) * s * 0.85;
-    parent.appendChild(svgEl("path", {
-      d: `M ${dx - s * 0.3} ${dy} q ${s * 0.16} ${-s * 0.18} ${s * 0.32} ${-s * 0.03} q ${s * 0.16} ${s * 0.11} ${s * 0.3} ${s * 0.03} z`,
-      fill: ART_COLORS.snow, stroke: ART_COLORS.snowfieldShade, "stroke-width": 0.6, opacity: 0.95,
-    }));
-  }
-  // A few ice glints, all in one element
-  let glints = "";
-  for (let i = 0; i < 3; i++) {
-    const gx = x + (random() - 0.5) * s * 1.1;
-    const gy = y + (random() - 0.5) * s * 0.9;
-    const g = s * 0.05;
-    glints += ` M ${gx - g} ${gy} h ${g * 2} M ${gx} ${gy - g} v ${g * 2}`;
-  }
-  parent.appendChild(svgEl("path", { d: glints.trim(), stroke: "#ffffff", "stroke-width": 0.8, opacity: 0.8 }));
-}
 
-function paintBadlandsMesa(parent, x, y, size, random) {
-  const s = size;
-  // Cracked pan
-  for (let i = 0; i < 4; i++) {
-    const cx = x + (random() - 0.5) * s * 1.1;
-    const cy = y + (random() - 0.5) * s * 0.95;
-    parent.appendChild(svgEl("path", {
-      d: `M ${cx} ${cy} l ${s * 0.12} ${s * 0.06} l ${s * 0.08} ${-s * 0.1}`,
-      fill: "none", stroke: ART_COLORS.badlandsDark, "stroke-width": 0.7, opacity: 0.6,
-    }));
-  }
-  // A layered mesa
-  const mx = x + (random() - 0.5) * s * 0.3;
-  const my = y + s * 0.1;
-  const w = s * (0.34 + random() * 0.12);
-  const h = s * (0.3 + random() * 0.14);
-  parent.appendChild(svgEl("path", {
-    d: `M ${mx - w} ${my} L ${mx - w * 0.72} ${my - h} L ${mx + w * 0.72} ${my - h} L ${mx + w} ${my} Z`,
-    fill: ART_COLORS.badlands, stroke: ART_COLORS.ink, "stroke-width": 0.8,
-  }));
-  parent.appendChild(svgEl("path", {
-    d: `M ${mx - w * 0.9} ${my - h * 0.34} L ${mx + w * 0.9} ${my - h * 0.34}`,
-    stroke: ART_COLORS.badlandsStripe, "stroke-width": s * 0.05, opacity: 0.8,
-  }));
-  parent.appendChild(svgEl("path", {
-    d: `M ${mx - w * 0.8} ${my - h * 0.66} L ${mx + w * 0.8} ${my - h * 0.66}`,
-    stroke: ART_COLORS.badlandsDark, "stroke-width": s * 0.04, opacity: 0.7,
-  }));
-  // Scrub or a dry bush
-  if (random() < 0.5) {
-    const bx = x - s * 0.34;
-    const by = y + s * 0.26;
-    parent.appendChild(svgEl("path", {
-      d: `M ${bx} ${by} l 0 ${-s * 0.16} M ${bx} ${by - s * 0.09} l ${-s * 0.08} ${-s * 0.07} M ${bx} ${by - s * 0.11} l ${s * 0.08} ${-s * 0.06}`,
-      stroke: "#7c6a3a", "stroke-width": Math.max(0.6, s * 0.03), "stroke-linecap": "round", fill: "none",
-    }));
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Sprites: two more kinds of tree
 // ---------------------------------------------------------------------------
 
-function paintBirchTree(parent, x, y, scale, random) {
-  const s = scale;
-  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.42, rx: s * 0.26, ry: s * 0.08, fill: "rgba(0,0,0,0.16)" }));
-  parent.appendChild(svgEl("rect", {
-    x: x - s * 0.05, y: y - s * 0.1, width: s * 0.1, height: s * 0.52, rx: s * 0.02,
-    fill: ART_COLORS.birchBark, stroke: ART_COLORS.birchMark, "stroke-width": 0.5,
-  }));
-  for (let i = 0; i < 3; i++) {
-    const my = y + s * (0.02 + i * 0.15);
-    parent.appendChild(svgEl("line", {
-      x1: x - s * 0.05, y1: my, x2: x - s * 0.005, y2: my,
-      stroke: ART_COLORS.birchMark, "stroke-width": Math.max(0.5, s * 0.03),
-    }));
-  }
-  const puffs = [[0, -0.32, 0.3], [-0.2, -0.18, 0.22], [0.2, -0.2, 0.23]];
-  for (const [dx, dy, r] of puffs) {
-    parent.appendChild(svgEl("circle", {
-      cx: x + dx * s, cy: y + dy * s, r: r * s,
-      fill: random() < 0.5 ? ART_COLORS.birchCanopy : ART_COLORS.canopyLight,
-      stroke: ART_COLORS.canopyDark, "stroke-width": 0.6,
-    }));
-  }
-}
 
-function paintTaigaPine(parent, x, y, scale, random) {
-  const s = scale;
-  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.44, rx: s * 0.24, ry: s * 0.07, fill: "rgba(0,0,0,0.2)" }));
-  parent.appendChild(svgEl("rect", { x: x - s * 0.045, y: y + s * 0.1, width: s * 0.09, height: s * 0.34, fill: ART_COLORS.trunkShade }));
-  for (let tier = 0; tier < 3; tier++) {
-    const ty = y + s * (0.16 - tier * 0.2);
-    const tw = s * (0.34 - tier * 0.07);
-    parent.appendChild(svgEl("path", {
-      d: `M ${x - tw} ${ty} L ${x} ${ty - s * 0.3} L ${x + tw} ${ty} Z`,
-      fill: tier === 2 ? ART_COLORS.taigaLight : ART_COLORS.taigaCanopy,
-      stroke: ART_COLORS.ink, "stroke-width": 0.55,
-    }));
-  }
-  if (random() < 0.3) {
-    parent.appendChild(svgEl("path", {
-      d: `M ${x - s * 0.22} ${y - s * 0.16} q ${s * 0.22} ${s * 0.06} ${s * 0.44} 0`,
-      fill: "none", stroke: ART_COLORS.snow, "stroke-width": s * 0.05, opacity: 0.8,
-    }));
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Sprites: undergrowth. Tiny things scattered over every tile so no two
@@ -1632,24 +1277,20 @@ function paintTaigaPine(parent, x, y, scale, random) {
 // browser does not need.
 function grassTuftPath(x, y, scale) {
   const s = scale;
-  return `M ${x} ${y} q ${-s * 0.16} ${-s * 0.12} ${-s * 0.2} ${-s * 0.34}` +
-         ` M ${x} ${y} q ${s * 0.02} ${-s * 0.2} ${s * 0.02} ${-s * 0.4}` +
-         ` M ${x} ${y} q ${s * 0.16} ${-s * 0.12} ${s * 0.22} ${-s * 0.32}`;
+  const n = (value) => (Math.round(value * 10) / 10).toString();
+  // Below about seven pixels a tuft is a smudge, and three curved blades in
+  // a smudge cost a hundred and fifty characters to draw nothing. Two
+  // straight strokes read exactly the same and cost a third as much — which,
+  // across the meadows of a thirty-thousand hex island, is a megabyte.
+  if (s < 7) {
+    return `M${n(x)} ${n(y)}l${n(-s * 0.22)} ${n(-s * 0.8)}M${n(x)} ${n(y)}l${n(s * 0.2)} ${n(-s * 0.9)}`;
+  }
+  return `M${n(x)} ${n(y)}q${n(-s * 0.16)} ${n(-s * 0.12)} ${n(-s * 0.2)} ${n(-s * 0.34)}` +
+         `M${n(x)} ${n(y)}q${n(s * 0.02)} ${n(-s * 0.2)} ${n(s * 0.02)} ${n(-s * 0.4)}` +
+         `M${n(x)} ${n(y)}q${n(s * 0.16)} ${n(-s * 0.12)} ${n(s * 0.22)} ${n(-s * 0.32)}`;
 }
 
-function paintGrassTuft(parent, x, y, scale, color) {
-  paintGrassTufts(parent, [[x, y]], scale, color);
-}
 
-// Every tuft in one element.
-function paintGrassTufts(parent, points, scale, color) {
-  if (!points.length) return;
-  parent.appendChild(svgEl("path", {
-    d: points.map(([x, y]) => grassTuftPath(x, y, scale)).join(" "),
-    fill: "none", stroke: color || "#5f8a3c",
-    "stroke-width": Math.max(0.5, scale * 0.09), "stroke-linecap": "round", opacity: 0.8,
-  }));
-}
 
 function paintPebble(parent, x, y, scale, random) {
   paintPebbles(parent, [[x, y]], scale, random);
@@ -1671,26 +1312,7 @@ function paintPebbles(parent, points, scale, random) {
   }));
 }
 
-function paintMushroom(parent, x, y, scale) {
-  const s = scale;
-  parent.appendChild(svgEl("rect", { x: x - s * 0.04, y: y - s * 0.12, width: s * 0.08, height: s * 0.14, fill: "#f3ead6" }));
-  parent.appendChild(svgEl("path", {
-    d: `M ${x - s * 0.16} ${y - s * 0.1} a ${s * 0.16} ${s * 0.14} 0 0 1 ${s * 0.32} 0 z`,
-    fill: "#c0392b", stroke: ART_COLORS.ink, "stroke-width": 0.4,
-  }));
-}
 
-function paintFallenLog(parent, x, y, scale, random) {
-  const s = scale;
-  const angle = (random() - 0.5) * 0.9;
-  const dx = Math.cos(angle) * s * 0.36;
-  const dy = Math.sin(angle) * s * 0.36;
-  parent.appendChild(svgEl("line", {
-    x1: x - dx, y1: y - dy, x2: x + dx, y2: y + dy,
-    stroke: ART_COLORS.trunk, "stroke-width": s * 0.16, "stroke-linecap": "round",
-  }));
-  parent.appendChild(svgEl("circle", { cx: x + dx, cy: y + dy, r: s * 0.08, fill: "#c79a6b" }));
-}
 
 function paintDeer(parent, x, y, scale) {
   const s = scale;
@@ -1829,44 +1451,715 @@ function paintSchoolhouse(parent, x, y, scale) {
 }
 
 // ---------------------------------------------------------------------------
+// Where one kind of ground meets another
+// ---------------------------------------------------------------------------
+
+
+
+
+// ---------------------------------------------------------------------------
+// Sprites: what else is living out there
+// ---------------------------------------------------------------------------
+
+function paintSheep(parent, x, y, scale) {
+  const s = scale;
+  const g = svgEl("g", { class: "art-wildlife" });
+  g.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.18, rx: s * 0.18, ry: s * 0.05, fill: "rgba(0,0,0,0.16)" }));
+  g.appendChild(svgEl("ellipse", { cx: x, cy: y, rx: s * 0.19, ry: s * 0.14, fill: "#f4f0e6", stroke: ART_COLORS.ink, "stroke-width": 0.4 }));
+  g.appendChild(svgEl("circle", { cx: x + s * 0.17, cy: y - s * 0.06, r: s * 0.07, fill: "#4a423a" }));
+  g.appendChild(svgEl("line", { x1: x - s * 0.08, y1: y + s * 0.1, x2: x - s * 0.08, y2: y + s * 0.18, stroke: "#4a423a", "stroke-width": s * 0.04 }));
+  g.appendChild(svgEl("line", { x1: x + s * 0.07, y1: y + s * 0.1, x2: x + s * 0.07, y2: y + s * 0.18, stroke: "#4a423a", "stroke-width": s * 0.04 }));
+  parent.appendChild(g);
+}
+
+function paintBoar(parent, x, y, scale) {
+  const s = scale;
+  const g = svgEl("g", { class: "art-wildlife" });
+  g.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.2, rx: s * 0.2, ry: s * 0.05, fill: "rgba(0,0,0,0.18)" }));
+  g.appendChild(svgEl("path", {
+    d: "M " + (x - s * 0.2) + " " + y +
+       " q " + (s * 0.1) + " " + (-s * 0.16) + " " + (s * 0.24) + " " + (-s * 0.1) +
+       " l " + (s * 0.16) + " " + (s * 0.04) +
+       " q " + (s * 0.05) + " " + (s * 0.1) + " " + (-s * 0.02) + " " + (s * 0.14) +
+       " l " + (-s * 0.36) + " 0 z",
+    fill: "#4b3a2c", stroke: ART_COLORS.ink, "stroke-width": 0.4,
+  }));
+  g.appendChild(svgEl("path", {
+    d: "M " + (x + s * 0.2) + " " + (y + s * 0.02) + " l " + (s * 0.07) + " " + (-s * 0.05),
+    stroke: "#efe6d2", "stroke-width": 0.9,
+  }));
+  parent.appendChild(g);
+}
+
+function paintHeron(parent, x, y, scale) {
+  const s = scale;
+  const g = svgEl("g", { class: "art-wildlife" });
+  g.appendChild(svgEl("line", { x1: x, y1: y, x2: x, y2: y + s * 0.3, stroke: "#c9b170", "stroke-width": s * 0.035 }));
+  g.appendChild(svgEl("ellipse", { cx: x, cy: y - s * 0.06, rx: s * 0.13, ry: s * 0.08, fill: "#cfd6dc", stroke: ART_COLORS.ink, "stroke-width": 0.4 }));
+  g.appendChild(svgEl("path", {
+    d: "M " + (x + s * 0.06) + " " + (y - s * 0.1) +
+       " q " + (s * 0.06) + " " + (-s * 0.12) + " " + (s * 0.02) + " " + (-s * 0.18),
+    fill: "none", stroke: "#cfd6dc", "stroke-width": s * 0.045,
+  }));
+  g.appendChild(svgEl("path", {
+    d: "M " + (x + s * 0.08) + " " + (y - s * 0.28) + " l " + (s * 0.1) + " " + (s * 0.03),
+    stroke: "#d9a441", "stroke-width": 0.8,
+  }));
+  parent.appendChild(g);
+}
+
+function paintEagle(parent, x, y, scale) {
+  const s = scale;
+  const g = svgEl("g", { class: "art-birds" });
+  g.appendChild(svgEl("path", {
+    d: "M " + (x - s * 0.3) + " " + y +
+       " q " + (s * 0.16) + " " + (-s * 0.16) + " " + (s * 0.3) + " " + (-s * 0.02) +
+       " q " + (s * 0.14) + " " + (-s * 0.14) + " " + (s * 0.3) + " " + (s * 0.02),
+    fill: "none", stroke: "rgba(40,32,24,0.7)", "stroke-width": Math.max(0.9, s * 0.06), "stroke-linecap": "round",
+  }));
+  parent.appendChild(g);
+}
+
+// A heap of stacked stones: the mark travellers leave on empty ground.
+function paintCairn(parent, x, y, scale) {
+  const s = scale;
+  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.22, rx: s * 0.22, ry: s * 0.06, fill: "rgba(0,0,0,0.16)" }));
+  const stones = [[0, 0.14, 0.17], [-0.04, 0.02, 0.13], [0.03, -0.08, 0.1], [0, -0.18, 0.07]];
+  for (const stone of stones) {
+    parent.appendChild(svgEl("ellipse", {
+      cx: x + stone[0] * s, cy: y + stone[1] * s, rx: stone[2] * s, ry: stone[2] * s * 0.72,
+      fill: ART_COLORS.rock, stroke: ART_COLORS.rockDark, "stroke-width": 0.4,
+    }));
+  }
+}
+
+function paintBeehive(parent, x, y, scale) {
+  const s = scale;
+  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.2, rx: s * 0.19, ry: s * 0.05, fill: "rgba(0,0,0,0.16)" }));
+  for (let i = 0; i < 3; i++) {
+    parent.appendChild(svgEl("ellipse", {
+      cx: x, cy: y + s * (0.13 - i * 0.1), rx: s * (0.18 - i * 0.04), ry: s * 0.06,
+      fill: "#d9a441", stroke: "#8a6526", "stroke-width": 0.4,
+    }));
+  }
+  parent.appendChild(svgEl("circle", { cx: x, cy: y + s * 0.13, r: s * 0.03, fill: "#4a3a20" }));
+}
+
+function paintScarecrow(parent, x, y, scale) {
+  const s = scale;
+  parent.appendChild(svgEl("line", { x1: x, y1: y + s * 0.28, x2: x, y2: y - s * 0.22, stroke: ART_COLORS.trunk, "stroke-width": s * 0.05 }));
+  parent.appendChild(svgEl("line", { x1: x - s * 0.18, y1: y - s * 0.1, x2: x + s * 0.18, y2: y - s * 0.1, stroke: ART_COLORS.trunk, "stroke-width": s * 0.04 }));
+  parent.appendChild(svgEl("circle", { cx: x, cy: y - s * 0.26, r: s * 0.08, fill: ART_COLORS.wheat, stroke: ART_COLORS.ink, "stroke-width": 0.4 }));
+  parent.appendChild(svgEl("path", {
+    d: "M " + (x - s * 0.13) + " " + (y - s * 0.3) + " h " + (s * 0.26),
+    stroke: "#8a6526", "stroke-width": s * 0.04,
+  }));
+}
+
+// A smouldering earth mound: where charcoal comes from.
+function paintCharcoalBurner(parent, x, y, scale) {
+  const s = scale;
+  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.2, rx: s * 0.3, ry: s * 0.08, fill: "#4a3a28" }));
+  parent.appendChild(svgEl("path", {
+    d: "M " + (x - s * 0.26) + " " + (y + s * 0.2) +
+       " q " + (s * 0.26) + " " + (-s * 0.4) + " " + (s * 0.52) + " 0 z",
+    fill: "#5c4632", stroke: ART_COLORS.ink, "stroke-width": 0.5,
+  }));
+  const smoke = animatedGroup("art-steam", x, y, 0.4);
+  smoke.appendChild(svgEl("path", {
+    d: "M " + x + " " + (y - s * 0.04) + " q " + (s * 0.12) + " " + (-s * 0.18) + " 0 " + (-s * 0.34),
+    fill: "none", stroke: "rgba(230,230,230,0.6)", "stroke-width": s * 0.07, "stroke-linecap": "round",
+  }));
+  parent.appendChild(smoke);
+}
+
+// A pillar of rock left standing where the sea ate the cliff behind it.
+function paintSeaStack(parent, x, y, scale) {
+  const s = scale;
+  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.24, rx: s * 0.24, ry: s * 0.08, fill: "rgba(255,255,255,0.35)" }));
+  parent.appendChild(svgEl("path", {
+    d: "M " + (x - s * 0.13) + " " + (y + s * 0.24) +
+       " L " + (x - s * 0.09) + " " + (y - s * 0.26) +
+       " L " + (x + s * 0.06) + " " + (y - s * 0.3) +
+       " L " + (x + s * 0.13) + " " + (y + s * 0.24) + " Z",
+    fill: ART_COLORS.rock, stroke: ART_COLORS.rockDark, "stroke-width": 0.6,
+  }));
+}
+
+// A whale blowing, far out. One or two on a map, no more.
+function paintWhale(parent, x, y, scale) {
+  const s = scale;
+  const g = svgEl("g", { class: "art-wildlife" });
+  g.appendChild(svgEl("path", {
+    d: "M " + (x - s * 0.5) + " " + y +
+       " q " + (s * 0.5) + " " + (-s * 0.26) + " " + s + " 0" +
+       " q " + (-s * 0.5) + " " + (s * 0.12) + " " + (-s) + " 0 z",
+    fill: "#1f3f56", opacity: 0.8,
+  }));
+  g.appendChild(svgEl("path", {
+    d: "M " + (x + s * 0.46) + " " + y + " l " + (s * 0.22) + " " + (-s * 0.18) + " l 0 " + (s * 0.3) + " z",
+    fill: "#1f3f56", opacity: 0.8,
+  }));
+  g.appendChild(svgEl("path", {
+    d: "M " + (x - s * 0.24) + " " + (y - s * 0.1) +
+       " q " + (-s * 0.1) + " " + (-s * 0.28) + " " + (s * 0.06) + " " + (-s * 0.4) +
+       " M " + (x - s * 0.24) + " " + (y - s * 0.1) +
+       " q " + (s * 0.06) + " " + (-s * 0.3) + " " + (s * 0.22) + " " + (-s * 0.38),
+    fill: "none", stroke: ART_COLORS.oceanFoam, "stroke-width": s * 0.07, "stroke-linecap": "round", opacity: 0.85,
+  }));
+  parent.appendChild(g);
+}
+
+// A far-off sail, for the empty parts of the chart.
+function paintSail(parent, x, y, scale) {
+  const s = scale;
+  const g = svgEl("g", { class: "art-wildlife" });
+  g.appendChild(svgEl("path", {
+    d: "M " + (x - s * 0.34) + " " + (y + s * 0.16) +
+       " q " + (s * 0.34) + " " + (s * 0.16) + " " + (s * 0.68) + " 0 z",
+    fill: "#4a3320",
+  }));
+  g.appendChild(svgEl("line", { x1: x, y1: y + s * 0.16, x2: x, y2: y - s * 0.42, stroke: "#4a3320", "stroke-width": s * 0.05 }));
+  g.appendChild(svgEl("path", {
+    d: "M " + (x + s * 0.02) + " " + (y - s * 0.4) +
+       " L " + (x + s * 0.28) + " " + (y + s * 0.12) +
+       " L " + (x + s * 0.02) + " " + (y + s * 0.12) + " Z",
+    fill: "#f2e8d2", stroke: ART_COLORS.ink, "stroke-width": 0.4,
+  }));
+  g.appendChild(svgEl("path", {
+    d: "M " + (x - s * 0.02) + " " + (y - s * 0.34) +
+       " L " + (x - s * 0.24) + " " + (y + s * 0.12) +
+       " L " + (x - s * 0.02) + " " + (y + s * 0.12) + " Z",
+    fill: "#e6dac0", stroke: ART_COLORS.ink, "stroke-width": 0.4,
+  }));
+  parent.appendChild(g);
+}
+
+// A hunting blind on stilts, at the edge of the trees.
+function paintHuntersBlind(parent, x, y, scale) {
+  const s = scale;
+  parent.appendChild(svgEl("line", { x1: x - s * 0.14, y1: y + s * 0.3, x2: x - s * 0.1, y2: y - s * 0.02, stroke: ART_COLORS.trunk, "stroke-width": s * 0.05 }));
+  parent.appendChild(svgEl("line", { x1: x + s * 0.14, y1: y + s * 0.3, x2: x + s * 0.1, y2: y - s * 0.02, stroke: ART_COLORS.trunk, "stroke-width": s * 0.05 }));
+  parent.appendChild(svgEl("rect", { x: x - s * 0.17, y: y - s * 0.18, width: s * 0.34, height: s * 0.18, fill: "#6f5433", stroke: ART_COLORS.ink, "stroke-width": 0.4 }));
+  parent.appendChild(svgEl("path", {
+    d: "M " + (x - s * 0.22) + " " + (y - s * 0.18) +
+       " L " + x + " " + (y - s * 0.34) +
+       " L " + (x + s * 0.22) + " " + (y - s * 0.18) + " Z",
+    fill: ART_COLORS.roofDark,
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Settlement pieces: what turns a cluster of huts into a place
+// ---------------------------------------------------------------------------
+
+// The bare, trodden ground a settlement stands on. An irregular blob, so a
+// town does not look like it was stamped out with a cookie cutter.
+function paintEarthPatch(parent, x, y, radius, random, fill) {
+  const points = [];
+  const lobes = 9;
+  for (let i = 0; i < lobes; i++) {
+    const angle = (Math.PI * 2 * i) / lobes;
+    const r = radius * (0.82 + random() * 0.32);
+    points.push([x + Math.cos(angle) * r, y + Math.sin(angle) * r * 0.82]);
+  }
+  parent.appendChild(svgEl("path", {
+    d: smoothPath(points, true),
+    fill: fill || "#c6ab7e",
+    opacity: 0.85,
+  }));
+}
+
+// A ploughed field: a rotated block of furrows just outside the walls.
+// What a field looks like this season: turned earth in spring, green in
+// summer, gold at harvest, stubble under snow in winter.
+const FIELD_SEASONS = {
+  1: { ground: "#8a6a45", crop: "#6f8a3f", label: "sown" },
+  2: { ground: "#7f9a48", crop: "#94b552", label: "green" },
+  3: { ground: "#d8b64a", crop: "#b5902b", label: "ripe" },
+  4: { ground: "#b9b6a6", crop: "#9c9887", label: "stubble" },
+};
+
+function paintFieldPatch(parent, x, y, width, height, angleDegrees, random, season) {
+  const look = FIELD_SEASONS[season] || FIELD_SEASONS[2];
+  const g = svgEl("g", { transform: `rotate(${angleDegrees.toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})` });
+  g.appendChild(svgEl("rect", {
+    x: x - width / 2, y: y - height / 2, width, height, rx: height * 0.12,
+    fill: look.ground, stroke: "#7d5d39", "stroke-width": 0.7, opacity: 0.92,
+  }));
+  let furrows = "";
+  const rows = Math.max(2, Math.round(height / 4));
+  for (let i = 1; i < rows; i++) {
+    const fy = y - height / 2 + (height * i) / rows;
+    furrows += `M${(x - width / 2 + 1).toFixed(1)} ${fy.toFixed(1)}h${(width - 2).toFixed(1)}`;
+  }
+  g.appendChild(svgEl("path", {
+    d: furrows, fill: "none", stroke: look.crop, "stroke-width": season === 4 ? 0.6 : 1.1, opacity: 0.8,
+  }));
+  // At harvest the sheaves are standing in it.
+  if (season === 3) {
+    for (let i = 0; i < 3; i++) {
+      const sx = x - width * 0.3 + i * width * 0.3;
+      g.appendChild(svgEl("path", {
+        d: `M${sx.toFixed(1)} ${(y + height * 0.28).toFixed(1)}l${(-height * 0.1).toFixed(1)} ${(-height * 0.4).toFixed(1)}` +
+           `m${(height * 0.1).toFixed(1)} ${(height * 0.4).toFixed(1)}l${(height * 0.1).toFixed(1)} ${(-height * 0.4).toFixed(1)}`,
+        fill: "none", stroke: "#c9a24a", "stroke-width": 1.2, "stroke-linecap": "round",
+      }));
+    }
+  }
+  // And in winter there is snow lying in the furrows.
+  if (season === 4) {
+    g.appendChild(svgEl("rect", {
+      x: x - width / 2, y: y - height / 2, width, height, rx: height * 0.12,
+      fill: ART_COLORS.snow, opacity: 0.45,
+    }));
+  }
+  parent.appendChild(g);
+}
+
+// A ring of sharpened stakes with a gap for the gate. `gate` is the angle,
+// in radians, the road comes in on.
+function paintPalisadeRing(parent, x, y, radius, gate, color) {
+  const stakes = Math.max(14, Math.round(radius * 0.55));
+  let posts = "";
+  let rail = "";
+  const gap = 0.42;                       // how wide the gateway is, in radians
+  let previous = null;
+  for (let i = 0; i < stakes; i++) {
+    const angle = (Math.PI * 2 * i) / stakes;
+    let delta = Math.abs(angle - gate);
+    if (delta > Math.PI) delta = Math.PI * 2 - delta;
+    if (delta < gap) { previous = null; continue; }
+    const px = x + Math.cos(angle) * radius;
+    const py = y + Math.sin(angle) * radius * 0.84;
+    const h = radius * 0.2;
+    posts += `M${px.toFixed(1)} ${py.toFixed(1)}l0 ${(-h).toFixed(1)}`;
+    if (previous) rail += `M${previous[0].toFixed(1)} ${(previous[1] - h * 0.6).toFixed(1)}L${px.toFixed(1)} ${(py - h * 0.6).toFixed(1)}`;
+    previous = [px, py];
+  }
+  parent.appendChild(svgEl("path", {
+    d: rail, fill: "none", stroke: "#6f5433", "stroke-width": Math.max(0.8, radius * 0.045), opacity: 0.9,
+  }));
+  parent.appendChild(svgEl("path", {
+    d: posts, fill: "none", stroke: color || "#7d5f3a",
+    "stroke-width": Math.max(1, radius * 0.06), "stroke-linecap": "round",
+  }));
+
+  // Gateposts, one either side of the gap.
+  for (const side of [-1, 1]) {
+    const angle = gate + side * gap;
+    const px = x + Math.cos(angle) * radius;
+    const py = y + Math.sin(angle) * radius * 0.84;
+    parent.appendChild(svgEl("rect", {
+      x: px - radius * 0.045, y: py - radius * 0.26, width: radius * 0.09, height: radius * 0.28,
+      fill: "#5c4530", stroke: ART_COLORS.ink, "stroke-width": 0.5,
+    }));
+  }
+}
+
+// A proper stone curtain wall: a thick ring, square towers spaced round it,
+// and an arched gatehouse where the road comes in.
+function paintStoneWallRing(parent, x, y, radius, gate, towerCount) {
+  const gap = 0.34;
+  const start = gate + gap;
+  const end = gate + Math.PI * 2 - gap;
+  const points = [];
+  const steps = 40;
+  for (let i = 0; i <= steps; i++) {
+    const angle = start + ((end - start) * i) / steps;
+    points.push([x + Math.cos(angle) * radius, y + Math.sin(angle) * radius * 0.84]);
+  }
+  const d = smoothPath(points, false);
+  parent.appendChild(svgEl("path", {
+    d, fill: "none", stroke: "#6f6a5e", "stroke-width": radius * 0.15, "stroke-linecap": "round",
+  }));
+  parent.appendChild(svgEl("path", {
+    d, fill: "none", stroke: "#b9b3a6", "stroke-width": radius * 0.09, "stroke-linecap": "round",
+  }));
+
+  // Crenellations along the top of the wall.
+  let merlons = "";
+  for (let i = 0; i < points.length; i += 3) {
+    const [px, py] = points[i];
+    merlons += `M${px.toFixed(1)} ${(py - radius * 0.06).toFixed(1)}l0 ${(-radius * 0.07).toFixed(1)}`;
+  }
+  parent.appendChild(svgEl("path", {
+    d: merlons, fill: "none", stroke: "#cdc7ba", "stroke-width": radius * 0.05, "stroke-linecap": "butt",
+  }));
+
+  const towers = Math.max(3, towerCount || 4);
+  for (let i = 0; i < towers; i++) {
+    const angle = start + ((end - start) * (i + 0.5)) / towers;
+    const tx = x + Math.cos(angle) * radius;
+    const ty = y + Math.sin(angle) * radius * 0.84;
+    parent.appendChild(svgEl("rect", {
+      x: tx - radius * 0.09, y: ty - radius * 0.22, width: radius * 0.18, height: radius * 0.28,
+      fill: "#b9b3a6", stroke: "#6f6a5e", "stroke-width": 0.7,
+    }));
+    parent.appendChild(svgEl("path", {
+      d: `M${(tx - radius * 0.11).toFixed(1)} ${(ty - radius * 0.22).toFixed(1)}` +
+         `L${tx.toFixed(1)} ${(ty - radius * 0.36).toFixed(1)}` +
+         `L${(tx + radius * 0.11).toFixed(1)} ${(ty - radius * 0.22).toFixed(1)}z`,
+      fill: ART_COLORS.roofDark,
+    }));
+  }
+
+  // The gatehouse: two towers and a dark arch between them.
+  for (const side of [-1, 1]) {
+    const angle = gate + side * gap;
+    const px = x + Math.cos(angle) * radius;
+    const py = y + Math.sin(angle) * radius * 0.84;
+    parent.appendChild(svgEl("rect", {
+      x: px - radius * 0.075, y: py - radius * 0.3, width: radius * 0.15, height: radius * 0.36,
+      fill: "#cdc7ba", stroke: "#6f6a5e", "stroke-width": 0.8,
+    }));
+  }
+  const gx = x + Math.cos(gate) * radius;
+  const gy = y + Math.sin(gate) * radius * 0.84;
+  parent.appendChild(svgEl("path", {
+    d: `M${(gx - radius * 0.08).toFixed(1)} ${(gy + radius * 0.04).toFixed(1)}` +
+       `v${(-radius * 0.14).toFixed(1)}a${(radius * 0.08).toFixed(1)} ${(radius * 0.1).toFixed(1)} 0 0 1 ${(radius * 0.16).toFixed(1)} 0` +
+       `v${(radius * 0.14).toFixed(1)}z`,
+    fill: "#3a332a",
+  }));
+}
+
+// Smoke from a chimney. One per house is too much; two or three per village
+// is exactly enough to make it look lived in.
+function paintChimneySmoke(parent, x, y, scale, delaySeconds) {
+  const g = animatedGroup("art-steam", x, y, delaySeconds || 0);
+  g.appendChild(svgEl("path", {
+    d: `M${x} ${y}q${scale * 0.18} ${-scale * 0.26} ${scale * 0.02} ${-scale * 0.52}` +
+       `q${-scale * 0.16} ${-scale * 0.24} ${scale * 0.06} ${-scale * 0.46}`,
+    fill: "none", stroke: "rgba(232, 228, 218, 0.65)",
+    "stroke-width": scale * 0.09, "stroke-linecap": "round",
+  }));
+  parent.appendChild(g);
+}
+
+// A carved pole of stacked faces: the garlocks put one at the heart of
+// every camp.
+function paintTotem(parent, x, y, scale) {
+  const s = scale;
+  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.5, rx: s * 0.22, ry: s * 0.07, fill: "rgba(0,0,0,0.3)" }));
+  parent.appendChild(svgEl("rect", {
+    x: x - s * 0.11, y: y - s * 0.62, width: s * 0.22, height: s * 1.12,
+    fill: "#5c4025", stroke: ART_COLORS.ink, "stroke-width": 0.7,
+  }));
+  for (let i = 0; i < 3; i++) {
+    const fy = y - s * 0.46 + i * s * 0.34;
+    parent.appendChild(svgEl("rect", {
+      x: x - s * 0.13, y: fy, width: s * 0.26, height: s * 0.06,
+      fill: i % 2 ? "#8c2a1c" : "#c9a24a",
+    }));
+    parent.appendChild(svgEl("circle", { cx: x - s * 0.05, cy: fy + s * 0.16, r: s * 0.028, fill: "#1d1a16" }));
+    parent.appendChild(svgEl("circle", { cx: x + s * 0.05, cy: fy + s * 0.16, r: s * 0.028, fill: "#1d1a16" }));
+  }
+  parent.appendChild(svgEl("path", {
+    d: `M${x - s * 0.3} ${y - s * 0.62}L${x} ${y - s * 0.84}L${x + s * 0.3} ${y - s * 0.62}z`,
+    fill: "#8c2a1c", stroke: ART_COLORS.ink, "stroke-width": 0.7,
+  }));
+}
+
+// A heap of skulls and cracked bones, for the edge of a garlock camp.
+function paintBonePile(parent, x, y, scale) {
+  const s = scale;
+  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.16, rx: s * 0.34, ry: s * 0.1, fill: "rgba(0,0,0,0.2)" }));
+  for (const spot of [[-0.16, 0.04, 0.11], [0.14, 0.06, 0.1], [0, -0.06, 0.12]]) {
+    parent.appendChild(svgEl("ellipse", {
+      cx: x + spot[0] * s, cy: y + spot[1] * s, rx: spot[2] * s, ry: spot[2] * s * 0.82,
+      fill: ART_COLORS.bone, stroke: ART_COLORS.boneShade, "stroke-width": 0.5,
+    }));
+  }
+  parent.appendChild(svgEl("circle", { cx: x - s * 0.04, cy: y - s * 0.08, r: s * 0.03, fill: "#2f2a22" }));
+  parent.appendChild(svgEl("circle", { cx: x + s * 0.04, cy: y - s * 0.08, r: s * 0.03, fill: "#2f2a22" }));
+}
+
+// A jetty running out into the water, with a boat tied up at the end.
+function paintJetty(parent, x, y, scale, angle) {
+  const s = scale;
+  const g = svgEl("g", { transform: `rotate(${((angle * 180) / Math.PI).toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})` });
+  g.appendChild(svgEl("rect", {
+    x, y: y - s * 0.07, width: s * 0.9, height: s * 0.14,
+    fill: "#8a6a42", stroke: ART_COLORS.ink, "stroke-width": 0.6,
+  }));
+  for (let i = 1; i < 4; i++) {
+    g.appendChild(svgEl("rect", {
+      x: x + s * 0.22 * i, y: y + s * 0.05, width: s * 0.05, height: s * 0.14, fill: "#5c4530",
+    }));
+  }
+  g.appendChild(svgEl("path", {
+    d: `M${(x + s * 0.9).toFixed(1)} ${(y - s * 0.2).toFixed(1)}` +
+       `q${(s * 0.2).toFixed(1)} ${(s * 0.18).toFixed(1)} 0 ${(s * 0.32).toFixed(1)}z`,
+    fill: "#6f5433", stroke: ART_COLORS.ink, "stroke-width": 0.6,
+  }));
+  parent.appendChild(g);
+}
+
+// ---------------------------------------------------------------------------
+// Village life: the small things that say people live here
+// ---------------------------------------------------------------------------
+
+// Split logs stacked against a wall.
+function paintWoodpile(parent, x, y, scale) {
+  const s = scale;
+  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.16, rx: s * 0.3, ry: s * 0.07, fill: "rgba(0,0,0,0.2)" }));
+  for (let row = 0; row < 3; row++) {
+    const count = 3 - (row % 2 ? 1 : 0);
+    for (let i = 0; i < count; i++) {
+      const lx = x - s * 0.22 + i * s * 0.19 + (row % 2 ? s * 0.09 : 0);
+      const ly = y + s * 0.1 - row * s * 0.14;
+      parent.appendChild(svgEl("circle", { cx: lx, cy: ly, r: s * 0.085, fill: "#c79a6b", stroke: ART_COLORS.trunkShade, "stroke-width": 0.6 }));
+      parent.appendChild(svgEl("circle", { cx: lx, cy: ly, r: s * 0.035, fill: ART_COLORS.trunkShade }));
+    }
+  }
+}
+
+// A two-wheeled handcart, tipped on its shafts.
+function paintHandcart(parent, x, y, scale) {
+  const s = scale;
+  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.2, rx: s * 0.32, ry: s * 0.07, fill: "rgba(0,0,0,0.18)" }));
+  parent.appendChild(svgEl("path", {
+    d: `M${x - s * 0.3} ${y}h${s * 0.5}l${s * 0.04} ${s * 0.16}h${-s * 0.5}z`,
+    fill: "#8a6a42", stroke: ART_COLORS.ink, "stroke-width": 0.7,
+  }));
+  parent.appendChild(svgEl("line", { x1: x + s * 0.2, y1: y + s * 0.04, x2: x + s * 0.44, y2: y - s * 0.08, stroke: "#6f5433", "stroke-width": s * 0.05, "stroke-linecap": "round" }));
+  parent.appendChild(svgEl("circle", { cx: x - s * 0.1, cy: y + s * 0.19, r: s * 0.12, fill: "none", stroke: "#5c4530", "stroke-width": s * 0.05 }));
+  parent.appendChild(svgEl("circle", { cx: x - s * 0.1, cy: y + s * 0.19, r: s * 0.03, fill: "#5c4530" }));
+}
+
+// Washing strung between two poles, moving in the wind.
+function paintLaundryLine(parent, x, y, scale, random) {
+  const s = scale;
+  const span = s * 0.8;
+  parent.appendChild(svgEl("line", { x1: x - span / 2, y1: y + s * 0.2, x2: x - span / 2, y2: y - s * 0.25, stroke: "#6f5433", "stroke-width": s * 0.04 }));
+  parent.appendChild(svgEl("line", { x1: x + span / 2, y1: y + s * 0.2, x2: x + span / 2, y2: y - s * 0.25, stroke: "#6f5433", "stroke-width": s * 0.04 }));
+  parent.appendChild(svgEl("path", {
+    d: `M${x - span / 2} ${y - s * 0.22}q${span / 2} ${s * 0.1} ${span} 0`,
+    fill: "none", stroke: "#4a3a28", "stroke-width": 0.7,
+  }));
+  const colours = ["#e8e2d2", "#c8d6e0", "#dcc6a8", "#cfa9a0"];
+  for (let i = 0; i < 3; i++) {
+    const cx = x - span * 0.3 + i * span * 0.3;
+    const cloth = animatedGroup("art-laundry", cx, y - s * 0.2, i * 0.5);
+    cloth.appendChild(svgEl("path", {
+      d: `M${cx - s * 0.08} ${y - s * 0.19}h${s * 0.16}l${-s * 0.01} ${s * 0.24}q${-s * 0.07} ${s * 0.05} ${-s * 0.14} 0z`,
+      fill: colours[(i + Math.floor(random() * 4)) % colours.length],
+      stroke: "rgba(70,55,38,0.4)", "stroke-width": 0.5,
+    }));
+    parent.appendChild(cloth);
+  }
+}
+
+// A kitchen garden: four raised beds behind a cottage.
+function paintGardenPlot(parent, x, y, scale, random) {
+  const s = scale;
+  parent.appendChild(svgEl("rect", {
+    x: x - s * 0.36, y: y - s * 0.2, width: s * 0.72, height: s * 0.4, rx: s * 0.03,
+    fill: "#7d6242", stroke: "#5c4530", "stroke-width": 0.7,
+  }));
+  for (let row = 0; row < 2; row++) {
+    for (let col = 0; col < 3; col++) {
+      parent.appendChild(svgEl("circle", {
+        cx: x - s * 0.22 + col * s * 0.22,
+        cy: y - s * 0.08 + row * s * 0.17,
+        r: s * 0.055,
+        fill: random() < 0.5 ? "#5f8a3c" : "#7aa84a",
+      }));
+    }
+  }
+}
+
+function paintChicken(parent, x, y, scale) {
+  const s = scale;
+  const g = svgEl("g", { class: "art-wildlife" });
+  g.appendChild(svgEl("ellipse", { cx: x, cy: y, rx: s * 0.11, ry: s * 0.09, fill: "#f2ead6", stroke: ART_COLORS.ink, "stroke-width": 0.4 }));
+  g.appendChild(svgEl("circle", { cx: x + s * 0.09, cy: y - s * 0.07, r: s * 0.05, fill: "#f2ead6", stroke: ART_COLORS.ink, "stroke-width": 0.4 }));
+  g.appendChild(svgEl("path", { d: `M${x + s * 0.13} ${y - s * 0.06}l${s * 0.05} ${s * 0.02}l${-s * 0.05} ${s * 0.02}z`, fill: "#d9a441" }));
+  g.appendChild(svgEl("path", { d: `M${x + s * 0.07} ${y - s * 0.11}q${s * 0.02} ${-s * 0.04} ${s * 0.04} 0`, fill: "#c0392b" }));
+  g.appendChild(svgEl("line", { x1: x - s * 0.02, y1: y + s * 0.08, x2: x - s * 0.02, y2: y + s * 0.14, stroke: "#d9a441", "stroke-width": s * 0.02 }));
+  parent.appendChild(g);
+}
+
+function paintPig(parent, x, y, scale) {
+  const s = scale;
+  const g = svgEl("g", { class: "art-wildlife" });
+  g.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.14, rx: s * 0.17, ry: s * 0.04, fill: "rgba(0,0,0,0.18)" }));
+  g.appendChild(svgEl("ellipse", { cx: x, cy: y, rx: s * 0.17, ry: s * 0.11, fill: "#e0b0a8", stroke: ART_COLORS.ink, "stroke-width": 0.4 }));
+  g.appendChild(svgEl("circle", { cx: x + s * 0.16, cy: y - s * 0.03, r: s * 0.07, fill: "#e8bcb4", stroke: ART_COLORS.ink, "stroke-width": 0.4 }));
+  g.appendChild(svgEl("circle", { cx: x + s * 0.22, cy: y - s * 0.02, r: s * 0.02, fill: "#8c5f58" }));
+  for (const dx of [-0.09, 0.07]) {
+    g.appendChild(svgEl("line", { x1: x + dx * s, y1: y + s * 0.08, x2: x + dx * s, y2: y + s * 0.15, stroke: "#c79a90", "stroke-width": s * 0.035 }));
+  }
+  parent.appendChild(g);
+}
+
+function paintDog(parent, x, y, scale) {
+  const s = scale;
+  const g = svgEl("g", { class: "art-wildlife" });
+  g.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.13, rx: s * 0.15, ry: s * 0.04, fill: "rgba(0,0,0,0.18)" }));
+  g.appendChild(svgEl("ellipse", { cx: x, cy: y, rx: s * 0.14, ry: s * 0.075, fill: "#a9743f", stroke: ART_COLORS.ink, "stroke-width": 0.4 }));
+  g.appendChild(svgEl("circle", { cx: x + s * 0.14, cy: y - s * 0.05, r: s * 0.055, fill: "#b98049", stroke: ART_COLORS.ink, "stroke-width": 0.4 }));
+  g.appendChild(svgEl("path", { d: `M${x + s * 0.11} ${y - s * 0.09}l${-s * 0.02} ${-s * 0.06}l${s * 0.06} ${s * 0.02}z`, fill: "#8a5c33" }));
+  g.appendChild(svgEl("path", { d: `M${x - s * 0.13} ${y - s * 0.02}q${-s * 0.08} ${-s * 0.08} ${-s * 0.02} ${-s * 0.12}`, fill: "none", stroke: "#a9743f", "stroke-width": s * 0.04, "stroke-linecap": "round" }));
+  parent.appendChild(g);
+}
+
+// A small roadside shrine with a lit candle.
+function paintShrine(parent, x, y, scale) {
+  const s = scale;
+  parent.appendChild(svgEl("rect", { x: x - s * 0.14, y: y - s * 0.1, width: s * 0.28, height: s * 0.34, fill: "#b9b3a6", stroke: "#6f6a5e", "stroke-width": 0.7 }));
+  parent.appendChild(svgEl("path", { d: `M${x - s * 0.2} ${y - s * 0.1}L${x} ${y - s * 0.38}L${x + s * 0.2} ${y - s * 0.1}z`, fill: ART_COLORS.roofDark, stroke: ART_COLORS.ink, "stroke-width": 0.7 }));
+  parent.appendChild(svgEl("rect", { x: x - s * 0.06, y: y - s * 0.02, width: s * 0.12, height: s * 0.16, fill: "#3a332a" }));
+  const flame = animatedGroup("art-flame", x, y, 0.3);
+  flame.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.02, rx: s * 0.03, ry: s * 0.05, fill: "#f6c445" }));
+  parent.appendChild(flame);
+}
+
+// The bread oven by the square: a clay dome with a fire in it.
+function paintBakeOven(parent, x, y, scale) {
+  const s = scale;
+  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.2, rx: s * 0.3, ry: s * 0.08, fill: "rgba(0,0,0,0.2)" }));
+  parent.appendChild(svgEl("path", { d: `M${x - s * 0.26} ${y + s * 0.2}q0 ${-s * 0.42} ${s * 0.26} ${-s * 0.42}q${s * 0.26} 0 ${s * 0.26} ${s * 0.42}z`, fill: "#b98a5e", stroke: ART_COLORS.ink, "stroke-width": 0.8 }));
+  parent.appendChild(svgEl("path", { d: `M${x - s * 0.09} ${y + s * 0.2}q0 ${-s * 0.16} ${s * 0.09} ${-s * 0.16}q${s * 0.09} 0 ${s * 0.09} ${s * 0.16}z`, fill: "#3a2418" }));
+  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.15, rx: s * 0.05, ry: s * 0.04, fill: "#e0742a" }));
+  const smoke = animatedGroup("art-steam", x, y, 0.6);
+  smoke.appendChild(svgEl("path", { d: `M${x + s * 0.16} ${y - s * 0.22}q${s * 0.1} ${-s * 0.16} 0 ${-s * 0.3}`, fill: "none", stroke: "rgba(230,228,220,0.6)", "stroke-width": s * 0.06, "stroke-linecap": "round" }));
+  parent.appendChild(smoke);
+}
+
+// A windmill on the rise outside the walls, sails turning.
+function paintWindmill(parent, x, y, scale) {
+  const s = scale;
+  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.5, rx: s * 0.3, ry: s * 0.09, fill: "rgba(0,0,0,0.22)" }));
+  parent.appendChild(svgEl("path", {
+    d: `M${x - s * 0.22} ${y + s * 0.5}L${x - s * 0.13} ${y - s * 0.3}h${s * 0.26}L${x + s * 0.22} ${y + s * 0.5}z`,
+    fill: ART_COLORS.house, stroke: ART_COLORS.ink, "stroke-width": 0.9,
+  }));
+  parent.appendChild(svgEl("rect", { x: x - s * 0.06, y: y + s * 0.24, width: s * 0.12, height: s * 0.26, fill: ART_COLORS.door }));
+  parent.appendChild(svgEl("path", { d: `M${x - s * 0.18} ${y - s * 0.3}L${x} ${y - s * 0.52}L${x + s * 0.18} ${y - s * 0.3}z`, fill: ART_COLORS.roofDark, stroke: ART_COLORS.ink, "stroke-width": 0.8 }));
+
+  const sails = animatedGroup("art-sails", x, y - s * 0.34, 0);
+  for (let i = 0; i < 4; i++) {
+    const angle = (Math.PI / 2) * i;
+    const dx = Math.cos(angle) * s * 0.46;
+    const dy = Math.sin(angle) * s * 0.46;
+    sails.appendChild(svgEl("line", {
+      x1: x, y1: y - s * 0.34, x2: x + dx, y2: y - s * 0.34 + dy,
+      stroke: "#6f5433", "stroke-width": s * 0.05, "stroke-linecap": "round",
+    }));
+    sails.appendChild(svgEl("path", {
+      d: `M${x + dx * 0.45} ${y - s * 0.34 + dy * 0.45}l${-dy * 0.16} ${dx * 0.16}l${dx * 0.5} ${dy * 0.5}l${dy * 0.16} ${-dx * 0.16}z`,
+      fill: "#efe3c8", stroke: "rgba(70,55,38,0.5)", "stroke-width": 0.5,
+    }));
+  }
+  parent.appendChild(sails);
+  parent.appendChild(svgEl("circle", { cx: x, cy: y - s * 0.34, r: s * 0.05, fill: "#4a3a28" }));
+}
+
+// The village pond, with a duck on it and rushes round the edge.
+function paintPond(parent, x, y, scale, random) {
+  const s = scale;
+  parent.appendChild(svgEl("ellipse", { cx: x, cy: y, rx: s * 0.52, ry: s * 0.34, fill: "#5f8fa3", stroke: "#4a7182", "stroke-width": 0.9 }));
+  parent.appendChild(svgEl("ellipse", { cx: x - s * 0.08, cy: y - s * 0.04, rx: s * 0.34, ry: s * 0.2, fill: "#79aabd", opacity: 0.7 }));
+  for (let i = 0; i < 7; i++) {
+    const angle = (Math.PI * 2 * i) / 7 + random() * 0.4;
+    const rx = x + Math.cos(angle) * s * 0.52;
+    const ry = y + Math.sin(angle) * s * 0.34;
+    parent.appendChild(svgEl("line", {
+      x1: rx, y1: ry, x2: rx + (random() - 0.5) * s * 0.06, y2: ry - s * 0.16,
+      stroke: ART_COLORS.reed, "stroke-width": s * 0.03, "stroke-linecap": "round",
+    }));
+  }
+  // A duck.
+  const duck = svgEl("g", { class: "art-wildlife" });
+  duck.appendChild(svgEl("ellipse", { cx: x + s * 0.12, cy: y + s * 0.02, rx: s * 0.09, ry: s * 0.055, fill: "#f2ead6", stroke: ART_COLORS.ink, "stroke-width": 0.4 }));
+  duck.appendChild(svgEl("circle", { cx: x + s * 0.19, cy: y - s * 0.04, r: s * 0.04, fill: "#f2ead6", stroke: ART_COLORS.ink, "stroke-width": 0.4 }));
+  duck.appendChild(svgEl("path", { d: `M${x + s * 0.22} ${y - s * 0.04}l${s * 0.04} ${s * 0.015}l${-s * 0.04} ${s * 0.015}z`, fill: "#d9a441" }));
+  parent.appendChild(duck);
+}
+
+// A row of fruit trees, planted in a line the way an orchard is.
+function paintOrchardRow(parent, x, y, scale, count, angleDegrees, random) {
+  const s = scale;
+  const g = svgEl("g", { transform: `rotate(${angleDegrees.toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)})` });
+  for (let i = 0; i < count; i++) {
+    const tx = x + (i - (count - 1) / 2) * s * 0.42;
+    g.appendChild(svgEl("ellipse", { cx: tx, cy: y + s * 0.2, rx: s * 0.13, ry: s * 0.04, fill: "rgba(0,0,0,0.18)" }));
+    g.appendChild(svgEl("rect", { x: tx - s * 0.025, y: y, width: s * 0.05, height: s * 0.2, fill: ART_COLORS.trunk }));
+    g.appendChild(svgEl("circle", {
+      cx: tx, cy: y - s * 0.08, r: s * 0.16,
+      fill: random() < 0.5 ? "#5f9a3c" : "#6faa46", stroke: "#3f6b2c", "stroke-width": 0.6,
+    }));
+    if (random() < 0.6) {
+      g.appendChild(svgEl("circle", { cx: tx + s * 0.06, cy: y - s * 0.11, r: s * 0.03, fill: "#c0392b" }));
+    }
+  }
+  parent.appendChild(g);
+}
+
+// The inn: a long house with a painted sign hanging out front.
+function paintInn(parent, x, y, scale) {
+  const s = scale;
+  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.44, rx: s * 0.62, ry: s * 0.12, fill: "rgba(0,0,0,0.2)" }));
+  parent.appendChild(svgEl("rect", { x: x - s * 0.52, y: y - s * 0.06, width: s * 1.04, height: s * 0.5, fill: ART_COLORS.house, stroke: ART_COLORS.ink, "stroke-width": 0.9 }));
+  parent.appendChild(svgEl("path", {
+    d: `M${x - s * 0.6} ${y - s * 0.04}L${x - s * 0.2} ${y - s * 0.44}h${s * 0.4}L${x + s * 0.6} ${y - s * 0.04}z`,
+    fill: ART_COLORS.roof, stroke: ART_COLORS.ink, "stroke-width": 0.9,
+  }));
+  parent.appendChild(svgEl("rect", { x: x - s * 0.1, y: y + s * 0.14, width: s * 0.2, height: s * 0.3, fill: ART_COLORS.door }));
+  for (const dx of [-0.34, 0.28]) {
+    parent.appendChild(svgEl("rect", { x: x + dx * s, y: y + s * 0.08, width: s * 0.14, height: s * 0.14, fill: "#cfe0ea", stroke: ART_COLORS.ink, "stroke-width": 0.5 }));
+  }
+  // The sign, on its bracket.
+  parent.appendChild(svgEl("line", { x1: x + s * 0.52, y1: y - s * 0.02, x2: x + s * 0.72, y2: y - s * 0.02, stroke: "#4a3a28", "stroke-width": s * 0.03 }));
+  const sign = animatedGroup("art-laundry", x + s * 0.68, y - s * 0.02, 0.2);
+  sign.appendChild(svgEl("rect", { x: x + s * 0.6, y: y, width: s * 0.17, height: s * 0.17, fill: "#8a6526", stroke: ART_COLORS.ink, "stroke-width": 0.6 }));
+  sign.appendChild(svgEl("circle", { cx: x + s * 0.685, cy: y + s * 0.085, r: s * 0.045, fill: "#e5c06b" }));
+  parent.appendChild(sign);
+}
+
+// Stables: a low open-fronted shed with a horse standing in it.
+function paintStable(parent, x, y, scale) {
+  const s = scale;
+  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.34, rx: s * 0.5, ry: s * 0.1, fill: "rgba(0,0,0,0.2)" }));
+  parent.appendChild(svgEl("rect", { x: x - s * 0.42, y: y - s * 0.02, width: s * 0.84, height: s * 0.36, fill: "#3a2f22" }));
+  parent.appendChild(svgEl("path", {
+    d: `M${x - s * 0.5} ${y - s * 0.02}L${x} ${y - s * 0.34}L${x + s * 0.5} ${y - s * 0.02}z`,
+    fill: ART_COLORS.barnRoof, stroke: ART_COLORS.ink, "stroke-width": 0.8,
+  }));
+  for (const dx of [-0.28, 0, 0.28]) {
+    parent.appendChild(svgEl("line", { x1: x + dx * s, y1: y - s * 0.02, x2: x + dx * s, y2: y + s * 0.34, stroke: "#6f5433", "stroke-width": s * 0.05 }));
+  }
+  // A horse in the middle stall.
+  parent.appendChild(svgEl("ellipse", { cx: x, cy: y + s * 0.16, rx: s * 0.12, ry: s * 0.08, fill: "#7b5335" }));
+  parent.appendChild(svgEl("circle", { cx: x + s * 0.1, cy: y + s * 0.08, r: s * 0.05, fill: "#8a6040" }));
+}
+
+// ---------------------------------------------------------------------------
 // Relief: the faint contour rings that tell high ground from low
 // ---------------------------------------------------------------------------
 
-function paintReliefShade(parent, x, y, size, elevation) {
-  // Below the halfway mark the ground is shaded, above it is lit — a cheap
-  // hillshade that makes ridges and valleys legible at a glance.
-  const lift = elevation - 0.5;
-  if (Math.abs(lift) < 0.11) return;
-  parent.appendChild(svgEl("polygon", {
-    points: hexPoints(x, y, size * 1.01),
-    fill: lift > 0 ? "#ffffff" : "#25190d",
-    opacity: Math.min(0.2, Math.abs(lift) * 0.34),
-  }));
-}
 
-function paintContourRing(parent, x, y, size, step) {
-  parent.appendChild(svgEl("polygon", {
-    points: hexPoints(x, y, size * (0.42 + step * 0.22)),
-    fill: "none",
-    stroke: "rgba(80, 58, 32, 0.22)",
-    "stroke-width": 0.7,
-    "stroke-dasharray": "3 4",
-  }));
-}
 
 if (typeof module !== "undefined" && module.exports) {
+  // Everything this file defines. Kept generated-flat on purpose: the
+  // browser uses the globals, and Node only needs them for the tests.
   module.exports = {
-    ART_COLORS, createRandom, svgEl, animatedGroup, smoothPath, pick, hexPoints,
-    paintHexBase, paintTree, paintPineTree, paintAutumnTree, paintBush, paintRock, paintMountain, paintWheat, paintHayBale, paintWindmill, paintFlowerDots,
-    paintTerraceStripes, paintRiver, paintPool, paintStandingStones, paintMotherTree, paintDragonBones, paintCrystalMine, paintShipwreck,
-    paintHouse, paintBarn, paintCampfire, paintBanner, paintRoad, paintVillager, paintPlaza, paintWell, paintWatchtower, paintWarTent, paintSpikes,
-    paintChieftainHall, paintMarketStall, paintSmithy, paintLumberCamp, paintQuarryWorks, paintFisheryDock, paintAnimalPen, paintTrainingGround,
-    paintDenseGrove, paintCropField, paintRiverBridge,
-    paintOceanSurface, paintCoastFoam, paintBeachDetail, paintLakeSurface,
-    paintMarshReeds, paintTundraScrub, paintSnowDrift, paintBadlandsMesa,
-    paintBirchTree, paintTaigaPine,
-    paintGrassTuft, paintGrassTufts, paintPebble, paintPebbles, paintMushroom, paintFallenLog, paintDeer, paintBirdFlock, paintStandingRuin,
-    paintRuinedTower, paintHotSpring, paintBoneOrchard, paintSchoolhouse,
-    paintReliefShade, paintContourRing,
+    ART_COLORS, VILLAGER_TOOLS, VILLAGER_HATS, FIELD_SEASONS, createRandom, svgEl,
+    animatedGroup, smoothPath, pick, shadeColor, hexEdgeCorners, hexPoints,
+    paintHexBase, paintHayBale, paintStandingStones, paintMotherTree, paintDragonBones, paintCrystalMine,
+    paintShipwreck, offsetCenterline, buildRiverBand, paintRiver, paintHouse, paintBarn,
+    paintCampfire, paintBanner, paintPlaza, paintWell, paintWatchtower, paintWarTent,
+    paintSpikes, paintRiverBridge, paintChieftainHall, paintMarketStall, paintSmithy, paintLumberCamp,
+    paintQuarryWorks, paintFisheryDock, paintAnimalPen, paintTrainingGround, paintVillager, paintChild,
+    grassTuftPath, paintPebble, paintPebbles, paintDeer, paintBirdFlock, paintStandingRuin,
+    paintRuinedTower, paintHotSpring, paintBoneOrchard, paintSchoolhouse, paintSheep, paintBoar,
+    paintHeron, paintEagle, paintCairn, paintBeehive, paintScarecrow, paintCharcoalBurner,
+    paintSeaStack, paintWhale, paintSail, paintHuntersBlind, paintEarthPatch, paintFieldPatch,
+    paintPalisadeRing, paintStoneWallRing, paintChimneySmoke, paintTotem, paintBonePile, paintJetty,
+    paintWoodpile, paintHandcart, paintLaundryLine, paintGardenPlot, paintChicken, paintPig,
+    paintDog, paintShrine, paintBakeOven, paintWindmill, paintPond, paintOrchardRow,
+    paintInn, paintStable,
   };
 }

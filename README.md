@@ -103,9 +103,10 @@ not there at all** — the tab row grows as you play.
   warning mark means hungry; a roof mark means no house to sleep in. Click
   one to jump the view back to the village.
 * **Resource readout** (top left) — work hours left, then each store: what
-  is in the barn and, beside it, what is still out there **on land** — on
-  the tiles you hold. Then people, barn space, roofs and tiles held. Hover
-  any line for what it is and why it matters.
+  is in the barn, a green or red marker showing **how much it has moved this
+  turn**, and what is still out there **on land** — on the tiles you hold.
+  Then people, barn space, roofs and tiles held. Hover any line for what it
+  is and why it matters.
 * **World** (top right) — the whole island in miniature, with a box around
   the part you are looking at. The sea is always drawn, so the shape of the
   island reads even through the fog. Click anywhere on it to jump there.
@@ -120,16 +121,41 @@ not there at all** — the tab row grows as you play.
 * **Inspect pane** (bottom left) — the tile you have selected: what part of
   the country it is in, what it is like to live on, what is on it, how much
   is left, and whether it regrows. Above it sit its commands — **Explore**
-  or **Seize**, and **Centre**. When a command is greyed out, the line
-  under the panel says why, and so does its tooltip.
+  or **Seize**, **Find land** (which picks the richest wild ground touching
+  yours and takes you to it) and **Centre**. When a command is greyed out,
+  the line under the panel says why, and so does its tooltip.
 * **Command tabs** (bottom right) — **Gather · Build · People · Research ·
   Villages · History · Menu**, as you unlock them. A tab opens its palette
-  of square command buttons above it; the little **×5** in a button's
-  corner does the same thing five times. Hover any button for what it does,
-  what it costs, and — if it's greyed out — what is missing.
+  of square command buttons above it; **×5** does the same thing five
+  times, and **ALL** spends every hour you have left on it — stopping
+  before the barns overflow. Hover any button for what it does, what it
+  costs, and — if it's greyed out — what is missing.
+* **The Ledger** (tab 6) — the empire screen. Everything, counted:
+  * **Your people** — workers, how many of each trade, who is away at
+    school, soldiers, who is under a roof and who is not.
+  * **A turn, in and out** — work hours you have, how many are committed to
+    standing orders and how many are yours to spend; what those orders will
+    bring in; what the village will eat; and **food, net a turn**, which is
+    the single number that tells you whether you are winning.
+  * **Your ground** — how many hexes you hold, broken down by terrain, and
+    how much food, wood and stone is still standing on them.
+  * **The island** — every settlement, yours highlighted, ranked by how
+    much land it holds, with the strength of each rival beside it.
+  * **The road ahead** — all four technologies from the first turn, the
+    ones you have, the one you can take now, and what the locked ones are
+    waiting for.
+* **Age progress bar** (under the act name) — how close the village is to
+  the next act, and what it is waiting for.
+* **Unspent hours** — a chip beside the clock that never lets you end a
+  turn having forgotten to work. Click it to open Gather.
+* **Turn ledger** (above the clock) — after every turn, six lines of what
+  actually happened: what you gathered, what was eaten, what spoiled for
+  want of barn space, who arrived and who did not survive. Click it to put
+  it away; it fades on its own.
 * **The clock and End turn** (bottom right corner) — the act, the season,
   the turn and the year, and the big button that ends the turn. It turns
-  red when there isn't enough food to feed everyone.
+  red when there isn't enough food to feed everyone, and if ending the turn
+  would starve somebody, freeze somebody or spoil food, **it asks first**.
 
 The map itself: click a hex to select it (white corner brackets mark it),
 scroll to zoom, drag to pan, double-click to zoom back out. Your villagers
@@ -137,12 +163,27 @@ walk out to your tiles to work and come home again; soldiers patrol the
 edge of your land. Buildings appear in the village as you build them, and
 dirt roads run out to every tile you take.
 
+### Things that save you clicking
+
+The game is a clicker, but it should never be busywork:
+
+| | |
+| --- | --- |
+| **×5** | five hours of one job in one press |
+| **ALL** | every hour you have left on one job, stopping before the barns overflow |
+| **Standing orders** (Act IV) | villagers who work their job every turn without being told |
+| **Alerts** | click one and it opens the button that fixes it, and flashes it |
+| **Find land** | picks the best wild ground next to yours and takes you there |
+| **Turn ledger** | tells you what a turn cost, so you don't have to reconstruct it |
+| **The Ledger (6)** | net food per turn, land by terrain, and how the rivals compare — so you can plan instead of guess |
+| **Unspent hours chip** | you can never end a turn having forgotten to work |
+
 ### The keyboard
 
 | Key | |
 | --- | --- |
-| **1–5** | Gather, Build, People, Research, Villages (once unlocked) |
-| **6** | History |
+| **1–6** | Gather, Build, People, Research, Villages, Ledger (once unlocked) |
+| **7** | History |
 | **Space** | End turn |
 | **Esc** | close the history, or open the menu |
 
@@ -183,6 +224,75 @@ autumn. Stock up before the snow.
 Every world is checked before you ever see it: if the two rings of hexes
 around your home were short of food, wood or stone, the least useful tile
 out there is quietly turned into ground that has it. No start is a dead end.
+
+### Your town, and everyone else's
+
+**A village is founded on a valley, not a hex.** Every settlement — yours
+and everyone else's — begins holding about **thirty-seven hexes**: the hall,
+the cottages, the fields that feed them and the commons beyond. The hall's
+own hex is the oldest claim, so it is still the ground you work dry first
+and still the thing that sends you looking for more.
+
+It grows in stages you can read from across the map:
+
+* **A clearing** — the great hall, the well, a fire, the market square,
+  and the trodden earth they stand on.
+* **A fenced village** — once three buildings stand, a palisade of stakes
+  goes round it with a gate where the road comes in, and ploughed fields
+  fan out beyond the wall.
+* **A walled town** — at seven buildings the stakes become a stone curtain
+  wall with square towers, crenellations and a gatehouse with an arch.
+* Lanes run from the gate through the square; barns, houses, schools and
+  army camps fill out concentric rings around it; smoke rises from two or
+  three of the roofs; and if there is water next door, a jetty runs out
+  into it with a boat tied up at the end.
+* **Every household keeps something.** One cottage has a kitchen garden
+  behind it, the next a stack of split firewood, the next a line of washing
+  moving in the wind — so three cottages in a row never look the same.
+* **The square is a working square**: a bread oven with a fire in it, a
+  roadside shrine with a lit candle, a handcart, hens under the market
+  stalls, a dog by the fire and a pig where the market spills over. Once
+  the town is big enough, a windmill turns on the rise outside the walls.
+* **The fields change through the year** — turned earth in spring, green in
+  summer, standing sheaves at harvest, snow lying in the furrows in winter.
+* **Streets, not a wheel.** Six lanes run out of the square and a ring road
+  goes round it, with four rings of plots filling the ground between — up
+  to forty-one buildings before a town runs out of room.
+* **An inn** with a painted sign swinging out front, **stables** with a
+  horse in them, **a village pond** with rushes and a duck, and **an
+  orchard** planted in rows beyond the fields.
+
+### The people
+
+The figures on the map are not decoration; they are your villagers, and you
+can see what they are.
+
+* **Trades show.** A forester carries an axe, a mason a hammer, a farmer a
+  hoe, a scholar a book, a scout a staff, a soldier a spear and shield;
+  everybody else carries a basket. Train three foresters and three figures
+  with axes appear.
+* **They go where their trade is.** The forester walks to your woods, the
+  mason to your rock, the farmer to your fields. Soldiers patrol the edge
+  of your territory instead of working.
+* **And they do the work.** A forester visibly chops, a farmer sweeps a
+  sickle, a scholar reads, a carrier shifts their load — the arm swings in
+  the right way for the job, and stops when they set off home.
+* **The square is never empty.** A few townsfolk stay put — somebody at the
+  well, somebody minding a stall, children skipping by the fire — so the
+  middle of the village looks inhabited even when everybody else is out.
+
+The **rival villages** are built by the same rules, so how much land one of
+them has taken is visible at a glance: a hamlet, a fenced village, or a
+walled town with a market of its own. The **garlock camps** are not
+villages at all — a ring of stakes, war tents, a carved totem, a fire that
+never goes out and heaps of bone at the edges.
+
+Out on the land you hold, a **working district** stands about every ninth
+field, and what it is follows the ground: a fishery and a jetty on the
+water, a lumber camp in the woods, a smithy and quarry works in the rock, a
+farmstead with pens and hay on open ground, a hut and a watchtower in hard
+country. Roads run from your gate to each of them — and only to them, so
+the network reads as roads and not as a brown mat.
 
 ### People, trades and buildings
 
@@ -228,13 +338,16 @@ next to it. What you've seen stays on the map.
 * **Dashed white outline** — wild land next to yours. Select it and press
   **Explore**. An expedition needs 3 humans, 1 soldier as escort, 10
   timbermellows for provisions and 4 work hours — less once you have
-  scouts. The tile becomes yours, whatever is on it joins your
-  stores-on-land, and the tiles beyond it come into view.
+  scouts. **It settles a whole district**, not a single hex: the tile you
+  picked and the wild ground around it, about nineteen hexes. Everything on
+  them joins your stores-on-land, and the country beyond comes into view.
+  (A hex is a field on this map, not a county — see *The island* below.)
 * **Coloured outline** — land belonging to another village. If it touches
   yours, select it and press **Seize**. That takes soldiers — 2 at least,
   more the bigger that village has grown — and one of them won't come
-  back. It also costs 8 timbermellows and 4 hours. You can take the land
-  around a village but never the village itself.
+  back. It also costs 8 timbermellows and 4 hours. Like an expedition, it
+  takes a district rather than a field. You can take the land around a
+  village but never the village itself.
 * **Blank paper** — unknown. You'll see it once your land reaches it, or
   all at once once you research mapmaking.
 * **Open sea and deep lakes** cannot be settled at all. Your people have no
@@ -242,22 +355,61 @@ next to it. What you've seen stays on the map.
 
 ### The island
 
+**The grid is fine.** The world is 216 × 144 hexes — about thirty-one
+thousand of them, three times finer in each direction than it used to be.
+A hex is a field, not a county: nine of them cover what one used to. That
+is why an expedition settles a district, why a tile holds about a ninth of
+what it once did, and why a village on the map is drawn spilling over
+several hexes, the way a town on a real map covers more paper than the
+field beside it.
+
 The world is one island, ringed by sea and pale shore, and it has a
 climate: cold **tundra** and **snowfields** along the northern edge, dry
 red **badlands** in the south, and everything temperate between —
 **meadows**, **plains**, **forests**, **birch woods**, **dense bush**,
 **pine taiga**, **marshes** in the wet lowlands, **terraced hills** beside
 the water, and **rocky outcrops** and **mountains** along the high spine.
-Rivers run downhill into lakes and out to sea.
+Rivers run downhill into lakes and out to sea, and a handful of skerries
+and sandbars sit out in open water where nobody can reach them.
+
+Nothing on it is drawn twice the same way:
+
+* **Ground blends into ground.** Where meadow meets forest, a wash of the
+  neighbour's colour bleeds across the hex line instead of stopping dead at
+  it. Every hex of the same terrain also carries its own tone, so a wide
+  plain reads as a plain rather than as one flat swatch of paint.
+* **The land has relief.** High ground is lit and low ground shaded,
+  contour rings ride the peaks, and wherever the ground falls away sharply
+  there is a scarp line with hachures hanging down the slope.
+* **Ranges are drawn as ranges.** Connected mountain hexes get one long
+  crest line laid along their spine, the way a drawn map does it, instead
+  of twenty unrelated triangles.
+* **Undergrowth.** Every tile scatters its own tufts, pebbles, mushrooms,
+  fallen logs — seeded from the tile, so the same hex always grows the same
+  things. Deer and boar in the woods, sheep on the meadows, herons in the
+  marsh, eagles over the crags, birds anywhere.
+* **Things people left.** Cairns, beehives, scarecrows, charcoal burners,
+  hunting blinds, standing ruins, sea stacks.
+* **The sea.** Waves, a surf line that breathes along every shore, depth
+  tinting and bathymetric rings out where there is no land, and — once or
+  twice per map — a whale blowing, or a distant sail.
 
 Big stretches of one kind of country carry a name, written across them —
-*The Silent Waste*, *The Hollow Fens*, *The Iron Spine*. The inspect pane
-tells you which one a tile belongs to, and what it is like to live on.
+*The Sunworn Barrens*, *The Tangled Wilds*, *The Grey Wall* — and so do the
+rivers and lakes, the river names riding the course of the water itself.
+No two places on a map are ever named the same thing. The inspect pane
+tells you which region a tile belongs to, and what it is like to live on.
 
 Old cart tracks already join the villages to each other, drawn faintly
-under everything else. Five landmarks and a few wonders are scattered
-about: standing stones, a mother tree, dragon bones, a crystal mine, a
-shipwreck, a ruined tower, a hot spring, a bone orchard.
+under everything else. Eight landmarks and wonders are scattered about:
+standing stones, a mother tree, dragon bones, a crystal mine, a shipwreck,
+a ruined tower, a hot spring, a bone orchard.
+
+The map carries far more than can be read at once, so **how much is drawn
+depends on how closely you are looking**: zoomed out, the undergrowth, the
+colour blending and the river names step aside; zoomed in, the great region
+names and the sheet's border fade back so they don't sit on top of your
+village.
 
 ### Seasons
 
@@ -334,12 +486,15 @@ places, with comments next to each number:
 
 | What | Where |
 | --- | --- |
-| World size, number of villages, starting stores, what each ground holds | `data/map.json` |
+| World size (216 × 144 hexes), villages, starting stores, what each ground holds | `data/map.json` |
+| How much land a village is founded on | `js/territory.js`, `VILLAGE_RADIUS` |
+| How much land one expedition settles; autumn regrowth (as a fraction) | `js/territory.js`, top of file |
 | Which act begins when, and what each one unlocks | `js/ages.js`, top of file |
 | Schools, army camps, the trades and the standing work orders | `js/professions.js`, top of file |
-| What an expedition or a seizure needs and costs; autumn regrowth | `js/territory.js`, top of file |
 | How often the other villages expand, how strong they get | `js/villages.js`, top of file |
 | Coastline, climate bands, rivers, lakes, village spacing, region names | `js/map/worldGen.js`, top of file |
+| How a town is laid out and when it gets a wall | `js/map/settlements.js`, top of file |
+| How many figures walk the map, and which ground each trade works | `js/map/villagers.js`, top of file |
 | Raid rhythm, how angry the garlocks can get, how much one raid can take | `js/game.js`, the garlock section |
 | Building costs, technologies, food per person | `js/game.js` |
 
@@ -355,8 +510,87 @@ places, with comments next to each number:
 | `js/ui.js` | the HUD: tabs, tooltips, alerts, colonist bar, learning helper |
 | `js/main.js` | boot, the minimap, the inspect pane, reacting to events |
 | `js/map/worldGen.js` | the island: climate, coast, rivers, lakes, regions, roads |
-| `js/map/worldPainter.js` | painting it, in layers: ground, relief, water, sprites, scatter |
+| `js/map/worldPainter.js` | painting it, in layers: ground, relief, water, symbols, scatter |
+| `js/map/settlements.js` | towns, camps, working districts and roads |
+| `js/map/hexRenderer.js` | the interactive overlay: fog, borders, frontier, selection |
 | `js/map/artStyle.js` | every sprite the map is made of |
+| `js/map/villagers.js` | the people: trades, where they work, what they do there |
+| `js/turnReport.js` | the ledger of what each turn cost |
+| `js/empire.js` | the empire screen: population, production, land, rivals, tech |
+
+### Keeping it smooth
+
+A turn-based game can still feel slow. Here is every place this one did,
+and what was done about it.
+
+**The map used to stutter constantly, and it was two animations.** The whole
+island is one SVG of about three megabytes of path data. Sixty-eight river
+paths were animating `stroke-dashoffset` and one foam path following the
+entire coastline was animating `opacity` — neither of which a browser can
+put on the GPU. So the browser was **repainting the entire island sixty
+times a second, forever**, whether or not anything was happening. Three
+rules now hold:
+
+1. **Nothing inside the static artwork layer animates. Ever.** The river
+   dashes stayed — they still read as current — they just hold still.
+2. **Each map layer is its own compositing layer** (`will-change`,
+   `contain: layout paint`), so a villager swinging an axe repaints the
+   villagers and nothing else.
+3. **While the map is being dragged, quality gives way to speed** —
+   antialiasing is turned off for the duration, and nobody can tell.
+
+Beyond that:
+
+* **Hovering stopped flushing layout.** Working out which hex is under the
+  pointer needs the screen transform, and `getScreenCTM()` forces a layout.
+  It was being called on every `mousemove`. It is now cached and thrown
+  away only when the view actually moves, and the hover itself is answered
+  once a frame at most.
+* **Nobody animates what nobody can see.** Zoomed out, the people layer is
+  hidden and the walk loop stops stepping it.
+
+And the two places it was slow before that:
+
+* **Booting is staged.** Building the island takes about half a second and
+  painting it about as long again; done in one go that is a second of white
+  screen with the tab frozen. It is now split into steps with a frame
+  handed back to the browser between each, behind a loading card that says
+  what is being built.
+* **Nothing is counted twice.** "How much food is left on my land" used to
+  walk every tile you hold, seven or eight times per click. The map keeps a
+  version stamp, and the answer is remembered until the land actually
+  changes. That alone made the per-click refresh six times faster.
+* **Nothing is rebuilt that has not changed.** The alert list, the inspect
+  pane, the colonist bar, the trades and the standing orders are each
+  keyed on what they show, and are only redrawn when that moves — which
+  also means the tooltip under your cursor survives.
+* **Detail costs what it is worth.** A grass tuft three pixels tall used to
+  be drawn as three curved blades; it is now two strokes, which looks
+  identical and saved a megabyte of path data across the island.
+
+### Drawing thirty thousand hexes
+
+Two rules keep a map this fine inside a browser, and they are worth knowing
+before changing anything in `js/map/`:
+
+1. **The ground is batched.** Every hex of the same terrain and tone is one
+   `<path>` — a hexagon's outline is identical for every hex of a given
+   size, so each one costs an `M x y` plus a constant tail
+   (`hexMath.hexOutlineTail`). The whole island is about two thousand
+   elements instead of fifty thousand. The relief is drawn on a grid three
+   times coarser again, which tiles exactly and looks the same.
+2. **Decoration is drawn by area, not by tile.** A forest is a scatter of
+   tree symbols at a density measured in pixels, so the island carries the
+   same amount of forest however fine the grid is — and every conifer on the
+   map is two paths.
+
+The interactive overlay follows the same idea: the fog is *one* path (a
+rectangle with the seen tiles punched out of it, so its cost is the size of
+your world, not the map's), borders are one path per village colour, and
+clicking works out which hex is under the pointer with hex maths
+(`hexMath.pixelToAxial`) instead of giving thirty thousand hexes their own
+click target. Saves only store tiles that differ from what the seed would
+rebuild, so a long game is tens of kilobytes rather than megabytes.
 
 After changing anything, open `http://localhost:8080/scripts/playtest.html`:
 it plays a few turns on a fixed world with the real buttons — including

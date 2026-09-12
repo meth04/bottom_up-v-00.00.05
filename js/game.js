@@ -158,6 +158,18 @@
 
         const btn_house = document.getElementById("btn_house");
 
+        const btn_timbermellow_all = document.getElementById("btn_timbermellow_all");
+
+        const btn_wood_all = document.getElementById("btn_wood_all");
+
+        const btn_stone_all = document.getElementById("btn_stone_all");
+
+        const delta_food = document.getElementById("delta_food");
+
+        const delta_wood = document.getElementById("delta_wood");
+
+        const delta_stone = document.getElementById("delta_stone");
+
         const btn_school = document.getElementById("btn_school");
 
         const btn_armycamp = document.getElementById("btn_armycamp");
@@ -293,6 +305,45 @@
         function wood_5x()           { gatherWood(5); }
         function get_stone()         { gatherStone(1); }
         function stone_5x()          { gatherStone(5); }
+
+        // "Spend the rest of the day on this." Before standing orders are
+        // unlocked, a village of twelve is forty hours of clicking a turn —
+        // this is the same thing in one press, and it stops short of the
+        // barn's capacity so nothing is gathered only to spoil.
+        function gatherAllHours(job) {
+          if (working_hours <= 0) { updatelog("No work hours left! End your turn to reset work hours."); update(); return; }
+          if (job === "timbermellow") {
+            const room = storage_capacity - timbermellow_count;
+            if (room <= 0) { updatelog("The barns are already full — build another before gathering more.", "bad"); update(); return; }
+            const perHour = Math.max(1, foodPerHour());
+            gatherFood(Math.max(1, Math.min(working_hours, Math.ceil(room / perHour))));
+          } else if (job === "wood") {
+            gatherWood(working_hours);
+          } else {
+            gatherStone(working_hours);
+          }
+        }
+
+        function timbermellow_all() { gatherAllHours("timbermellow"); }
+        function wood_all()         { gatherAllHours("wood"); }
+        function stone_all()        { gatherAllHours("stone"); }
+
+        // Who will go hungry if the turn ends now, and who will freeze.
+        // Used by the End Turn button to ask before it happens rather than
+        // to apologise afterwards.
+        function endTurnWarnings() {
+          const warnings = [];
+          const hungry = mouthsToFeed() - timbermellow_count;
+          if (hungry > 0) warnings.push(`${hungry} will go unfed`);
+          // Winter is two turns away at most when autumn is half over.
+          if (seasonchecker === 4 && humans > peoplecap) {
+            warnings.push(`${humans - peoplecap} have no roof in the frost`);
+          }
+          if (timbermellow_count > storage_capacity) {
+            warnings.push(`${timbermellow_count - storage_capacity} timbermellows will spoil`);
+          }
+          return warnings;
+        }
 
         
         function make_human() {
@@ -460,7 +511,7 @@
             garlock_rage = Math.min(GARLOCK_RAGE_CAP, garlock_rage + 1);
             garlock_strangth = 3 + garlock_rage * 2 +
                                Math.floor((humans + human_army) / 4) +
-                               Math.floor(territoryClaimedCount() / 8);
+                               Math.floor(territoryClaimedCount() / 70);
             garlock_defense = garlockVillageDefence();
             garlock_incomingattack_turn = garlock_next_raid_turn;
             garlocks_attacking = true;
@@ -567,6 +618,7 @@
             working_hours = humans * 4;
             let regrown = territoryRegrowAutumn();
             updatelog("It's autumn, the season of harvest! Your land has regrown " + regrown + " worth of timbermellows and wood, and you gather 100% more this season.", "good");
+            turnReportNote(`the land regrew ${regrown}`, "good");
         }
 //winter
           if (seasonchecker == 4) {
@@ -781,8 +833,10 @@
 
             //storage check
             if (storage_capacity < timbermellow_count) {
+              const spoiled = timbermellow_count - storage_capacity;
               timbermellow_count = storage_capacity;
-              updatelog("not enough storage! excess timbermellows have been eaten by garlocks.");
+              updatelog(`No room in the barns — the garlocks took ${spoiled} timbermellows that would not fit.`, "bad");
+              turnReportNote(`${spoiled} spoiled for want of barn space`, "bad");
             }
 
             //fammen check
@@ -828,6 +882,7 @@
         
            //this removes timbermellows from the count 
            if (timbermellow_count >= mouthsToFeed()) {
+           turnReportNote(`${mouthsToFeed()} eaten`, "");
            timbermellow_count = timbermellow_count - mouthsToFeed();
            }
             
@@ -843,6 +898,11 @@
 
             //the other villages take their turn, and the game is saved (see main.js)
             if (typeof afterTurnEnded === "function") afterTurnEnded();
+
+            // What just happened, in six lines (js/turnReport.js), and then
+            // a fresh photograph for the turn that is starting.
+            if (typeof turnReportShow === "function") turnReportShow();
+            if (typeof turnSnapshotTake === "function") turnSnapshotTake();
           }
 
 // ---------------------------------------------------------------------------
@@ -912,6 +972,20 @@
 
  // Adds a line to the log. `kind` is optional: "good", "bad" or "turn" —
  // it only changes the colour (see css/style.css .logentry--*).
+ // The little "+12" beside a store: how much it has moved this turn. It
+ // answers "am I ahead or behind today?" without any clicking.
+ function showDelta(element, field) {
+   if (!element || typeof turnLiveDelta !== "function") return;
+   const delta = turnLiveDelta(field);
+   if (!delta) {
+     element.textContent = "";
+     element.className = "rw-delta";
+     return;
+   }
+   element.textContent = (delta > 0 ? "+" : "") + delta;
+   element.className = "rw-delta rw-delta--" + (delta > 0 ? "up" : "down");
+ }
+
  function updatelog(info, kind) {
         const newlog = document.createElement("div");
         newlog.className = "logentry" + (kind ? " logentry--" + kind : "");
@@ -994,6 +1068,9 @@
             btn_wood_5x.disabled = working_hours < 5 || wood_on_land <= 0;
             btn_stone.disabled = working_hours <= 0 || stone_on_land <= 0;
             btn_stone_5x.disabled = working_hours < 5 || stone_on_land <= 0;
+            if (btn_timbermellow_all) btn_timbermellow_all.disabled = working_hours <= 0 || seasonchecker == 4 || food_on_land <= 0 || timbermellow_count >= storage_capacity;
+            if (btn_wood_all) btn_wood_all.disabled = working_hours <= 0 || wood_on_land <= 0;
+            if (btn_stone_all) btn_stone_all.disabled = working_hours <= 0 || stone_on_land <= 0;
             btn_human.disabled = working_hours <= 0 || timbermellow_count < 3;
             btn_human_5x.disabled = working_hours < 5 || timbermellow_count < 15;
             btn_soldier.disabled = humans < 2;
@@ -1008,6 +1085,11 @@
 
             //the map's weather follows the season
             if (typeof refreshMapEffects === "function") refreshMapEffects();
+
+            //how each store has moved since the turn began (js/turnReport.js)
+            showDelta(delta_food, "timbermellow");
+            showDelta(delta_wood, "wood");
+            showDelta(delta_stone, "stone");
 
             //which act we are in, and which controls have been earned (js/ages.js)
             if (typeof ageRefresh === "function") ageRefresh();
