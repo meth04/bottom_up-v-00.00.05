@@ -77,9 +77,28 @@ function territoryTake(types, wanted) {
 
 function territoryRegrowAutumn() {
   if (!territoryMap) return 0;
-  const grown = territoryMap.regrow(REGROWTH_PER_AUTUMN);
+  let rates = REGROWTH_PER_AUTUMN;
+  // Once the famine has started the grove never comes all the way back:
+  // half as much returns, and the land's carrying capacity shrinks with it.
+  // This is what teaches the player that the resource pool is finite.
+  if (typeof ageFamineActive !== "undefined" && ageFamineActive) {
+    rates = {};
+    for (const type of Object.keys(REGROWTH_PER_AUTUMN)) rates[type] = Math.round(REGROWTH_PER_AUTUMN[type] * 0.5);
+    territoryMap.decayCapacity(["timbermellow"], AGE_FAMINE_MAX_DECAY);
+  }
+  const grown = territoryMap.regrow(rates);
   territoryChangedCallback({ kind: "regrow", amount: grown });
   return grown;
+}
+
+// Kills off a share of the food still standing on the village's land, and
+// takes the same share off what the land can ever hold again. Returns how
+// much was lost. Used by the famine that ends the First Age (js/ages.js).
+function territoryWither(fraction) {
+  if (!territoryMap) return 0;
+  const lost = territoryMap.wither(territoryFoodTypes(), fraction);
+  territoryChangedCallback({ kind: "wither", amount: lost });
+  return lost;
 }
 
 // The mapmaking technology: every tile becomes visible.
@@ -112,12 +131,24 @@ function territoryExploreBlocker(tileId) {
   if (!tile) return "Pick a tile on the map first.";
   if (territoryMap.isClaimed(tileId)) return "That land is already yours.";
   if (tile.owner) return `That land belongs to ${villageName(tile.owner)} — it would have to be seized.`;
+  if (tile.terrainType === "ocean") return "That is open sea. Your people have no boats yet.";
+  if (tile.terrainType === "lake") return "That is deep water — nobody can settle a lake.";
   if (!territoryMap.isFrontier(tileId)) return "You can only explore land next to your own.";
   if (humans < EXPLORE_MIN_HUMANS) return `You need at least ${EXPLORE_MIN_HUMANS} humans to send an expedition.`;
   if (human_army < EXPLORE_MIN_SOLDIERS) return `An expedition needs ${EXPLORE_MIN_SOLDIERS} soldier${EXPLORE_MIN_SOLDIERS > 1 ? "s" : ""} as escort.`;
-  if (timbermellow_count < EXPLORE_FOOD_COST) return `An expedition needs ${EXPLORE_FOOD_COST} timbermellows as provisions.`;
-  if (working_hours < EXPLORE_WORK_HOURS) return `Exploring takes ${EXPLORE_WORK_HOURS} work hours.`;
+  if (timbermellow_count < territoryExploreFood()) return `An expedition needs ${territoryExploreFood()} timbermellows as provisions.`;
+  if (working_hours < territoryExploreHours()) return `Exploring takes ${territoryExploreHours()} work hours.`;
   return null;
+}
+
+// What an expedition costs today. Scouts trained at the army camp make the
+// march cheaper (see js/professions.js).
+function territoryExploreFood() {
+  return typeof professionExploreFoodCost === "function" ? professionExploreFoodCost() : EXPLORE_FOOD_COST;
+}
+
+function territoryExploreHours() {
+  return typeof professionExploreHourCost === "function" ? professionExploreHourCost() : EXPLORE_WORK_HOURS;
 }
 
 // Claims the tile and pays the expedition's cost. Returns the tile, or null
@@ -125,8 +156,8 @@ function territoryExploreBlocker(tileId) {
 function territoryExplore(tileId) {
   if (territoryExploreBlocker(tileId)) return null;
   const tile = territoryMap.claimTile(tileId, "player");
-  timbermellow_count -= EXPLORE_FOOD_COST;
-  working_hours -= EXPLORE_WORK_HOURS;
+  timbermellow_count -= territoryExploreFood();
+  working_hours -= territoryExploreHours();
   territoryChangedCallback({ kind: "claim", tile });
   return tile;
 }

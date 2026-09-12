@@ -71,7 +71,9 @@ function villagesTakeTurn(map, grid, turn, seed, log) {
     const chance = VILLAGE_EXPAND_CHANCE[village.kind] || 0;
     if (random() >= chance) continue;
 
-    const frontier = map.getFrontierTiles(village.id).filter((tile) => tile.terrainType !== "mountains");
+    // Nobody settles rock or water.
+    const frontier = map.getFrontierTiles(village.id).filter((tile) =>
+      !["mountains", "ocean", "lake", "snowfield"].includes(tile.terrainType));
     if (!frontier.length) continue;
     const target = frontier[Math.floor(random() * frontier.length)];
     map.claimTile(target.id, village.id);

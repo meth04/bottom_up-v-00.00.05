@@ -158,6 +158,16 @@
 
         const btn_house = document.getElementById("btn_house");
 
+        const btn_school = document.getElementById("btn_school");
+
+        const btn_armycamp = document.getElementById("btn_armycamp");
+
+        // Everyone who eats when the turn ends: workers, soldiers, and the
+        // people currently off the rota learning a trade.
+        function mouthsToFeed() {
+          return humans + human_army + professionTraineeCount();
+        }
+
         //tracking variables
 //timbermellow needed
         const text_timbermellow_needed = document.getElementById("timbermellow_needed");
@@ -171,7 +181,14 @@
         const timbermellowhumantracker = document.getElementById("timbermellowhumantracker");
 
 //update log variables
-        const timename = document.getElementById("time_name");
+        // These three were reached through the browser's "an id becomes a
+        // global" behaviour, which is real but easy to trip over — they are
+        // named properly here instead.
+        const time_name = document.getElementById("time_name");
+
+        const text_workhours_basic = document.getElementById("text_workhours_basic");
+
+        const text_endturn_timbermellow_current = document.getElementById("text_endturn_timbermellow_current");
 
         const logentries = document.getElementById("logentries");
 
@@ -190,139 +207,92 @@
 
 
 
-        function find_timbermellow() {
-          let timbermellow_gathered = 0;
+        // How much one hour of work brings back, once the season, the tools
+        // and the trained specialists (js/professions.js) have had their say.
+        function foodPerHour() {
+          let per = 1 + (foodbasketmade >= 1 ? 1 : 0) + professionGatherBonus("timbermellow");
+          if (seasonchecker == 3) per = per * 2;          // the autumn harvest
+          return per;
+        }
+
+        function woodPerHour() {
+          return 1 + (stoneaxe_made >= 1 ? 1 : 0) + professionGatherBonus("wood");
+        }
+
+        function stonePerHour() {
+          return 1 + professionGatherBonus("stone");
+        }
+
+        // One gathering job, run for `hours` hours. Everything comes off the
+        // tiles the village holds, oldest claim first (js/territory.js).
+        function gatherFood(hours) {
           let food_on_land = territoryAvailable(territoryFoodTypes());
-          if (working_hours <= 0) {
-            updatelog("No work hours left! End your turn to reset work hours.");
-          }
-          if (seasonchecker == 4)  {
+          if (seasonchecker == 4) {
             updatelog("It's winter! You cannot grow timbermellows this season.");
+            update();
+            return;
+          }
+          if (working_hours < hours) {
+            updatelog(hours > 1 ? "not enough work." : "No work hours left! End your turn to reset work hours.");
+            update();
+            return;
           }
           if (food_on_land <= 0) {
             updatelog("There are no timbermellows left on your land. Explore a neighbouring tile to find more.", "bad");
+            update();
+            return;
           }
 
-          if (seasonchecker != 4 && working_hours > 0 && food_on_land > 0) {
-            timbermellow_gathered++;
-            if (foodbasketmade >= 1)
-                timbermellow_gathered++;
-            working_hours = working_hours - 1;
-            if (seasonchecker == 3) {
-              timbermellow_gathered++;
-              if (foodbasketmade >= 1)
-                timbermellow_gathered++;
-            }
-          }
-
-          timbermellow_count = timbermellow_count + territoryTake(territoryFoodTypes(), timbermellow_gathered);
+          working_hours = working_hours - hours;
+          let gathered = territoryTake(territoryFoodTypes(), foodPerHour() * hours);
+          timbermellow_count = timbermellow_count + gathered;
+          ageCountFood(gathered);
           update();
         }
 
-        function timbermellow_5x() {
-          let food_on_land = territoryAvailable(territoryFoodTypes());
-          if (working_hours < 5) {
-            updatelog("not enough work.");
-          }
-          if (seasonchecker == 4)  {
-            updatelog("It's winter! You cannot grow timbermellows this season.");
-          }
-          if (food_on_land <= 0) {
-            updatelog("There are no timbermellows left on your land. Explore a neighbouring tile to find more.", "bad");
-          }
-
-          if (seasonchecker != 4 && working_hours >= 5 && food_on_land >= 5) {
-            let timbermellow_gathered = 0;
-            for (let loop = 0; loop < 5; loop++) {
-              timbermellow_gathered++;
-              if (foodbasketmade >= 1) {
-                timbermellow_gathered++;
-              }
-              working_hours = working_hours - 1;
-              if (seasonchecker == 3) {
-                timbermellow_gathered++;
-                if (foodbasketmade >= 1)
-                  timbermellow_gathered++;
-              }
-            }
-            timbermellow_count = timbermellow_count + territoryTake(territoryFoodTypes(), timbermellow_gathered);
-          }
-          update();
-        }
-
-        function get_wood() {
-          let wood_gathered = 0;
+        function gatherWood(hours) {
           let wood_on_land = territoryAvailable(["wood"]);
-          if (working_hours <= 0) {
-            updatelog("No work hours left! End your turn to reset work hours.");
+          if (working_hours < hours) {
+            updatelog(hours > 1 ? "not enough work." : "No work hours left! End your turn to reset work hours.");
+            update();
+            return;
           }
           if (wood_on_land <= 0) {
             updatelog("There is no wood left on your land. Explore a forest for more.", "bad");
+            update();
+            return;
           }
-          if (working_hours > 0 && wood_on_land > 0) {
-            wood_gathered++;
-            working_hours = working_hours - 1;
-            if (stoneaxe_made >= 1) {
-              wood_gathered++;
-            }
-          }
-          wood = wood + territoryTake(["wood"], wood_gathered);
-          update();
-        }
-
-        function wood_5x() {
-          let wood_gathered = 0;
-          let wood_on_land = territoryAvailable(["wood"]);
-          if (working_hours < 5) {
-            updatelog("not enough work.");
-          }
-          if (wood_on_land <= 0) {
-            updatelog("There is no wood left on your land. Explore a forest for more.", "bad");
-          }
-          if (wood_on_land > 0 && working_hours >= 5) {
-            for (let loop = 0; loop < 5; loop++) {
-              wood_gathered++;
-              working_hours = working_hours - 1;
-              if (stoneaxe_made >= 1)
-                wood_gathered++;
-            }
-            wood = wood + territoryTake(["wood"], wood_gathered);
-          }
+          working_hours = working_hours - hours;
+          wood = wood + territoryTake(["wood"], woodPerHour() * hours);
           update();
         }
 
         // Stone is finite: "each tile will have a set amount lets say 250 and
         // then when the player runs out they will need to start a quarry."
         // The quarry isn't built yet — see ask.txt, question 4.
-        function get_stone() {
+        function gatherStone(hours) {
           let stone_on_land = territoryAvailable(["stone"]);
-          if (working_hours <= 0) {
+          if (working_hours < hours) {
             updatelog("not enough work.");
+            update();
+            return;
           }
           if (stone_on_land <= 0) {
             updatelog("There is no loose stone left on your land. Explore the mountains for more — one day you will need a quarry.", "bad");
+            update();
+            return;
           }
-          if (working_hours > 0 && stone_on_land > 0) {
-            stone = stone + territoryTake(["stone"], 1);
-            working_hours = working_hours - 1;
-          }
+          working_hours = working_hours - hours;
+          stone = stone + territoryTake(["stone"], stonePerHour() * hours);
           update();
         }
 
-        function stone_5x() {
-          let stone_on_land = territoryAvailable(["stone"]);
-          if (working_hours < 5) {
-            updatelog("not enough work.");
-          }
-          if (stone_on_land <= 0) {
-            updatelog("There is no loose stone left on your land. Explore the mountains for more — one day you will need a quarry.", "bad");
-          }
-          if (working_hours >= 5 && stone_on_land > 0) {
-            stone = stone + territoryTake(["stone"], 5);
-            working_hours = working_hours - 5;
-          }
-          update();
-        }
+        function find_timbermellow() { gatherFood(1); }
+        function timbermellow_5x()   { gatherFood(5); }
+        function get_wood()          { gatherWood(1); }
+        function wood_5x()           { gatherWood(5); }
+        function get_stone()         { gatherStone(1); }
+        function stone_5x()          { gatherStone(5); }
 
         
         function make_human() {
@@ -435,154 +405,148 @@
           }
         }
 
-               function garlock_raids_tracker() {
-          if (garlock_attacked_turn <= turngame + 1 ) {
-            if (garlocks_attacking == false){
-              
-          if (timbermellow_count >=25){
-            
-            updatelog("the garlocks are seen scouting your village for food" + (typeof garlockDirectionText === "function" ? garlockDirectionText() : "") + ".", "bad");
-            garlock_rage = garlock_rage + 1;
-            garlock_strangth = 4 * garlock_rage;
-            garlock_defense = 2 * garlock_rage;
-            garlock_incomingattack_turn = turngame + 1;
+// ---------------------------------------------------------------------------
+// The garlock raids (Act III)
+//
+// details.md: "This is when the garlocks are gonna begin there raids. Coming
+// every now and again to break there barns and steal there wood and food.
+// This is to beat the players growth down a peg before they find out that
+// timbermellow will run out."
+//
+// So a raid is a setback, not an ending: it takes barns, wood and food, and
+// it gets worse every time it is not answered with soldiers. The village is
+// only ever sacked outright if it has stood undefended through several.
+// ---------------------------------------------------------------------------
+
+        // Turns between raids once they have begun.
+        const GARLOCK_RAID_INTERVAL = 6;
+
+        // How angry they are ever allowed to get. Without a ceiling a village
+        // that loses one raid loses every raid after it, which is a death
+        // spiral, not "a peg" — see details.md.
+        const GARLOCK_RAGE_CAP = 3;
+
+        // The most damage a single raid can do, however badly it went.
+        const GARLOCK_MAX_BITE = 6;
+
+        // The turn the next raiding party sets out. 0 means none is coming.
+        let garlock_next_raid_turn = 0;
+
+        function garlockScheduleNextRaid() {
+          garlock_next_raid_turn = turngame + GARLOCK_RAID_INTERVAL;
+        }
+
+        // What stands between the garlocks and the barns. A standing guard of
+        // three or four handles an ordinary raid; captains and camps help.
+        function garlockVillageDefence() {
+          return human_army * 3 + professionDefenceBonus();
+        }
+
+        function garlockDirectionSuffix() {
+          return typeof garlockDirectionText === "function" ? garlockDirectionText() : "";
+        }
+
+        // Called once per turn from end_turn().
+        function garlockTurn() {
+          // Nothing happens before the raids begin (js/ages.js, Act III).
+          if (!ageAtLeast("raids")) {
+            garlocks_attacking = false;
+            return;
+          }
+          if (!garlock_next_raid_turn) garlockScheduleNextRaid();
+
+          // A turn before they arrive, the scouts are seen.
+          if (!garlocks_attacking && turngame >= garlock_next_raid_turn - 1) {
+            garlock_rage = Math.min(GARLOCK_RAGE_CAP, garlock_rage + 1);
+            garlock_strangth = 3 + garlock_rage * 2 +
+                               Math.floor((humans + human_army) / 4) +
+                               Math.floor(territoryClaimedCount() / 8);
+            garlock_defense = garlockVillageDefence();
+            garlock_incomingattack_turn = garlock_next_raid_turn;
             garlocks_attacking = true;
+            updatelog("Garlock scouts are watching the village" + garlockDirectionSuffix() + ". They will come next turn.", "bad");
+            return;
           }
-         }
+
+          if (garlocks_attacking && turngame >= garlock_incomingattack_turn) {
+            garlockResolveRaid();
+          }
         }
-     }
 
+        function garlockResolveRaid() {
+          garlock_attacked_turn = turngame;
+          garlocks_attacking = false;
+          garlockScheduleNextRaid();
 
-        function garlock_attack() {
-          if (garlocks_attacking == true){
-            
-          if (turngame == garlock_incomingattack_turn) {
-            garlock_attacked_turn = turngame;
-            updatelog("the garlocks are attacking your village! with a strength of " + garlock_strangth + " and a defense of " + garlock_defense + "");
-            //if you have no army
-            if (human_army == 0) {
-              let humans_holder = humans;
-              let barn_holder = barn;
-              let stonehouse_holder = stonehouse;
-              let timbermellow_holder = timbermellow_count;
-                
-                humans = Math.floor(humans / 2);
-                timbermellow_count = 0;
-                barn = 0;
-                storage_capacity = barn * 5;
-                stonehouse = 1; 
-                peoplecap = stonehouse * 3;
-                let stonehouse_loss = stonehouse_holder - stonehouse;
-                let humans_loss = humans_holder - humans; 
-                let barn_loss = barn_holder - barn; 
-                let timbermellow_loss = timbermellow_holder - timbermellow_count;
-                updatelog("your village has been destroyed by the garlocks! your humans have been killed and all your timbermellows have been stolen. you have lost " + humans_loss + " humans, " + timbermellow_loss + " timbermellows, " + barn_loss + " barns, and " + stonehouse_loss + " stonehouses.");
-                update();
-                garlocks_attacking = false;
-              }
+          const defence = garlockVillageDefence();
+          garlock_defense = defence;
 
-           
+          if (typeof triggerRaidAlarm === "function") {
+            triggerRaidAlarm((garlockDirectionSuffix() || " from the dark").replace(/^ from the /, ""));
+          }
 
-                //if you dont have enough army
-
-              if (human_army > 0 && human_army < garlock_defense + garlock_strangth) {
-                garlock_defense = garlock_defense - human_army;
-                
-                if (garlock_defense > 0) {
-                  let humans_holder = humans;
-                  let barn_holder = barn;
-                  let stonehouse_holder = stonehouse;
-                  let timbermellow_holder = timbermellow_count;
-
-                  humans = humans - garlock_strangth;
-                  timbermellow_count = 0;
-                  human_army = 0;
-                  barn = barn - garlock_strangth * 2;
-
-
-                  if (barn < 0) {
-                    barn = 0;
-                  }
-                  storage_capacity = barn * 5;
-                  stonehouse = stonehouse - garlock_strangth * 2;
-
-                  if (stonehouse < 1) {
-                    stonehouse = 1;
-                  }
-
-                  update();
-                  let stonehouse_loss = stonehouse_holder - stonehouse;
-                  let humans_loss = humans_holder - humans;
-                  let barn_loss = barn_holder - barn;
-                  let timbermellow_loss = timbermellow_holder - timbermellow_count;
-                  
-                  updatelog("your army has been defeated by the garlocks! your village has been raided and you have lost " + humans_loss + " humans, " + timbermellow_loss + " timbermellows, " + barn_loss + " barns, and " + stonehouse_loss + " stonehouses.");
-                  
-                  update();
-
-                }
-                
-                if (garlock_defense <= 0) {
-                  let barn_holder = barn;
-                  let stonehouse_holder = stonehouse;
-                  let timbermellow_holder = timbermellow_count;
-                  let army_holder = human_army;
-                  
-                  human_army = human_army - garlock_strangth;
-                    if (human_army < 0) {
-                    human_army = 0;
-                  } 
-
-                  barn = barn - garlock_strangth;
-                    if (barn < 0) {
-                    barn = 0;
-                  }
-                  storage_capacity = barn * 5;
-                  
-                  timbermellow_count = timbermellow_count - (garlock_strangth * 2);
-                  if (timbermellow_count < 0) {
-                    timbermellow_count = 0;
-                  }
-
-                  stonehouse = stonehouse - garlock_strangth;
-                  if (stonehouse < 1) {
-                    stonehouse = 1;
-                  }
-
-                  let stonehouse_loss = stonehouse_holder - stonehouse;
-                  let barn_loss = barn_holder - barn;
-                  let timbermellow_loss = timbermellow_holder - timbermellow_count;
-                  let army_loss = army_holder - human_army;
-                  
-                  updatelog("your army just managed to defeat the garlocks." + army_loss + " of your men died in the fight! your village has suffered some damage"  + timbermellow_loss + " timbermellows, " + barn_loss + " barns, and " + stonehouse_loss + " stonehouses.");
-
-                  
-                  update();
-
-                }
-                garlocks_attacking = false;
-              }
-               //if you have enough army
-            if (human_army >= garlock_defense + garlock_strangth && garlocks_attacking == true) {
-              let armyholder = human_army;
-              human_army = human_army - garlock_defense;
-              let army_loss = armyholder - human_army;
-             
-              updatelog("your army has successfully defended against the garlock attack!" + " you have lost " + army_loss + " soldiers in the battle.");
-              update();
-              garlocks_attacking = false;
-                }
-
-             
-          }else {
-            
-            updatelog("the garlocks gathering there strength for the next attack.");
+          if (defence >= garlock_strangth) {
+            const lost = Math.min(human_army, Math.ceil(garlock_strangth / 4));
+            human_army = human_army - lost;
+            // A village that answers every raid keeps them small; one that
+            // does not sees them grow. Never back to nothing, though.
+            garlock_rage = Math.max(1, garlock_rage - 1);
+            updatelog(
+              "The garlocks broke on your shield line and went back into the trees" +
+              (lost ? `, taking ${lost} of your soldiers with them.` : " without taking a soul."),
+              "good"
+            );
             update();
-        }
+            return;
           }
-      }
 
-      
+          // They got through. How badly depends on how short you were.
+          // How far short the village fell — but a raid is a setback, not an
+          // ending, so there is a ceiling on what one can take.
+          const shortfall = Math.min(GARLOCK_MAX_BITE, garlock_strangth - defence);
+          garlock_rage = Math.min(GARLOCK_RAGE_CAP, garlock_rage + 1);   // success breeds appetite
+          const soldiersLost = Math.min(human_army, Math.ceil(shortfall / 2));
+          const barnsLost = Math.min(Math.max(0, barn - 1), 1 + Math.floor(shortfall / 3));
+          const foodLost = Math.min(timbermellow_count, Math.ceil(timbermellow_count / 2) + shortfall);
+          const woodLost = Math.min(wood, shortfall * 3);
+
+          human_army = human_army - soldiersLost;
+          barn = barn - barnsLost;
+          if (barn < 1) barn = 1;
+          storage_capacity = barn * 5;
+          timbermellow_count = timbermellow_count - foodLost;
+          wood = wood - woodLost;
+
+          let peopleLost = 0;
+          let housesLost = 0;
+          if (defence === 0 && shortfall >= GARLOCK_MAX_BITE) {
+            // Nobody even tried to stop them. This is the sacking.
+            peopleLost = Math.min(humans - 1, Math.floor(humans / 2));
+            humans = humans - peopleLost;
+            housesLost = Math.min(Math.max(0, stonehouse - 1), 1 + Math.floor(shortfall / 5));
+            stonehouse = stonehouse - housesLost;
+            if (stonehouse < 1) stonehouse = 1;
+            peoplecap = stonehouse * 3;
+          }
+
+          const losses = [];
+          if (foodLost) losses.push(`${foodLost} timbermellows`);
+          if (woodLost) losses.push(`${woodLost} wood`);
+          if (barnsLost) losses.push(`${barnsLost} barn${barnsLost > 1 ? "s" : ""}`);
+          if (soldiersLost) losses.push(`${soldiersLost} soldier${soldiersLost > 1 ? "s" : ""}`);
+          if (housesLost) losses.push(`${housesLost} house${housesLost > 1 ? "s" : ""}`);
+          if (peopleLost) losses.push(`${peopleLost} villager${peopleLost > 1 ? "s" : ""}`);
+
+          updatelog(
+            (peopleLost
+              ? "The village was sacked — nobody stood in their way. You lost "
+              : "Garlock raiders broke the barns and carried off what they could. You lost ") +
+            (losses.length ? losses.join(", ") : "nothing they could find") + ".",
+            "bad"
+          );
+          update();
+        }
+
         function seasons_effect() {
 
           if(seasonchecker == 1) {
@@ -632,6 +596,10 @@
       }
 
         function techcheck() {
+        // Ideas only start arriving once the village has room to think —
+        // Act II, The Growing Years (js/ages.js).
+          if (!ageAtLeast("growth")) return;
+
         //stone axe tech
           if (working_hours >= 25 && techlevel < 1) {
 
@@ -672,6 +640,12 @@
           }
 
           
+        // The work-hour price of a technology, after the scholars have
+        // whittled it down (js/professions.js).
+        function researchHours(base) {
+          return Math.max(1, Math.round(base * professionResearchFactor()));
+        }
+
         function stoneaxe() {
           if (wood < 20) {
             updatelog("Not enough wood to make a stone axe! You need at least 20 wood.");
@@ -702,13 +676,13 @@
 
             updatelog("Not enough wood to make a food basket! You need at least 50 wood.");
           }
-          if(working_hours < 16){
+          if(working_hours < researchHours(16)){
         
-            updatelog("Not enough work hours to make a food basket! You need at least 16 workhours.");
+            updatelog("Not enough work hours to make a food basket! You need at least " + researchHours(16) + " workhours.");
           }
-         if (working_hours >= 16 && wood >= 50) {
+         if (working_hours >= researchHours(16) && wood >= 50) {
           wood = wood - 50;
-          working_hours = working_hours - 16;
+          working_hours = working_hours - researchHours(16);
           foodbasketmade = foodbasketmade +1;
           techmade = techmade + 1;
           foodbasketbt.style.display = "none";
@@ -724,12 +698,12 @@
           if (wood < 30) {
             updatelog("Not enough wood to learn farming! You need at least 30 wood.");
           }
-          if (working_hours < 12) {
-            updatelog("Not enough work hours to learn farming! You need at least 12 work hours.");
+          if (working_hours < researchHours(12)) {
+            updatelog("Not enough work hours to learn farming! You need at least " + researchHours(12) + " work hours.");
           }
-          if (wood >= 30 && working_hours >= 12) {
+          if (wood >= 30 && working_hours >= researchHours(12)) {
             wood = wood - 30;
-            working_hours = working_hours - 12;
+            working_hours = working_hours - researchHours(12);
             farming_made = farming_made + 1;
             techmade = techmade + 1;
             farmingbt.style.display = "none";
@@ -745,12 +719,12 @@
           if (wood < 20) {
             updatelog("Not enough wood to make maps! You need at least 20 wood.");
           }
-          if (working_hours < 10) {
-            updatelog("Not enough work hours to make maps! You need at least 10 work hours.");
+          if (working_hours < researchHours(10)) {
+            updatelog("Not enough work hours to make maps! You need at least " + researchHours(10) + " work hours.");
           }
-          if (wood >= 20 && working_hours >= 10) {
+          if (wood >= 20 && working_hours >= researchHours(10)) {
             wood = wood - 20;
-            working_hours = working_hours - 10;
+            working_hours = working_hours - researchHours(10);
             mapmaking_made = mapmaking_made + 1;
             techmade = techmade + 1;
             mapmakingbt.style.display = "none";
@@ -770,7 +744,8 @@
 
             turngame = turngame + 1;
 
-            let humanholder = humans + human_army;
+            // Trainees are off the work rota but still at the table.
+            let humanholder = humans + human_army + professionTraineeCount();
 
             if (season < 3 ) {
               //1-2 spring
@@ -798,11 +773,11 @@
 
             updatelog("Turn " + turngame + " — " + document.getElementById("season").innerText, "turn");
 
-             garlock_attack();
+             garlockTurn();
 
-             garlock_raids_tracker();
+            // Anyone still at school comes a turn closer to qualifying.
+            professionAdvanceTraining();
 
-            
 
             //storage check
             if (storage_capacity < timbermellow_count) {
@@ -812,9 +787,9 @@
 
             //fammen check
             
-            if (timbermellow_count < humans + human_army) {
+            if (timbermellow_count < mouthsToFeed()) {
               
-              let timbermellow_needed = humans + human_army;
+              let timbermellow_needed = mouthsToFeed();
 
               let timbermellow_deficit = timbermellow_needed - timbermellow_count;
 
@@ -852,11 +827,15 @@
           }
         
            //this removes timbermellows from the count 
-           if (timbermellow_count >= humans + human_army) {
-           timbermellow_count = timbermellow_count - (humans + human_army);
+           if (timbermellow_count >= mouthsToFeed()) {
+           timbermellow_count = timbermellow_count - mouthsToFeed();
            }
             
             seasons_effect();
+
+            // Villagers on standing orders work without being told
+            // (js/professions.js) — this is the end of clicking for every hour.
+            jobsRunAuto();
 
             techcheck();
 
@@ -897,6 +876,9 @@
             techlevel, techmade,
             seasonchecker, season, turngame,
             garlocks_attacking, garlock_incomingattack_turn, garlock_attacked_turn, garlock_rage, garlock_strangth, garlock_defense,
+            garlock_next_raid_turn,
+            ages: ageGetState(),
+            professions: professionsGetState(),
           };
         }
 
@@ -913,6 +895,9 @@
           garlocks_attacking = saved.garlocks_attacking; garlock_incomingattack_turn = saved.garlock_incomingattack_turn;
           garlock_attacked_turn = saved.garlock_attacked_turn; garlock_rage = saved.garlock_rage;
           garlock_strangth = saved.garlock_strangth; garlock_defense = saved.garlock_defense;
+          garlock_next_raid_turn = saved.garlock_next_raid_turn || 0;
+          professionsSetState(saved.professions);
+          ageSetState(saved.ages);
 
           //put the screen back the way it was
           let season_names = { 1: "spring", 2: "summer", 3: "autumn", 4: "winter" };
@@ -973,7 +958,7 @@
 
             //end turn timbermellow needed update
 
-            text_timbermellow_needed.textContent = humans + human_army;
+            text_timbermellow_needed.textContent = mouthsToFeed();
 
             text_endturn_timbermellow_current.textContent = timbermellow_count;
 
@@ -1015,12 +1000,17 @@
             btn_soldier_5x.disabled = humans < 5;
             btn_barn.disabled = working_hours <= 0 || wood < 4;
             btn_house.disabled = working_hours <= 0 || stone < 2;
+            if (btn_school) btn_school.disabled = working_hours < SCHOOL_WORK_HOURS || wood < SCHOOL_WOOD_COST || stone < SCHOOL_STONE_COST;
+            if (btn_armycamp) btn_armycamp.disabled = working_hours < ARMYCAMP_WORK_HOURS || wood < ARMYCAMP_WOOD_COST || stone < ARMYCAMP_STONE_COST;
 
             //the tile panel shows the same numbers, keep it in step
             if (typeof refreshTilePanel === "function") refreshTilePanel();
 
             //the map's weather follows the season
             if (typeof refreshMapEffects === "function") refreshMapEffects();
+
+            //which act we are in, and which controls have been earned (js/ages.js)
+            if (typeof ageRefresh === "function") ageRefresh();
 
             //the colonist bar, the alerts and the tooltips (js/ui.js)
             if (typeof uiRefresh === "function") uiRefresh();

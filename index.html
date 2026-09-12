@@ -252,6 +252,22 @@
               <span class="rw-gizmo__label">House</span>
               <span class="rw-gizmo__cost">2 Stone</span>
             </button>
+            <button class="rw-gizmo" id="btn_school" hidden onclick="make_school()"
+                    data-tip-title="School"
+                    data-tip="Lets you take a villager off the work rota to learn a trade — farmer, forester, mason or scholar. One trainee per school at a time."
+                    data-tip-cost="8 wood · 6 stone · 2 hours">
+              <span class="rw-gizmo__icon" data-icon="tech"></span>
+              <span class="rw-gizmo__label">School</span>
+              <span class="rw-gizmo__cost">8🪵 6🪨</span>
+            </button>
+            <button class="rw-gizmo" id="btn_armycamp" hidden onclick="make_armycamp()"
+                    data-tip-title="Army camp"
+                    data-tip="Trains scouts, who make expeditions cheaper, and captains, who add to the village's defence. Each camp is itself worth a point of defence."
+                    data-tip-cost="10 wood · 8 stone · 2 hours">
+              <span class="rw-gizmo__icon" data-icon="soldier"></span>
+              <span class="rw-gizmo__label">Army camp</span>
+              <span class="rw-gizmo__cost">10🪵 8🪨</span>
+            </button>
           </div>
         </div>
 
@@ -282,6 +298,22 @@
               </button>
               <button class="rw-x5" id="btn_soldier_5x" onclick="soldier_5x()"
                       data-tip-title="Train ×5" data-tip="Five at once." data-tip-cost="5 humans">×5</button>
+            </div>
+
+            <!-- Trades, once a school or an army camp stands -->
+            <div class="rw-subpane" id="professionRack" hidden>
+              <div class="rw-subpane__head">Trades <small id="professionSlotNote">take a villager off the rota</small></div>
+              <div class="rw-subpane__body" id="professionButtons"></div>
+              <ul class="rw-trainees" id="traineeList"></ul>
+            </div>
+
+            <!-- Standing work orders, once the famine forces the issue -->
+            <div class="rw-subpane" id="jobRack" hidden>
+              <div class="rw-subpane__head">Standing orders <small><span id="jobFree">0</span> villagers unassigned</small></div>
+              <div class="rw-subpane__body rw-subpane__body--jobs" id="jobRows"></div>
+              <button class="rw-btn rw-btn--small" onclick="jobClear()"
+                      data-tip-title="Clear every standing order"
+                      data-tip="Puts everyone back on the manual rota.">Clear all</button>
             </div>
           </div>
         </div>
@@ -366,6 +398,7 @@
       <!-- Clock + End turn -->
       <div class="rw-globals">
         <div class="rw-clock">
+          <div class="rw-agephase" id="agePhase" data-tip-title="The First Age" data-tip="Where the story has got to.">Act I · The First Winter</div>
           <div class="rw-clock__season"><span id="season" class="season season--spring">spring</span></div>
           <div class="rw-clock__turn">Turn <b id="text_turn">1</b> · Year <b id="text_year">1</b></div>
         </div>
@@ -472,7 +505,15 @@
       </div>
       <div class="modal-window__body" style="font-size: 13.5px;">
         <h3 style="font-family: var(--font-display); margin: 0 0 6px; color: #7a3811;">The Goal</h3>
-        <p>You begin with two settlers in a single timbermellow forest. Live off the land until it runs dry, then push outwards into the wild frontier and take tiles from rival villages until you discover <b>Farming</b>.</p>
+        <p>You begin with two settlers in a single timbermellow grove on an island you have never seen a map of. The story of the First Age runs in four acts, and the game opens the controls to you one at a time as you earn them.</p>
+
+        <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">The Four Acts</h3>
+        <ul style="padding-left: 18px; margin: 0 0 10px;">
+          <li><b>Act I — The First Winter:</b> people eat, the garlocks take anything that will not fit in a barn, and the cold is coming. Get everyone through it.</li>
+          <li><b>Act II — The Growing Years:</b> research opens, and with it the school and the army camp. No single hurdle — build, train and expand as you like.</li>
+          <li><b>Act III — The Garlock Raids:</b> they come on a rhythm now, to knock your growth back a peg. Soldiers are the answer.</li>
+          <li><b>Act IV — The Timbermellow Famine:</b> the grove fails and will not come back as it was. Learn farming, take more land, and put your people on standing orders.</li>
+        </ul>
 
         <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">The Four Seasons</h3>
         <ul style="padding-left: 18px; margin: 0 0 10px;">
@@ -482,16 +523,23 @@
           <li><b>Winter:</b> 2 hours per human. No food can be gathered. Anyone without a roof dies of exposure.</li>
         </ul>
 
-        <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">Resources & Land</h3>
+        <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">Resources &amp; Land</h3>
         <ul style="padding-left: 18px; margin: 0 0 10px;">
-          <li><b>Timbermellow:</b> Food. Every person and soldier eats 1 per turn. Excess beyond barn capacity is lost!</li>
-          <li><b>Wood:</b> Required for barns and technologies. Regrows in autumn.</li>
-          <li><b>Stone:</b> Required for winter houses. <b>Finite:</b> stone on a tile never regrows once mined.</li>
-          <li><b>Grain:</b> Found on plains; becomes edible food once Farming is researched.</li>
+          <li><b>Timbermellow:</b> food. Everyone eats 1 a turn — soldiers and trainees included. Anything over your barn space is lost.</li>
+          <li><b>Wood:</b> barns, buildings and most technologies. Regrows in autumn.</li>
+          <li><b>Stone:</b> houses, the school, the army camp. <b>Finite:</b> stone never regrows once mined.</li>
+          <li><b>Grain:</b> on plains and terraced hills; becomes food once Farming is researched.</li>
         </ul>
+        <p>The island runs from cold tundra and snowfields in the north to dry badlands in the south, with marshes in the wet lowlands, forests and birch woods between, and a shore all the way round. Open sea and deep lakes cannot be settled.</p>
+
+        <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">Trades</h3>
+        <p>Once a <b>school</b> or an <b>army camp</b> stands, a villager can be taken off the work rota to learn a trade. They are gone for a turn or two — and still eat — then come back better at one job: farmers, foresters and masons gather more per hour, scholars make research cheaper, scouts make expeditions cheaper, captains stiffen the shield line. Only the first three of any trade add to its bonus.</p>
 
         <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">The Garlocks</h3>
-        <p>A ferocious faction dwells far across the map. When your food stores reach 25 or more, scouts will spot you and an attack will come. Train soldiers to defend the settlement!</p>
+        <p>From Act III they raid roughly every six turns, from the direction of their camp. Each soldier is worth 3 to your defence, each captain 2 more, each army camp 1. Match their strength and they break on your line; fall short and they take food, wood and barns. Stand undefended long enough and the village is sacked.</p>
+
+        <h3 style="font-family: var(--font-display); margin: 14px 0 6px; color: #7a3811;">Standing Orders</h3>
+        <p>From Act IV you can assign villagers to a standing job. They work it every turn the moment the turn begins, without a single click — which is the point, once you have twenty people.</p>
       </div>
     </div>
   </div>
@@ -538,6 +586,8 @@
   <script src="js/villages.js"></script>
   <script src="js/save.js"></script>
   <script src="js/territory.js"></script>
+  <script src="js/professions.js"></script>
+  <script src="js/ages.js"></script>
   <script src="js/gameFeel.js"></script>
   <script src="js/game.js"></script>
   <script src="js/ui.js"></script>

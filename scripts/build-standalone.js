@@ -99,7 +99,7 @@ function build() {
   hexMap.unlockMapmaking();
 
   paintWorld(document.getElementById("mapArtworkHost"), world);
-  paintSettlements(document.getElementById("mapSettlementsHost"), world, hexMap, { houses: 2, barns: 1 });
+  paintSettlements(document.getElementById("mapSettlementsHost"), world, hexMap, { houses: 3, barns: 2, schools: 1, camps: 1 });
   hexRenderer = new HexRenderer(hexMap, document.getElementById("hexMapSvgHost"), {
     hexSize: world.grid.hexSize,
     origin: { x: world.grid.originX, y: world.grid.originY },

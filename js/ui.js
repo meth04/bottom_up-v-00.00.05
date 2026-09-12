@@ -22,6 +22,12 @@ let uiColonistKey = "";        // so the bar is only rebuilt when it changed
 const UI_TUTOR_STORE = "bottomup.tutor.v1";
 
 function uiSetTab(name) {
+  // A tab that has not been earned yet cannot be opened, by key or by click
+  // (js/ages.js decides what is showing).
+  if (name) {
+    const tab = document.querySelector(`.rw-tab[data-tab="${name}"]`);
+    if (tab && tab.hidden) return;
+  }
   uiOpenTab = name;
   const palette = document.getElementById("palette");
   for (const pane of document.querySelectorAll(".rw-pane")) {
@@ -48,6 +54,96 @@ function uiPointAt(tabName, elementId) {
   void target.offsetWidth;           // restart the animation
   target.classList.add("rw-flash");
   setTimeout(() => target.classList.remove("rw-flash"), 2200);
+}
+
+// Draws the eye to a tab that has just gained something new.
+function uiNudgeTab(name) {
+  const tab = document.querySelector(`.rw-tab[data-tab="${name}"]`);
+  if (tab && uiOpenTab !== name) tab.classList.add("rw-tab--nudge");
+}
+
+// ---------------------------------------------------------------------------
+// The trades, and the standing work orders
+// ---------------------------------------------------------------------------
+
+let uiProfessionKey = "";        // so the trade buttons aren't rebuilt under the cursor
+let uiJobKey = "";
+
+function uiRefreshProfessions() {
+  const rack = document.getElementById("professionRack");
+  if (!rack || rack.hidden) return;
+
+  const key = [school, armycamp, humans, timbermellow_count,
+               Object.values(professionCounts).join("-"),
+               professionTrainees.map((t) => t.id + t.left).join("-")].join("|");
+  if (key === uiProfessionKey) return;
+  uiProfessionKey = key;
+
+  const host = document.getElementById("professionButtons");
+  if (host) {
+    host.innerHTML = Object.keys(PROFESSIONS).map((id) => {
+      const trade = PROFESSIONS[id];
+      const have = professionCounts[id] || 0;
+      const blocker = professionBlocker(id);
+      const icon = typeof getIcon === "function" ? getIcon(trade.icon, "game-icon--lg") : "";
+      return `
+        <button class="rw-gizmo rw-gizmo--trade" ${blocker ? "disabled" : ""}
+                onclick="professionTrain('${id}')"
+                data-tip-title="Train a ${trade.name.toLowerCase()}"
+                data-tip="${trade.blurb} ${trade.effect}. Only the first three of a trade add to the bonus — a fourth farmer is just another mouth."
+                data-tip-cost="1 villager for ${trade.turns} turn${trade.turns > 1 ? "s" : ""} · ${trade.food} food"
+                data-tip-block="${blocker || ""}">
+          <span class="rw-gizmo__icon">${icon}</span>
+          <span class="rw-gizmo__label">${trade.name}</span>
+          <span class="rw-gizmo__cost">${have ? `${have} trained` : trade.home === "school" ? "school" : "camp"}</span>
+        </button>`;
+    }).join("");
+  }
+
+  const note = document.getElementById("professionSlotNote");
+  if (note) {
+    const schoolFree = professionSlots("school") - professionSlotsUsed("school");
+    const campFree = professionSlots("armycamp") - professionSlotsUsed("armycamp");
+    note.textContent = `${schoolFree} school place${schoolFree === 1 ? "" : "s"} · ${campFree} camp place${campFree === 1 ? "" : "s"}`;
+  }
+
+  const list = document.getElementById("traineeList");
+  if (list) {
+    list.innerHTML = professionTrainees.map((trainee) => {
+      const trade = PROFESSIONS[trainee.id];
+      return `<li><b>${trade.name}</b><small>${trainee.left} turn${trainee.left === 1 ? "" : "s"} left · still eating</small></li>`;
+    }).join("");
+  }
+}
+
+function uiRefreshJobs() {
+  const rack = document.getElementById("jobRack");
+  if (!rack || rack.hidden) return;
+
+  const key = [humans, seasonchecker, JOB_TYPES.map((t) => jobAssignments[t]).join("-")].join("|");
+  if (key === uiJobKey) return;
+  uiJobKey = key;
+
+  const free = document.getElementById("jobFree");
+  if (free) free.textContent = jobFreeVillagers();
+
+  const host = document.getElementById("jobRows");
+  if (!host) return;
+  const perVillager = jobHoursPerVillager();
+  host.innerHTML = JOB_TYPES.map((type) => {
+    const count = jobAssignments[type] || 0;
+    const icon = typeof getIcon === "function" ? getIcon(type) : "";
+    return `
+      <div class="rw-jobrow"
+           data-tip-title="${JOB_LABELS[type]}"
+           data-tip="Every villager here works ${perVillager} hours on this job the moment the turn begins — no clicking. Hours they spend are taken off your total.">
+        <span class="rw-jobrow__icon">${icon}</span>
+        <span class="rw-jobrow__label">${JOB_LABELS[type]}</span>
+        <button class="rw-x5" onclick="jobAssign('${type}', -1)" ${count <= 0 ? "disabled" : ""}>−</button>
+        <b class="rw-jobrow__count">${count}</b>
+        <button class="rw-x5" onclick="jobAssign('${type}', 1)" ${jobFreeVillagers() <= 0 ? "disabled" : ""}>+</button>
+      </div>`;
+  }).join("");
 }
 
 // ---------------------------------------------------------------------------
@@ -151,30 +247,34 @@ function uiRefreshColonists() {
   const bar = document.getElementById("colonistBar");
   if (!bar) return;
 
-  const total = humans + human_army;
+  const trainees = professionTraineeCount();
+  const total = humans + human_army + trainees;
   const needed = total;
   const fed = needed > 0 ? Math.min(1, timbermellow_count / needed) : 1;
   const hungry = timbermellow_count < needed;
   const roofless = Math.max(0, humans - peoplecap);
-  const key = `${humans}|${human_army}|${Math.round(fed * 20)}|${roofless}|${seasonchecker}`;
+  const key = `${humans}|${human_army}|${trainees}|${Math.round(fed * 20)}|${roofless}|${seasonchecker}`;
   if (key === uiColonistKey) return;
   uiColonistKey = key;
 
   const shown = Math.min(total, 20);
   let html = "";
   for (let index = 0; index < shown; index++) {
-    const soldier = index >= humans;
+    const soldier = index >= humans && index < humans + human_army;
+    const trainee = index >= humans + human_army;
     const noRoof = !soldier && index >= peoplecap;
     const flagSvg = (hungry ? `<span style="color:#b83928;" title="Hungry">⚠</span>` : "") +
                     (noRoof && seasonchecker === 4 ? `<span style="color:#336699;" title="Freezing">❄</span>` : noRoof ? `<span style="color:#557799;" title="Roofless">🌧</span>` : "");
     const tipParts = [];
-    tipParts.push(soldier ? "A soldier. Escorts expeditions, seizes land and defends the settlement." : "A settler. Each provides 4 work hours in spring/autumn, 6 in summer, 2 in winter.");
+    tipParts.push(trainee ? "In training. Off the work rota for now — and still eating — but will come back qualified."
+                 : soldier ? "A soldier. Escorts expeditions, seizes land and defends the settlement."
+                 : "A settler. Each provides 4 work hours in spring/autumn, 6 in summer, 2 in winter.");
     if (hungry) tipParts.push("Starving! There is not enough timbermellow in the barns.");
     if (noRoof) tipParts.push("Exposed to elements! Lacks a roof for the coming winter.");
     html += `
-      <button class="rw-pawn ${soldier ? "rw-pawn--soldier" : ""} ${hungry ? "rw-pawn--hungry" : ""}"
+      <button class="rw-pawn ${soldier ? "rw-pawn--soldier" : ""} ${trainee ? "rw-pawn--trainee" : ""} ${hungry ? "rw-pawn--hungry" : ""}"
               onclick="uiFocusVillage()"
-              data-tip-title="${uiPawnName(index)}${soldier ? " · soldier" : ""}"
+              data-tip-title="${uiPawnName(index)}${soldier ? " · soldier" : trainee ? " · in training" : ""}"
               data-tip="${tipParts.join(" ")}">
         <div class="rw-pawn__name">${uiPawnName(index)}</div>
         <div class="rw-pawn__box">
@@ -198,7 +298,7 @@ function uiFocusVillage() {
 
 function uiBuildAlerts() {
   const alerts = [];
-  const mouths = humans + human_army;
+  const mouths = mouthsToFeed();
   const foodOnLand = typeof territoryAvailable === "function" ? territoryAvailable(territoryFoodTypes()) : 0;
   const woodOnLand = typeof territoryAvailable === "function" ? territoryAvailable(["wood"]) : 0;
   const stoneOnLand = typeof territoryAvailable === "function" ? territoryAvailable(["stone"]) : 0;
@@ -213,11 +313,41 @@ function uiBuildAlerts() {
   }
 
   if (garlocks_attacking) {
+    const defence = garlockVillageDefence();
     alerts.push({
       level: "bad", icon: typeof getIcon === "function" ? getIcon("seize") : "⚔",
       text: `Garlock raid on turn ${garlock_incomingattack_turn}`,
-      tip: `They come with a strength of ${garlock_strangth} and defense of ${garlock_defense}. Soldiers are the only thing that stops them.`,
+      tip: `They come ${garlock_strangth} strong; your village stands at ${defence}. Each soldier is worth 2, each captain 2 more, each army camp 1. Come up short and they take food, wood and barns.`,
       go: () => uiPointAt("people", "btn_soldier"),
+    });
+  } else if (ageAtLeast("raids") && garlock_next_raid_turn) {
+    alerts.push({
+      level: "info", icon: typeof getIcon === "function" ? getIcon("soldier") : "🛡",
+      text: `Next raid around turn ${garlock_next_raid_turn}`,
+      tip: "The garlocks come on a rhythm now. Have the shield line standing before the scouts are seen.",
+      go: () => uiPointAt("people", "btn_soldier"),
+    });
+  }
+
+  if (ageHas("professions")) {
+    const freeSchool = professionSlots("school") - professionSlotsUsed("school");
+    const freeCamp = professionSlots("armycamp") - professionSlotsUsed("armycamp");
+    if ((freeSchool > 0 || freeCamp > 0) && humans >= 3 && professionTotal() < humans) {
+      alerts.push({
+        level: "info", icon: typeof getIcon === "function" ? getIcon("tech") : "🎓",
+        text: `${freeSchool + freeCamp} training place${freeSchool + freeCamp > 1 ? "s" : ""} empty`,
+        tip: "A trained villager is worth several untrained ones at the job they know. Training costs you their hours for a turn or two.",
+        go: () => uiPointAt("people", "professionRack"),
+      });
+    }
+  }
+
+  if (ageHas("jobs") && jobFreeVillagers() >= 4) {
+    alerts.push({
+      level: "info", icon: typeof getIcon === "function" ? getIcon("hours") : "⏱",
+      text: `${jobFreeVillagers()} villagers with no standing job`,
+      tip: "Put them on a standing order and they will work every turn without being clicked.",
+      go: () => uiPointAt("people", "jobRack"),
     });
   }
 
@@ -327,45 +457,63 @@ function uiHintExplore() {
 const UI_LESSONS = [
   {
     id: "welcome",
-    title: "Your Settlement",
-    body: "This is the world, drawn by hand. The gold outline is the land you hold — everything you gather comes off it. Drag to pan, scroll to zoom, click any hex to inspect it.",
+    title: "Two People, One Grove",
+    body: "This is the world, drawn by hand. The gold outline is the land you hold — everything you gather comes off it. There is one button that matters today: GATHER. Drag to pan, scroll to zoom, click any hex to look at it.",
     when: () => true,
   },
   {
     id: "hours",
     title: "Work Hours",
-    body: "Bottom right contains all village actions. Open GATHER and spend your hours — every action costs one. Hours you do not spend are lost when the turn ends.",
+    body: "Everything costs an hour. Spend them all — hours you do not spend are simply gone when the turn ends.",
     when: () => working_hours > 0,
   },
   {
     id: "endturn",
     title: "Ending the Turn",
-    body: "When your hours are spent, press END TURN (or Space). Everyone eats one timbermellow, the season moves on and neighbouring factions expand.",
+    body: "When your hours are spent, press END TURN (or Space). Everyone eats one timbermellow, and the season moves on.",
     when: () => working_hours <= 0,
   },
   {
     id: "barn",
     title: "Build a Barn",
-    body: "Your barns only hold so much, and anything over capacity is eaten when the turn ends. Open BUILD and construct a barn — 4 wood, 5 more spaces.",
-    when: () => wood >= 4,
-  },
-  {
-    id: "explore",
-    title: "Frontier Expansion",
-    body: "The dashed white hexes are wild lands touching yours. Select one and press EXPLORE in the bottom-left panel. Requires 3 settlers, 1 soldier escort, 10 food and 4 hours.",
-    when: () => humans >= 3 && human_army >= 1,
+    body: "Food left in the open is food the garlocks take: anything over your barn space vanishes the moment the turn ends. Open BUILD — 4 wood, 5 more spaces.",
+    when: () => ageHas("build_barn") && wood >= 4,
   },
   {
     id: "winter",
     title: "Winter is Coming",
-    body: "In winter nothing can be gathered, everyone still eats, and anyone without a roof dies of exposure. Fill the barns and build houses before the frost.",
+    body: "In winter nothing can be gathered, everyone still eats, and anyone without a roof dies of exposure. This is the whole of Act I: get everybody through it.",
     when: () => seasonchecker === 3,
   },
   {
+    id: "explore",
+    title: "Frontier Expansion",
+    body: "The dashed white hexes are wild land touching yours. Select one and press EXPLORE in the bottom-left panel. An expedition needs 3 settlers, a soldier as escort, food and hours.",
+    when: () => ageHas("soldiers") && humans >= 3 && human_army >= 1,
+  },
+  {
+    id: "growth",
+    title: "Act II — Room to Think",
+    body: "You survived a year. Research has opened, and so have the school and the army camp. There is no single hurdle now — build what you like and see what turns up.",
+    when: () => ageAtLeast("growth"),
+  },
+  {
+    id: "trades",
+    title: "Learning a Trade",
+    body: "Training takes a villager off the work rota for a turn or two. They still eat, and you lose their hours — but they come back worth several untrained hands at the job they learned.",
+    when: () => ageHas("professions"),
+  },
+  {
     id: "garlocks",
-    title: "The Garlocks",
-    body: "The distant garlock camp has noticed your full stores. When they attack, soldiers are your only defense — without soldiers the village is sacked.",
-    when: () => garlocks_attacking,
+    title: "Act III — The Raids",
+    body: "The garlocks come on a rhythm now, to knock you back down. Each soldier is worth 2 defence, each captain 2 more, each army camp 1. Match their strength and they break on your line.",
+    when: () => ageAtLeast("raids"),
+  },
+  {
+    id: "famine",
+    title: "Act IV — The Grove Fails",
+    body: "The timbermellows will not come all the way back any more. Learn farming, take more land — and put people on standing orders so you are not clicking for every hour of a village this size.",
+    when: () => ageAtLeast("famine"),
   },
 ];
 
@@ -457,6 +605,14 @@ function uiBlockReasons() {
   reason("btn_soldier_5x", humans < 5 ? "Needs at least 5 villagers." : "");
   reason("btn_barn", working_hours <= 0 ? noHours : wood < 4 ? "Needs 4 wood." : "");
   reason("btn_house", working_hours <= 0 ? noHours : stone < 2 ? "Needs 2 stone." : "");
+  reason("btn_school",
+    working_hours < SCHOOL_WORK_HOURS ? `Needs ${SCHOOL_WORK_HOURS} work hours.` :
+    wood < SCHOOL_WOOD_COST ? `Needs ${SCHOOL_WOOD_COST} wood.` :
+    stone < SCHOOL_STONE_COST ? `Needs ${SCHOOL_STONE_COST} stone.` : "");
+  reason("btn_armycamp",
+    working_hours < ARMYCAMP_WORK_HOURS ? `Needs ${ARMYCAMP_WORK_HOURS} work hours.` :
+    wood < ARMYCAMP_WOOD_COST ? `Needs ${ARMYCAMP_WOOD_COST} wood.` :
+    stone < ARMYCAMP_STONE_COST ? `Needs ${ARMYCAMP_STONE_COST} stone.` : "");
 }
 
 // ---------------------------------------------------------------------------
@@ -563,6 +719,31 @@ function applyCustomSeed() {
   location.search = `?seed=${seedVal}`;
 }
 
+// The animations switch in the menu and in Settings.
+function setMotion(on) {
+  document.body.classList.toggle("no-motion", !on);
+  const menuBox = document.getElementById("toggleMotion");
+  const settingsBox = document.getElementById("settingsToggleMotion");
+  if (menuBox) menuBox.checked = on;
+  if (settingsBox) settingsBox.checked = on;
+  try {
+    localStorage.setItem("bottomup.motion.v1", on ? "on" : "off");
+  } catch (error) { /* private window; the setting just won't stick */ }
+}
+
+function uiLoadMotion() {
+  let on = true;
+  try {
+    on = localStorage.getItem("bottomup.motion.v1") !== "off";
+  } catch (error) { /* ignored */ }
+  setMotion(on);
+}
+
+// A one-off message over the map, for code that has no log line to attach to.
+function uiToast(text, kind) {
+  if (typeof onLogEntry === "function") onLogEntry(text, kind);
+}
+
 function toggleHelperFromSettings(checked) {
   uiSetTutorOff(checked);
 }
@@ -596,6 +777,7 @@ function uiInit() {
   if (tutorOffMenu) tutorOffMenu.addEventListener("change", (event) => uiSetTutorOff(event.target.checked));
 
   uiLoadTutor();
+  uiLoadMotion();
   uiPopulateStaticIcons();
   uiInstallTooltips();
   uiInstallKeys();
@@ -619,6 +801,8 @@ function uiRefresh() {
 
   uiBlockReasons();
   uiRefreshColonists();
+  uiRefreshProfessions();
+  uiRefreshJobs();
   uiRefreshAlerts();
   uiRefreshTutor();
   if (uiTipTarget) { uiTipTarget = null; uiUpdateTooltip(); }

@@ -62,6 +62,10 @@ frame.onload = async function () {
   const status = (label) => log("--- turn", g("turngame"), seasonText(), label || "", "| humans", g("humans"), "soldiers", g("human_army"), "food", g("timbermellow_count"), "wood", g("wood"), "barns", g("barn"), "hours", g("working_hours"));
 
   log("--- start ---");
+  // The interface starts at almost nothing and grows (js/ages.js).
+  check("the game opens in Act I", g("agePhase") === "dawn");
+  check("only the food button is showing", g('document.getElementById("btn_find_timbermellow").hidden') === false && g('document.getElementById("btn_wood").hidden') === true);
+  check("the build tab is hidden at the start", g('document.querySelector('.rw-tab[data-tab="build"]').hidden') === true);
   const map = g("hexMap");
   const villages = w.villagesGet();
   const startTile = map.getAllTiles().find((tile) => tile.isStartingTile);
@@ -69,6 +73,14 @@ frame.onload = async function () {
   check("world generated on the requested seed", g("worldSeed") === PLAYTEST_SEED);
   check("the world has a proper grid (400+ hexes)", map.getAllTiles().length >= 400);
   check("at least one river", g("world").rivers.length >= 1);
+  const terrains = new Set(map.getAllTiles().map((tile) => tile.terrainType));
+  log("terrain kinds on this world:", [...terrains].sort().join(", "));
+  check("the world is an island — there is open sea", terrains.has("ocean"));
+  check("the sea has a shore", terrains.has("beach"));
+  check("there is cold ground in the north", terrains.has("tundra") || terrains.has("snowfield"));
+  check("stretches of country have names", g("world").regions.length >= 10);
+  check("old roads join the villages", g("world").tradeRoutes.length >= villages.length - 1);
+  check("no village was founded on water", villages.every((v) => !["ocean", "lake"].includes(map.getTile(v.homeTileId).terrainType)));
   check("several villages, one of them the garlock camp", villages.length >= 3 && villages.some((v) => v.kind === "garlock"));
   check("every village owns its home", villages.every((v) => map.ownerOf(v.homeTileId) === v.id));
   check("starts on one tile", w.territoryClaimedCount() === 1);
@@ -83,7 +95,8 @@ frame.onload = async function () {
   check("gather button greys out at 0 hours", w.document.getElementById("btn_find_timbermellow").disabled === true);
 
   // Explore should be refused, for a reason the player can read.
-  const firstFrontier = map.getFrontierTiles()[0];
+  // (Water can't be settled at all, so pick dry land to test the real reason.)
+  const firstFrontier = map.getFrontierTiles().find((tile) => !["ocean", "lake"].includes(tile.terrainType)) || map.getFrontierTiles()[0];
   map.selectTile(firstFrontier.id);
   let blocker = w.territoryExploreBlocker(firstFrontier.id);
   log("explore blocker now:", blocker);
@@ -118,7 +131,7 @@ frame.onload = async function () {
   w.apont_soldier();
   w.timbermellow_5x();
   status("(ready to explore?)");
-  const frontier = map.getFrontierTiles();
+  const frontier = map.getFrontierTiles().filter((tile) => !["ocean", "lake"].includes(tile.terrainType));
   const target = frontier.find((tile) => tile.resources.stone) || frontier[0];
   const targetResources = Object.assign({}, ...Object.keys(target.resources).map((type) => ({ [type]: target.resources[type].amount })));
   map.selectTile(target.id);
@@ -165,6 +178,24 @@ frame.onload = async function () {
   check("other villages expand over time", foreignAfter > foreignBefore);
   check("autumn regrowth refilled the start tile", land(["timbermellow"]) >= 250 - 8);
   check("season class updates", w.document.getElementById("season").className.indexOf("season--") >= 0);
+
+  // The acts, the trades and the standing orders.
+  check("gathering unlocked the wood button", g('document.getElementById("btn_wood").hidden') === false);
+  check("the build tab opened once there was wood", g('document.querySelector('.rw-tab[data-tab="build"]').hidden') === false);
+  log("act now:", g("agePhase"), "| unlocked:", Object.keys(g("ageUnlocked")).join(","));
+  check("the village has moved past Act I", g("agePhase") !== "dawn");
+  check("Act II opened research", g('document.querySelector('.rw-tab[data-tab="research"]').hidden') === false);
+
+  // Build a school and put somebody through it.
+  g("wood = Math.max(wood, 40); stone = Math.max(stone, 40); working_hours = 30; timbermellow_count = Math.max(timbermellow_count, 30); humans = Math.max(humans, 5); update()");
+  w.make_school();
+  check("a school can be built", g("school") === 1);
+  const humansBeforeTraining = g("humans");
+  w.professionTrain("farmer");
+  check("training takes the villager off the rota", g("humans") === humansBeforeTraining - 1);
+  check("the trainee still eats", g("professionTraineeCount()") === 1);
+  w.end_turn(); w.end_turn();
+  check("the trainee came back a farmer", g("professionCounts.farmer") === 1 && g("humans") === humansBeforeTraining);
 
   const logText = w.document.getElementById("logentries").textContent;
   check("log mentions garlocks, not orcs", !/\borc/i.test(logText));

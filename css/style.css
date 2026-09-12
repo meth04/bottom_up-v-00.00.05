@@ -1671,3 +1671,154 @@ body {
 .swatch--frontier { background: var(--accent-green); }
 .swatch--foreign { background: var(--accent-wax-red); }
 .swatch--hidden { background: #dfd1b3; border: 1px dashed #bba882; }
+
+/* =====================================================================
+   The First Age: the slow reveal, the trades, the standing work orders
+   (js/ages.js, js/professions.js)
+   ===================================================================== */
+
+/* Everything locked is hidden outright, so the interface really does start
+   at two buttons and grow. The !important is needed because the gizmos and
+   tabs set display themselves. */
+[hidden] { display: none !important; }
+
+/* --- which act we are in, above the clock --------------------------- */
+.rw-agephase {
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+  padding: 2px 8px 3px;
+  color: #6b4a1e;
+  border-bottom: 1px solid rgba(90, 66, 36, 0.25);
+  cursor: help;
+}
+.rw-agephase--growth { color: #4a6b2c; }
+.rw-agephase--raids  { color: #9c2f1c; }
+.rw-agephase--famine { color: #7a3a12; }
+
+/* --- sub-panels inside a palette pane ------------------------------- */
+.rw-subpane {
+  width: 100%;
+  margin-top: 4px;
+  border-top: 1px solid rgba(90, 66, 36, 0.28);
+  padding-top: 5px;
+}
+.rw-subpane__head {
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #3b2817;
+  padding: 0 2px 5px;
+}
+.rw-subpane__head small {
+  font-family: var(--font-ui);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  color: var(--ink-faint);
+  margin-left: 8px;
+}
+.rw-subpane__body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.rw-subpane__body--jobs { flex-direction: column; gap: 3px; }
+
+.rw-gizmo--trade .rw-gizmo__cost { color: #6b4a1e; }
+
+/* --- who is away at school ------------------------------------------ */
+.rw-trainees {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.rw-trainees li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  color: var(--ink-secondary);
+  padding: 2px 4px;
+  background: rgba(255, 255, 255, 0.28);
+  border-left: 2px solid #b08a3e;
+}
+.rw-trainees li small { color: var(--ink-faint); font-size: 11px; }
+
+/* --- standing work orders ------------------------------------------- */
+.rw-jobrow {
+  display: grid;
+  grid-template-columns: 18px 1fr 22px 24px 22px;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 4px;
+  background: rgba(255, 255, 255, 0.24);
+  border: 1px solid rgba(90, 66, 36, 0.18);
+  border-radius: 3px;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+  min-width: 250px;
+}
+.rw-jobrow__icon { display: flex; }
+.rw-jobrow__icon svg { width: 16px; height: 16px; }
+.rw-jobrow__count { text-align: center; font-weight: 700; color: #3b2817; }
+
+/* --- a villager who is away learning -------------------------------- */
+.rw-pawn--trainee { opacity: 0.72; }
+.rw-pawn--trainee .rw-pawn__box { border-style: dashed; }
+
+/* --- what the inspect pane now knows about a tile -------------------- */
+.rw-tileinfo__region {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a6526;
+  margin-bottom: 2px;
+}
+.rw-tileinfo__climate {
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--ink-faint);
+  margin-bottom: 6px;
+}
+
+/* --- names written across the country -------------------------------- */
+.art-region-label {
+  font-family: var(--font-display), serif;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: rgba(255, 248, 232, 0.55);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+/* The surf line breathes, unless the player turned the animations off. */
+.art-foam { animation: art-foam-pulse 5.5s ease-in-out infinite; }
+@keyframes art-foam-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.85; }
+}
+.no-motion .art-foam { animation: none; }
+
+.art-steam { animation: art-steam-rise 6s ease-in-out infinite; }
+@keyframes art-steam-rise {
+  0%   { opacity: 0; transform: translateY(4px); }
+  40%  { opacity: 0.7; }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+.no-motion .art-steam { animation: none; }

@@ -25,13 +25,63 @@ let settlementsKey = "";
 const TERRAIN_NAMES = {
   timbermellowForest: "Timbermellow forest",
   forest: "Forest",
+  birchWood: "Birch wood",
   denseBush: "Dense bush",
+  taiga: "Pine taiga",
   flowerMeadow: "Flowering meadow",
   plains: "Plains",
   mountains: "Mountains",
   rockyOutcrop: "Rocky outcrop",
   overgrownHighlands: "Terraced hills",
+  marsh: "Marshland",
+  tundra: "Cold tundra",
+  snowfield: "Snowfield",
+  badlands: "Badlands",
+  beach: "Shore",
   river: "River",
+  lake: "Lake",
+  ocean: "Open sea",
+};
+
+// What a tile is like to live on — shown in the inspect pane so the player
+// can tell a warm meadow from a frozen one before spending an expedition.
+function terrainClimateNote(tile) {
+  if (!tile) return "";
+  const parts = [];
+  if (tile.temperature !== undefined) {
+    parts.push(tile.temperature < 0.15 ? "frozen" : tile.temperature < 0.35 ? "cold" :
+               tile.temperature > 0.85 ? "parched" : tile.temperature > 0.65 ? "warm" : "temperate");
+  }
+  if (tile.moisture !== undefined) {
+    parts.push(tile.moisture > 0.65 ? "wet" : tile.moisture < 0.38 ? "dry" : "well-watered");
+  }
+  if (tile.elevation !== undefined) {
+    parts.push(tile.elevation > 0.72 ? "high ground" : tile.elevation < 0.32 ? "lowland" : "rolling");
+  }
+  return parts.join(" · ");
+}
+
+// Ground the player has seen but does not hold still shows its own colour on
+// the world panel, so the country reads as country and not as fog.
+const MINIMAP_TERRAIN_TINT = {
+  ocean: "#8fb4c4",
+  lake: "#79b3c8",
+  river: "#8ec5d6",
+  beach: "rgba(229, 211, 163, 0.7)",
+  mountains: "rgba(120, 117, 114, 0.55)",
+  snowfield: "rgba(232, 238, 244, 0.75)",
+  rockyOutcrop: "rgba(158, 139, 114, 0.5)",
+  badlands: "rgba(197, 138, 82, 0.55)",
+  tundra: "rgba(185, 191, 162, 0.55)",
+  marsh: "rgba(127, 143, 78, 0.55)",
+  taiga: "rgba(43, 90, 60, 0.5)",
+  denseBush: "rgba(51, 105, 50, 0.5)",
+  forest: "rgba(70, 133, 56, 0.5)",
+  birchWood: "rgba(127, 168, 68, 0.5)",
+  flowerMeadow: "rgba(136, 189, 90, 0.45)",
+  plains: "rgba(212, 190, 114, 0.45)",
+  overgrownHighlands: "rgba(188, 165, 99, 0.45)",
+  timbermellowForest: "rgba(120, 184, 78, 0.55)",
 };
 
 const RESOURCE_ICONS = {
@@ -125,6 +175,12 @@ async function initGame() {
   refreshVillagesPanel();
   update();
   villagers.start();
+}
+
+// The named stretch of country a tile belongs to, if it is part of one.
+function regionOfTile(tile) {
+  if (!world || !tile || !tile.regionId) return null;
+  return (world.regions || []).find((region) => region.id === tile.regionId) || null;
 }
 
 function villageCenter() {
@@ -228,10 +284,12 @@ function refreshMapEffects() {
 
 // Redraws buildings and roads only when something about them changed.
 function refreshSettlements(force) {
-  const key = `${stonehouse}|${barn}|${territoryClaimedCount()}`;
+  const key = `${stonehouse}|${barn}|${school}|${armycamp}|${territoryClaimedCount()}`;
   if (!force && key === settlementsKey) return;
   settlementsKey = key;
-  paintSettlements(document.getElementById("mapSettlementsHost"), world, hexMap, { houses: stonehouse, barns: barn });
+  paintSettlements(document.getElementById("mapSettlementsHost"), world, hexMap, {
+    houses: stonehouse, barns: barn, schools: school, camps: armycamp,
+  });
 }
 
 // game.js calls this from updatelog(): the newest lines pop up over the map.
@@ -296,9 +354,13 @@ function refreshTilePanel() {
     else if (frontier) { state = "Frontier — adjacent and explorable"; stateClass = "rw-tileinfo__state--frontier"; }
 
     const chip = foreign ? `<i class="chip" style="background:${villageColor(tile.owner)}"></i>` : "";
+    const region = regionOfTile(tile);
+    const climate = terrainClimateNote(tile);
     info.innerHTML = `
       <div class="rw-tileinfo__name">${TERRAIN_NAMES[tile.terrainType] || tile.terrainType}</div>
+      ${region ? `<div class="rw-tileinfo__region">${region.name}</div>` : ""}
       <div class="rw-tileinfo__state ${stateClass}">${chip}${state}</div>
+      ${climate ? `<div class="rw-tileinfo__climate">${climate}</div>` : ""}
       ${resourceBars(tile)}`;
   }
 
@@ -317,7 +379,8 @@ function refreshTilePanel() {
     reason.className = blocker ? "rw-reason rw-reason--blocked" : "rw-reason";
   } else {
     const blocker = territoryExploreBlocker(tile.id);
-    const cost = `${EXPLORE_MIN_HUMANS} villagers · ${EXPLORE_MIN_SOLDIERS} soldier · ${EXPLORE_FOOD_COST} food · ${EXPLORE_WORK_HOURS} hours`;
+    // Scouts make the march cheaper, so quote what it actually costs today.
+    const cost = `${EXPLORE_MIN_HUMANS} villagers · ${EXPLORE_MIN_SOLDIERS} soldier · ${territoryExploreFood()} food · ${territoryExploreHours()} hours`;
     setTileGizmo(button, "🚩", "Explore", false);
     button.onclick = explore;
     button.disabled = !!blocker;
@@ -402,24 +465,41 @@ function drawMinimap() {
   const ox = (cw - world.width * scale) / 2;
   const oy = (ch - world.height * scale) / 2;
 
+  // The sea is drawn whether or not it has been visited, so the island's
+  // shape is always readable — it is the one thing a sailor would know.
+  const radius = Math.max(1.8, mapGrid.hexSize * scale * 0.85);
+  for (const tile of hexMap.getAllTiles()) {
+    if (tile.terrainType !== "ocean") continue;
+    const center = worldTileCenter(tile.q, tile.r, mapGrid);
+    ctx.fillStyle = "#8fb4c4";
+    ctx.beginPath();
+    ctx.arc(ox + center.x * scale, oy + center.y * scale, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // Render rivers
   if (world.rivers && world.rivers.length) {
     ctx.strokeStyle = "rgba(74, 119, 122, 0.45)";
     ctx.lineWidth = Math.max(1, 2 * scale);
     ctx.lineCap = "round";
     for (const river of world.rivers) {
-      if (!river.points || river.points.length < 2) continue;
+      const ids = river.tileIds || river;
+      if (!ids || ids.length < 2) continue;
       ctx.beginPath();
-      ctx.moveTo(ox + river.points[0].x * scale, oy + river.points[0].y * scale);
-      for (let i = 1; i < river.points.length; i++) {
-        ctx.lineTo(ox + river.points[i].x * scale, oy + river.points[i].y * scale);
-      }
+      ids.forEach((id, index) => {
+        const tile = hexMap.getTile(id);
+        if (!tile) return;
+        const center = worldTileCenter(tile.q, tile.r, mapGrid);
+        const px = ox + center.x * scale;
+        const py = oy + center.y * scale;
+        if (index === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
       ctx.stroke();
     }
   }
 
   // Render hexes
-  const radius = Math.max(1.8, mapGrid.hexSize * scale * 0.85);
   for (const tile of hexMap.getAllTiles()) {
     if (!hexMap.isRevealed(tile.id)) continue;
     const center = worldTileCenter(tile.q, tile.r, mapGrid);
@@ -432,6 +512,8 @@ function drawMinimap() {
       ctx.fillStyle = villageColor(tile.owner);
     } else if (hexMap.isFrontier(tile.id)) {
       ctx.fillStyle = "rgba(100, 145, 75, 0.45)";
+    } else if (MINIMAP_TERRAIN_TINT[tile.terrainType]) {
+      ctx.fillStyle = MINIMAP_TERRAIN_TINT[tile.terrainType];
     } else {
       ctx.fillStyle = "rgba(180, 150, 110, 0.18)";
     }
@@ -512,10 +594,37 @@ function onMinimapClick(event) {
   viewport.focusOn({ x: worldX, y: worldY }, { width: world.width, height: world.height }, current.scale);
 }
 
+// ---------------------------------------------------------------------------
+// Menu actions the HUD calls by name
+// ---------------------------------------------------------------------------
+
+function saveNow() {
+  const ok = saveGame(worldSeed);
+  updatelog(ok ? "Game saved." : "Could not save — this browser is not letting the page store anything.", ok ? "good" : "bad");
+}
+
+function newGame() {
+  clearSavedGame();
+  location.search = "";
+}
+
+// Which way the garlocks are coming from, for the log and the raid alarm.
+// Returns something like " from the north-east", or "" if their camp has
+// not been found yet.
+function garlockDirectionText() {
+  if (!hexMap || typeof villagesGet !== "function") return "";
+  const camp = villagesGet().find((village) => village.kind === "garlock");
+  if (!camp) return "";
+  const home = hexMap.getAllTiles().find((tile) => tile.isStartingTile);
+  const campTile = hexMap.getTile(camp.homeTileId);
+  if (!home || !campTile) return "";
+  return ` from the ${directionBetween(home, campTile, mapGrid)}`;
+}
+
 function focusVillage() {
   if (!viewport) return;
   const current = viewport.getView();
-  viewport.focusOn(villageCenter(), { width: world.width, height: world.height }, Math.max(2.2, current.scale));
+  viewport.focusOn(villageCenter(), { width: world.width, height: world.height }, Math.max(2.6, current.scale));
 }
 
 function focusSelectedTile() {
@@ -528,7 +637,8 @@ function focusSelectedTile() {
 
 function selectBestFrontier() {
   if (!hexMap) return;
-  const frontier = hexMap.getAllTiles().filter((tile) => hexMap.isFrontier(tile.id) && !tile.owner);
+  const frontier = hexMap.getAllTiles().filter((tile) =>
+    hexMap.isFrontier(tile.id) && !tile.owner && !["ocean", "lake"].includes(tile.terrainType));
   if (!frontier.length) return;
   const worth = (tile) => Object.values(tile.resources || {}).reduce((total, entry) => total + (entry.amount || 0), 0);
   frontier.sort((a, b) => worth(b) - worth(a));

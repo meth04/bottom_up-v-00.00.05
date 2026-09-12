@@ -9,7 +9,7 @@ const SAVE_KEY = "bottom_up.save.v1";
 
 function saveGame(seed) {
   const state = {
-    version: 2,
+    version: 3,
     seed,
     savedAt: new Date().toISOString(),
     game: gameGetState(),
@@ -31,7 +31,7 @@ function loadSavedGame() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
     const state = JSON.parse(raw);
-    return state && state.version === 2 ? state : null;
+    return state && state.version === 3 ? state : null;
   } catch (error) {
     return null;
   }

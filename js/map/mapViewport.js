@@ -6,8 +6,8 @@
 // they can never slide apart.
 
 function setupMapViewport(stage, viewport) {
-  const MIN_SCALE = 0.75;
-  const MAX_SCALE = 4.5;
+  const MIN_SCALE = 0.65;
+  const MAX_SCALE = 5.0;
 
   let scale = 1;
   let translateX = 0;

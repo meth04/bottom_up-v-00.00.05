@@ -31,6 +31,15 @@ class HexMap {
         terrainType: tile.terrainType,
         specialEffect: tile.specialEffect || null,
         landmark: tile.landmark || null,
+        // Kept from worldGen so the inspect pane can describe the place and
+        // the painter can scatter the same undergrowth every time.
+        elevation: tile.elevation,
+        moisture: tile.moisture,
+        temperature: tile.temperature,
+        regionId: tile.regionId || null,
+        detailSeed: tile.detailSeed || 0,
+        snowCapped: !!tile.snowCapped,
+        coastal: !!tile.coastal,
         isStartingTile: !!tile.isStartingTile,
         villageId: tile.villageId || null,   // set on a village's home tile
         owner: null,                         // village id, or null for wild land
@@ -209,6 +218,37 @@ class HexMap {
     return grown;
   }
 
+  // Takes a share of the given resources off the player's tiles *and* off
+  // what those tiles can ever hold again. The famine, in one method.
+  wither(types, fraction) {
+    let lost = 0;
+    for (const tile of this.getClaimedTiles()) {
+      for (const type of types) {
+        const entry = tile.resources[type];
+        if (!entry) continue;
+        const gone = Math.floor(entry.amount * fraction);
+        entry.amount -= gone;
+        entry.max = Math.max(1, Math.floor(entry.max * (1 - fraction)));
+        if (entry.amount > entry.max) entry.amount = entry.max;
+        lost += gone;
+      }
+    }
+    return lost;
+  }
+
+  // Shrinks what the player's land can hold, without touching what is on it.
+  // Called every autumn once the famine has begun.
+  decayCapacity(types, fraction) {
+    for (const tile of this.getClaimedTiles()) {
+      for (const type of types) {
+        const entry = tile.resources[type];
+        if (!entry || !entry.renewable) continue;
+        entry.max = Math.max(1, Math.floor(entry.max * (1 - fraction)));
+        if (entry.amount > entry.max) entry.amount = entry.max;
+      }
+    }
+  }
+
   // ---- Selection (for the tile panel) -------------------------------------------
 
   selectTile(id) {
@@ -227,8 +267,13 @@ class HexMap {
     const tiles = {};
     for (const tile of this.getAllTiles()) {
       const amounts = {};
-      for (const type of Object.keys(tile.resources)) amounts[type] = tile.resources[type].amount;
-      tiles[tile.id] = { owner: tile.owner, seen: tile.seen, amounts };
+      const maxes = {};
+      for (const type of Object.keys(tile.resources)) {
+        amounts[type] = tile.resources[type].amount;
+        // The famine shrinks a tile's ceiling, so that has to be saved too.
+        maxes[type] = tile.resources[type].max;
+      }
+      tiles[tile.id] = { owner: tile.owner, seen: tile.seen, amounts, maxes };
     }
     return { mapmakingUnlocked: this.mapmakingUnlocked, claimOrder: this.claimOrder.slice(), tiles };
   }
@@ -242,6 +287,9 @@ class HexMap {
       const entry = saved.tiles[id];
       tile.owner = entry.owner || null;
       tile.seen = !!entry.seen;
+      for (const type of Object.keys(entry.maxes || {})) {
+        if (tile.resources[type]) tile.resources[type].max = entry.maxes[type];
+      }
       for (const type of Object.keys(entry.amounts || {})) {
         if (tile.resources[type]) tile.resources[type].amount = entry.amounts[type];
       }
