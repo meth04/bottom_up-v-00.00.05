@@ -335,7 +335,7 @@ the network reads as roads and not as a brown mat.
   hours, more mouths.
 * **Train a soldier** — turns a human into a soldier. Soldiers don't work,
   but they escort expeditions, seize land, and defend the village.
-* **Build a barn** — 4 wood. Each barn holds 5 timbermellows.
+* **Build a barn** — 4 wood. Each barn holds 8 food.
 * **Build a house** — 2 stone. Each house shelters 3 people. Anyone without
   a roof in winter dies of exposure.
 * **Build a school** — 8 wood, 6 stone, 2 hours. Trains farmers, foresters,

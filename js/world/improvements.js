@@ -197,9 +197,9 @@ export class Improvements {
   // houses, a market at four, a watchtower once there is an army camp or
   // the garlocks have come, a dock when the town stands by water.
   //
-  // The defences follow js/raids.js's counters: `watchtowers` towers (at
-  // least the one the army camp earns) on the edge of town facing out, and
-  // six stakes of palisade per ring built, two hexes out from the hall.
+  // The defences follow js/raids.js's counters: `watchtowers` towers on the
+  // edge of town facing out, and six stakes of palisade per ring built, two
+  // hexes out from the hall. No freebies — what you see is what you paid for.
   syncTown(villageId, counters, preferredTileId) {
     const home = this.hexMap.homeTileOf(villageId);
     if (!home) return { placed: [], removed: [] };
@@ -212,7 +212,7 @@ export class Improvements {
       armyCamp: counters.camps || 0,
       well: houses >= 2 ? 1 : 0,
       market: houses >= 4 ? 1 : 0,
-      watchtower: Math.max(counters.watchtowers || 0, (counters.camps || 0) >= 1 || counters.raided ? 1 : 0),
+      watchtower: counters.watchtowers || 0,
       dock: houses >= 3 && this.townHasShore(home, villageId) ? 1 : 0,
       palisade: (counters.palisades || 0) * 6,
     };

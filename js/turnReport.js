@@ -106,6 +106,10 @@ function turnReportBuild() {
   }
 
   for (const note of turnNotes) lines.push({ icon: note.kind === "bad" ? "warn" : "info", text: note.text, kind: note.kind });
+  // T-fix: the panel promises six lines — cap it so a bloody turn does not
+  // become ten lines that vanish after 9s.
+  const TURN_REPORT_MAX = 6;
+  if (lines.length > TURN_REPORT_MAX) return lines.slice(0, TURN_REPORT_MAX);
   return lines;
 }
 

@@ -2552,7 +2552,12 @@ body {
   .rw-pawn__name { display: none; }
   .rw-rightcol { width: 190px; bottom: 210px; }
   .rw-world canvas { height: 110px; }
-  .rw-tutor { display: none; }
+  /* T2: tutor becomes a collapsible bottom sheet, never display:none, so
+     phone players still learn. Collapsed to its head until tapped. */
+  .rw-tutor { display: block; max-height: 88px; overflow: hidden; font-size: 12px; }
+  .rw-tutor__foot { display: none; }
+  .rw-tutor:focus-within, .rw-tutor:hover { max-height: 220px; overflow: auto; }
+  .rw-tutor:focus-within .rw-tutor__foot, .rw-tutor:hover .rw-tutor__foot { display: flex; }
   .rw-maptools { top: auto; bottom: 8px; left: 50%; }
   .rw-tool { width: 44px; font-size: 9px; }
   .rw-toolhint { top: auto; bottom: 66px; }
@@ -2584,7 +2589,11 @@ body {
   .rw-readout__sep { display: none; }
   .rw-rightcol { top: 58px; right: 4px; width: 150px; bottom: 45vh; gap: 4px; }
   .rw-world { display: none; }
-  .rw-tutor { display: none; }
+  /* T2: same bottom-sheet treatment on small phones. */
+  .rw-tutor { display: block; max-height: 74px; overflow: hidden; font-size: 11.5px; }
+  .rw-tutor p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .rw-tutor:focus-within, .rw-tutor:hover { max-height: 200px; }
+  .rw-tutor:focus-within p, .rw-tutor:hover p { display: block; -webkit-line-clamp: unset; }
   .rw-alert { padding: 3px 6px; font-size: 11px; }
   .toasts { display: none; }
   .rw-inspect { left: 4px; bottom: 58px; width: 50vw; max-width: 230px; gap: 3px; }
@@ -2608,8 +2617,41 @@ body {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Objectives, intro, raids                                               */
+/* T2: Next chip, End Turn forecast, alert overflow, mobile tutor sheet   */
 /* ---------------------------------------------------------------------- */
+
+.rw-nextchip {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 220px;
+  padding: 6px 10px;
+  border: 1px solid var(--edge-gold);
+  border-radius: 4px;
+  background: linear-gradient(180deg, #f7e6b0, #eec95f);
+  color: #3b250c;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-button);
+}
+.rw-nextchip__label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.7; }
+.rw-nextchip__text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rw-nextchip:hover { filter: brightness(1.05); }
+
+.rw-endturn__preview { display: block; font-size: 11px; opacity: 0.85; font-weight: 400; }
+.rw-alert--more { opacity: 0.85; border-style: dashed; }
+.rw-tip__block { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--edge-soft); color: var(--accent-wax-red); font-weight: 600; }
+
+/* T6: portal polish — title pitch, touch-action so pinch/drag never scrolls
+   the page on phones, FPS meter always readable. */
+.title-pitch { display: flex; flex-direction: column; gap: 2px; margin: 10px 0 4px; font-family: var(--font-ui); font-size: 13px; color: var(--ink-secondary); text-align: center; }
+.title-pitch b { color: #7a3811; }
+#mapstage, #mapstage canvas { touch-action: none; }
+.rw-fps { font-variant-numeric: tabular-nums; }
+
+/* Objectives, intro, raids                                               */
 
 .rw-objectives { border-color: var(--edge-gold); }
 .rw-objectives__list { list-style: none; margin: 0; padding: 4px 6px 6px; display: flex; flex-direction: column; gap: 3px; }
@@ -2650,5 +2692,8 @@ body {
 .rw-raidinfo--bad b { color: var(--accent-wax-red); }
 
 @media (max-width: 600px) {
-  .rw-objectives { display: none; }
+  /* T2: objectives collapse to the Next chip instead of vanishing. */
+  .rw-objectives { display: block; max-height: 76px; overflow: hidden; }
+  .rw-objectives__list { gap: 2px; }
+  .rw-objective__hint { display: none; }
 }

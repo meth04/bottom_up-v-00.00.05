@@ -45,8 +45,8 @@ G.hexMap = {
 G.villagesGet = () => villages;
 G.villageById = (id) => villages.find((village) => village.id === id) || null;
 G.villageName = (id) => (G.villageById(id) || { name: "someone" }).name;
-// The same formula as js/villages.js.
-G.villageStrength = (village, map) => (village.kind === "garlock" ? 4 : 2) + Math.round(map.countOwnedBy(village.id) / 5) * 2;
+// The same formula as js/villages.js (T1: tiles / 8).
+G.villageStrength = (village, map) => (village.kind === "garlock" ? 4 : 2) + Math.round(map.countOwnedBy(village.id) / 8) * 2;
 // game.js's defence without captains, camps or roads.
 G.garlockVillageDefence = () => G.human_army * 3;
 
@@ -125,12 +125,12 @@ test("strength: attack counts soldiers, captains and a scout; defence counts wal
   assert.equal(raidPlayerDefence(), 12);
   resetRaids({ palisade: 2, watchtower: 1 });
   assert.equal(raidPlayerDefence(), 12 + 2 * PALISADE_DEFENCE + WATCHTOWER_DEFENCE);
-  // Eastmere holds 15 tiles: 2 + 3*2 = 8. Northholm's 60 earn +3. The garlocks +2.
-  assert.equal(raidVillageDefence("rival_1"), 8);
-  assert.equal(raidVillageDefence("rival_2"), 2 + 24 + 3);
-  assert.equal(raidVillageDefence("garlock_1"), 4 + 4 + 2);
+  // T1: tiles / 8. Eastmere 15 -> 2 + 2*2 = 6. Northholm 60 -> 2 + 8*2 = 18 +3. Garlocks 10 -> 4 + 1*2 +2 = 8.
+  assert.equal(raidVillageDefence("rival_1"), 6);
+  assert.equal(raidVillageDefence("rival_2"), 2 + 16 + 3);
+  assert.equal(raidVillageDefence("garlock_1"), 4 + 2 + 2);
   resetRaids({ raidVassals: { rival_1: 3 } });
-  assert.equal(raidVillageDefence("rival_1"), 4, "a vassal's defence is halved");
+  assert.equal(raidVillageDefence("rival_1"), 3, "a vassal's defence is halved");
 });
 
 test("blockers, in order", () => {
@@ -149,8 +149,19 @@ test("blockers, in order", () => {
   assert.equal(raidBlocker("rival_1"), null);
   resetRaids({ raidVassals: { rival_1: 2 } });
   assert.match(raidBlocker("rival_1"), /vassal already/);
-  resetRaids({ raidsOutgoing: [{ villageId: "garlock_1", soldiers: 2, launchedTurn: 4, arriveTurn: 6 }] });
+  // T1: two warbands at once. Same hall blocks; a different hall is fine
+  // until two are already out. rival_2 is unrevealed in fixtures, so reveal
+  // it for this check.
+  resetRaids({ raidsOutgoing: [{ villageId: "rival_1", soldiers: 2, launchedTurn: 4, arriveTurn: 6 }] });
   assert.match(raidBlocker("rival_1"), /already under way/);
+  revealed.add("h_r2");
+  assert.equal(raidBlocker("garlock_1"), null, "a second raid on another hall is allowed");
+  resetRaids({ raidsOutgoing: [
+    { villageId: "rival_1", soldiers: 2, launchedTurn: 4, arriveTurn: 6 },
+    { villageId: "garlock_1", soldiers: 2, launchedTurn: 4, arriveTurn: 6 },
+  ] });
+  assert.match(raidBlocker("rival_2"), /Two raids are already under way/);
+  revealed.delete("h_r2");
   const info = raidVillageInfo("rival_far");
   assert.equal(info.reachable, false);
   assert.equal(info.sameContinent, false);
@@ -182,29 +193,30 @@ test("a launch pays, takes the soldiers off the roster and tells the map", () =>
 });
 
 test("a sure win loots the hall and the survivors come home", () => {
-  // Four soldiers (12) against Eastmere's 8: the worst roll, 9.6, still wins.
+  // T1: Three soldiers (9) against Eastmere's 6: the worst roll, 7.2, still
+  // wins, but 9 < 2*6 so it stays an ordinary win, not an instant vassal.
   resetVillage({ human_army: 5 });
   resetRaids();
-  raidLaunch("rival_1", 4);
-  assert.equal(G.human_army, 1);
+  raidLaunch("rival_1", 3);
+  assert.equal(G.human_army, 2);
   G.turngame = turnFor("rival_1", false, 6);
   raidsTakeTurn();
   const state = raidsGetState();
   assert.equal(state.raidsOutgoing.length, 0);
-  // 15 tiles * 0.25 = 4 of each; the barns had room for all the food.
+  // 15 tiles * 0.25 = 4 food/wood; stone comes home at half rate (no quarry).
   assert.equal(G.timbermellow_count, 4 + 4);
   assert.equal(G.wood, 24);
-  assert.equal(G.stone, 14);
-  // ceil(8 / 6) = 2 soldiers lost, two come home.
-  assert.equal(G.human_army, 3);
+  assert.equal(G.stone, 12);
+  // T1: ceil(6 / 6) = 1 soldier lost, two come home.
+  assert.equal(G.human_army, 4);
   assert.equal(state.raidWins.rival_1, 1);
   assert.equal(state.raidGrudge.rival_1, 2);
   assert.equal(state.raidVassals.rival_1, undefined, "one ordinary win is not a vassal");
   assert.equal(hooks.resolved.length, 1);
-  assert.deepEqual(hooks.resolved[0], { villageId: "rival_1", incoming: false, won: true, loot: { food: 4, wood: 4, stone: 4 }, lost: 2, vassal: false });
+  assert.deepEqual(hooks.resolved[0], { villageId: "rival_1", incoming: false, won: true, loot: { food: 4, wood: 4, stone: 2 }, lost: 1, vassal: false });
   assert.equal(state.raidLog.length, 1);
   assert.equal(state.raidLog[0].won, true);
-  assert.ok(log.some((entry) => /carried off 4 timbermellows, 4 wood, 4 stone/.test(entry.text)));
+  assert.ok(log.some((entry) => /carried off 4 timbermellows, 4 wood, 2 stone/.test(entry.text)));
 });
 
 test("food loot is capped by the barns", () => {
@@ -218,7 +230,7 @@ test("food loot is capped by the barns", () => {
 });
 
 test("a hopeless raid loses half the party and earns a grudge", () => {
-  // Two soldiers (6) against Northholm's 29: the best roll, 7.2, still loses.
+  // T1: Two soldiers (6) against Northholm's 21: the best roll, 7.2, still loses.
   revealed.add("h_r2");
   resetVillage({ human_army: 2 });
   resetRaids();
@@ -250,8 +262,8 @@ test("two wins make a vassal; so does one overwhelming win", () => {
   assert.deepEqual(hooks.milestones, ["A Vassal"]);
   assert.equal(raidVillageInfo("rival_1").vassal, true);
 
-  // The garlock camp (4 + 4 for ten tiles + 2 = 10) against seven soldiers (21):
-  // 21 >= 2 * 10 -> "sure", and a vassal at once.
+  // The garlock camp (4 + 1*2 for ten tiles + 2 = 8) against seven soldiers (21):
+  // 21 >= 2 * 8 -> "sure", and a vassal at once.
   resetVillage({ human_army: 7 });
   resetRaids();
   assert.equal(raidVillageInfo("garlock_1").odds, "sure");
@@ -280,17 +292,32 @@ test("vassals pay tribute every turn and never raid", () => {
 });
 
 test("a rival with a grudge schedules a raid on its beat; watchtowers see it a turn earlier", () => {
+  // T-fix: GRUDGE_DECAY_TURNS is 8 now, so avoid decay turns or the grudge
+  // drops 3->2 between the two takeTurns and the strength reads 10 not 12.
+  const offBeat = () => {
+    let t = turnFor("rival_1", false, 9);
+    while (t % GRUDGE_DECAY_TURNS === 0) t++;
+    while (t % RIVAL_RAID_INTERVAL === raidVillageHash("rival_1") % RIVAL_RAID_INTERVAL) t++;
+    return t;
+  };
+  const onBeat = () => {
+    let t = turnFor("rival_1", true, 9);
+    while (t % GRUDGE_DECAY_TURNS === 0) t += RIVAL_RAID_INTERVAL;
+    return t;
+  };
   resetVillage();
   resetRaids({ raidGrudge: { rival_1: 3 } });
-  G.turngame = turnFor("rival_1", false, 8);
+  G.turngame = offBeat();
   raidsTakeTurn();
   assert.equal(raidsGetState().raidsIncoming.length, 0, "off the beat, nobody comes");
-  G.turngame = turnFor("rival_1", true, 8);
+  resetRaids({ raidGrudge: { rival_1: 3 } });
+  G.turngame = onBeat();
   raidsTakeTurn();
   let incoming = raidsGetState().raidsIncoming;
   assert.equal(incoming.length, 1);
   assert.equal(incoming[0].villageId, "rival_1");
-  assert.equal(incoming[0].strength, 8 + 3 * 2);
+  // T1: villageStrength 15 tiles -> 6, so 6 + 3*2 = 12.
+  assert.equal(incoming[0].strength, 6 + 3 * 2);
   assert.equal(incoming[0].turn, G.turngame + 1);
   assert.deepEqual(hooks.incoming, [{ villageId: "rival_1", turn: G.turngame + 1 }]);
   assert.ok(log.some((entry) => /Scouts from Eastmere/.test(entry.text)));
@@ -314,7 +341,8 @@ test("a rival with a grudge schedules a raid on its beat; watchtowers see it a t
 
 test("an incoming raid is resolved against the defence, palisades counting", () => {
   // Fourteen strong against two soldiers (6) and three rings (9): repelled.
-  resetVillage({ human_army: 2, timbermellow_count: 20, wood: 30, barn: 3, storage_capacity: 15 });
+  // T1: barns hold 8 each (3 barns = 24).
+  resetVillage({ human_army: 2, timbermellow_count: 20, wood: 30, barn: 3, storage_capacity: 24 });
   resetRaids({ palisade: 3, raidGrudge: { rival_1: 3 }, raidsIncoming: [{ villageId: "rival_1", strength: 14, turn: 9, seenTurn: 8 }] });
   G.turngame = turnFor("rival_1", false, 9);
   raidsSetState(Object.assign(raidsGetState(), { raidsIncoming: [{ villageId: "rival_1", strength: 14, turn: G.turngame, seenTurn: G.turngame - 1 }] }));
@@ -329,13 +357,13 @@ test("an incoming raid is resolved against the defence, palisades counting", () 
   assert.ok(log.some((entry) => /broke on the palisade/.test(entry.text)));
 
   // The same raid with no walls: shortfall 8, capped at 6.
-  resetVillage({ human_army: 2, timbermellow_count: 20, wood: 30, barn: 3, storage_capacity: 15 });
+  resetVillage({ human_army: 2, timbermellow_count: 20, wood: 30, barn: 3, storage_capacity: 24 });
   resetRaids({ raidsIncoming: [{ villageId: "rival_1", strength: 14, turn: G.turngame, seenTurn: G.turngame - 1 }] });
   raidsTakeTurn();
   assert.equal(G.timbermellow_count, 20 - (10 + 6));
   assert.equal(G.wood, 30 - 18);
   assert.equal(G.barn, 2);
-  assert.equal(G.storage_capacity, 10);
+  assert.equal(G.storage_capacity, 16, "T1: 2 barns hold 16");
   assert.equal(G.human_army, 0);
   assert.equal(G.humans, 6, "a rival raid never sacks the village");
   const result = hooks.resolved[0];
@@ -371,6 +399,34 @@ test("victory when every village on the continent is a vassal", () => {
   assert.equal(raidsCheckVictory(), true);
   resetRaids();
   assert.equal(raidsCheckVictory(), false, "nothing to win with nobody beaten");
+});
+
+test("T1 casual: three vassals wins a big continent early", () => {
+  resetVillage();
+  // Five rivals on the continent, only three bent — still a win for 30-min runs.
+  // Note: G.villageById in this file closes over `villages`, so override it too.
+  const bigList = [
+    { id: "player", name: "Home", kind: "player", color: "#fff", homeTileId: "h_p", continentId: 0 },
+    { id: "rival_1", name: "A", kind: "rival", color: "#000", homeTileId: "h_r1", continentId: 0 },
+    { id: "rival_2", name: "B", kind: "rival", color: "#000", homeTileId: "h_r2", continentId: 0 },
+    { id: "garlock_1", name: "C", kind: "garlock", color: "#000", homeTileId: "h_g", continentId: 0 },
+    { id: "extra_1", name: "D", kind: "rival", color: "#000", homeTileId: "h_r1", continentId: 0 },
+    { id: "extra_2", name: "E", kind: "rival", color: "#000", homeTileId: "h_r2", continentId: 0 },
+  ];
+  const oldGet = G.villagesGet;
+  const oldById = G.villageById;
+  const oldName = G.villageName;
+  G.villagesGet = () => bigList;
+  G.villageById = (id) => bigList.find((village) => village.id === id) || null;
+  G.villageName = (id) => (G.villageById(id) || { name: "someone" }).name;
+  resetRaids({ raidVassals: { rival_1: 3, rival_2: 5, garlock_1: 6 } });
+  const report = raidsContinentReport();
+  assert.equal(report.total, 5);
+  assert.equal(report.vassals, 3);
+  assert.equal(raidsCheckVictory(), true, "three vassals is a continent won");
+  G.villagesGet = oldGet;
+  G.villageById = oldById;
+  G.villageName = oldName;
 });
 
 test("the buildings pay and are capped", () => {

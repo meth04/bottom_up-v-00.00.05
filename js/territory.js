@@ -20,10 +20,12 @@
 // checked humans > 3, soldiers > 2 and timbermellows > 10 — seven people
 // before your first step outside, which is a long wait — so the soldier
 // requirement is lower here.
+// T1 portal tuning (casual 20-30 min): food 10 -> 6, hours 4 -> 3, so the
+// first district lands around turn 5 instead of turn 12.
 const EXPLORE_MIN_HUMANS = 3;
 const EXPLORE_MIN_SOLDIERS = 1;
-const EXPLORE_FOOD_COST = 10;
-const EXPLORE_WORK_HOURS = 4;
+const EXPLORE_FOOD_COST = 6;
+const EXPLORE_WORK_HOURS = 3;
 
 // The grid is fine — a hex is a field, not a county — so an expedition does
 // not trudge out to claim one field. It settles the ground around where it
@@ -223,7 +225,11 @@ function territoryExploreBlocker(tileId) {
   if (tile.terrainType === "lake") return "That is deep water — nobody can settle a lake.";
   if (!territoryMap.isFrontier(tileId)) return "You can only explore land next to your own.";
   if (humans < EXPLORE_MIN_HUMANS) return `You need at least ${EXPLORE_MIN_HUMANS} humans to send an expedition.`;
-  if (human_army < EXPLORE_MIN_SOLDIERS) return `An expedition needs ${EXPLORE_MIN_SOLDIERS} soldier${EXPLORE_MIN_SOLDIERS > 1 ? "s" : ""} as escort.`;
+  // T1: the very first step out needs no escort, so casuals see a new
+  // district early. Once the valley (~37 hexes) has grown past 40 tiles,
+  // expeditions need their soldier again.
+  const claimedNow = typeof territoryClaimedCount === "function" ? territoryClaimedCount() : 99;
+  if (human_army < EXPLORE_MIN_SOLDIERS && claimedNow > 40) return `An expedition needs ${EXPLORE_MIN_SOLDIERS} soldier${EXPLORE_MIN_SOLDIERS > 1 ? "s" : ""} as escort.`;
   if (timbermellow_count < territoryExploreFood()) return `An expedition needs ${territoryExploreFood()} timbermellows as provisions.`;
   if (working_hours < territoryExploreHours()) return `Exploring takes ${territoryExploreHours()} work hours.`;
   return null;
@@ -278,6 +284,9 @@ function territorySeizeBlocker(tileId) {
   if (!tile.owner || tile.owner === "player") return "Only another village's land can be seized.";
   if (tile.villageId === tile.owner) return `${villageName(tile.owner)} itself cannot be taken — only the land around it.`;
   if (!territoryMap.isSeizable(tileId)) return "You can only seize land next to your own.";
+  // T-fix: no blind snips — the tile must have been seen. Raids need the
+  // hall revealed; seizing the fields around it needs the fields seen.
+  if (typeof territoryMap.isRevealed === "function" && !territoryMap.isRevealed(tileId)) return "Scout it first — you cannot seize land you have not seen.";
   const needed = territorySeizeSoldiersNeeded(tileId);
   if (human_army < needed) return `Seizing this from ${villageName(tile.owner)} needs ${needed} soldiers.`;
   if (timbermellow_count < SEIZE_FOOD_COST) return `The soldiers need ${SEIZE_FOOD_COST} timbermellows for the march.`;
@@ -285,11 +294,15 @@ function territorySeizeBlocker(tileId) {
   return null;
 }
 
-// Takes the district, pays the cost, loses a soldier. Returns the tile or null.
+// Takes the district, pays the cost, loses a soldier (unless overwhelming).
+// Returns the tile or null.
 function territorySeize(tileId) {
   if (territorySeizeBlocker(tileId)) return null;
   const tile = territoryMap.getTile(tileId);
   const previousOwner = tile.owner;
+  // T-fix: overwhelming force takes ground clean instead of always burying one.
+  const needed = territorySeizeSoldiersNeeded(tileId);
+  const lost = human_army >= needed + 3 ? 0 : SEIZE_SOLDIERS_LOST;
   territoryMap.claimTile(tileId, "player");
   // Soldiers take the ground around what they took, but never a village
   // itself — "you can take the land around a village, never the village".
@@ -299,7 +312,7 @@ function territorySeize(tileId) {
     if (UNSETTLEABLE.includes(neighbour.terrainType)) continue;
     territoryMap.claimTile(neighbour.id, "player");
   }
-  human_army -= SEIZE_SOLDIERS_LOST;
+  human_army -= lost;
   timbermellow_count -= SEIZE_FOOD_COST;
   working_hours -= SEIZE_WORK_HOURS;
   territoryChangedCallback({ kind: "seize", tile, from: previousOwner });
@@ -392,7 +405,7 @@ function territoryTradeTurn() {
 
   const names = partners.map((id) => villageName(id)).join(", ");
   if (typeof updatelog === "function") {
-    updatelog(`Traders from ${names} came up the road with ${foodTaken} timbermellow${foodTaken === 1 ? "" : "s"} and ${woodTaken} wood.`, "good");
+    updatelog(`Traders from ${names} came up the road with ${foodTaken} food${foodTaken === 1 ? "" : "s"} and ${woodTaken} wood.`, "good");
   }
   if (typeof turnReportNote === "function") turnReportNote(`trade brought ${foodTaken} food and ${woodTaken} wood`, "good");
   return partners;

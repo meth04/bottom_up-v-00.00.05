@@ -19,6 +19,10 @@ function legacyState() {
     humans, human_army, wood, stone, timbermellow_count, working_hours,
     stonehouse, barn, storage_capacity, peoplecap,
     school, armycamp, professionCounts,
+    // T-fix: walls were invisible across the seam; the map read them through
+    // a side channel instead. Now they ride with the rest of the numbers.
+    palisade: (typeof palisade !== "undefined" ? palisade : 0),
+    watchtower: (typeof watchtower !== "undefined" ? watchtower : 0),
     seasonchecker, season, turngame,
     farming_made, mapmaking_made,
     garlocks_attacking, garlock_next_raid_turn,

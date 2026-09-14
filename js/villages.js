@@ -13,7 +13,9 @@
 // ---------------------------------------------------------------------------
 
 // Chance per turn that a village settles one more tile.
-const VILLAGE_EXPAND_CHANCE = { rival: 0.35, garlock: 0.5 };
+// T1 portal tuning: rivals 0.35 -> 0.2, garlocks 0.5 -> 0.35, so the map
+// does not outgrow a casual player and defence stays readable.
+const VILLAGE_EXPAND_CHANCE = { rival: 0.2, garlock: 0.35 };
 
 // A village's strength grows with its land; seizing one of its tiles needs
 // soldiers in proportion (see territory.js, SEIZE_*).
@@ -22,7 +24,8 @@ function villageStrength(village, map) {
   const base = village.kind === "garlock" ? 4 : 2;
   // A tile is a field now, not a county, so it takes a lot more of them to
   // make a village formidable (js/territory.js, CLAIM_RADIUS).
-  return base + Math.round(tiles / 5) * 2;
+  // T1: tiles / 8 (was / 5) so late-game defence scales slower for 30-min runs.
+  return base + Math.round(tiles / 8) * 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,10 +82,10 @@ function villagesTakeTurn(map, grid, turn, seed, log) {
     if (!frontier.length) continue;
     const target = frontier[Math.floor(random() * frontier.length)];
     map.claimTile(target.id, village.id);
-    // A village spreads into a patch of ground, not one field at a time —
-    // a hamlet's worth at once, the same as one of the player's expeditions
-    // (js/territory.js, CLAIM_RADIUS).
-    for (const { q, r } of hexSpiral(target, 2)) {
+    // A village spreads into a patch of ground, not one field at a time.
+    // T-fix: radius 1 (~7 hexes), not 2 (~19). Rivals used to out-settle the
+    // player for free while the player paid 6 food + 3h for the same district.
+    for (const { q, r } of hexSpiral(target, 1)) {
       const neighbour = map.tilesByCoord.get(hexKey(q, r));
       if (!neighbour || neighbour.owner) continue;
       if (["ocean", "lake", "mountains", "snowfield"].includes(neighbour.terrainType)) continue;

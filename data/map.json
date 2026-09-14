@@ -69,19 +69,13 @@
     },
     "marsh": {
       "wood": { "amount": 9, "renewable": true },
-      "timbermellow": { "amount": 10, "renewable": true },
-      "clay": { "amount": 17, "renewable": false }
+      "timbermellow": { "amount": 10, "renewable": true }
     },
     "beach": {
-      "stone": { "amount": 7, "renewable": false },
-      "clay": { "amount": 13, "renewable": false }
+      "stone": { "amount": 7, "renewable": false }
     },
-    "river": {
-      "clay": { "amount": 28, "renewable": false }
-    },
-    "lake": {
-      "clay": { "amount": 20, "renewable": false }
-    },
+    "river": {},
+    "lake": {},
     "ocean": {},
     "hills": {
       "grain": { "amount": 6, "renewable": true },

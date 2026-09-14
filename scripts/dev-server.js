@@ -2,11 +2,14 @@
 //
 // Tiny zero-dependency static file server, just so index.html can fetch()
 // data/map.json (browsers block fetch() of local files over file://).
-// Not part of the game itself — dev convenience only.
+// T4: also portal-ready — gzip for text, long cache for hashed-immutable
+// assets (js/css), no-cache for html/json, so `node scripts/dev-server.js`
+// doubles as a prod preview server. Not part of the game itself.
 
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const zlib = require("zlib");
 
 const ROOT = path.join(__dirname, "..");
 const PORT = process.env.PORT || 8080;
@@ -44,7 +47,24 @@ const server = http.createServer((req, res) => {
       return;
     }
     const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, { "Content-Type": MIME_TYPES[ext] || "application/octet-stream" });
+    const type = MIME_TYPES[ext] || "application/octet-stream";
+    // T4: cache immutable code, never cache the shell or the data.
+    const cache = ext === ".html" || ext === ".json"
+      ? "no-cache"
+      : "public, max-age=3600";
+    const headers = { "Content-Type": type, "Cache-Control": cache };
+    const accept = req.headers["accept-encoding"] || "";
+    const compressible = /^(text\/|application\/(javascript|json))/.test(type);
+    if (compressible && /\bgzip\b/.test(accept)) {
+      headers["Content-Encoding"] = "gzip";
+      res.writeHead(200, headers);
+      zlib.gzip(data, (zipErr, zipped) => {
+        if (zipErr) res.end(data);
+        else res.end(zipped);
+      });
+      return;
+    }
+    res.writeHead(200, headers);
     res.end(data);
   });
 });

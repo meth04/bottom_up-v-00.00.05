@@ -346,13 +346,14 @@ function jobsRunAuto() {
 
     if (type === "timbermellow") {
       if (seasonchecker === 4) continue;                       // nothing grows
-      let perHour = 1 + (foodbasketmade >= 1 ? 1 : 0) + professionGatherBonus("timbermellow");
-      if (seasonchecker === 3) perHour *= 2;                   // the harvest
+      // Autumn doubles the base harvest only — baskets and farmers add
+      // after, so the cap of 3 specialists still means something.
+      let perHour = (seasonchecker === 3 ? 2 : 1) + (foodbasketmade >= 1 ? 1 : 0) + professionGatherBonus("timbermellow");
       const taken = territoryTake(territoryFoodTypes(), haul(perHour * hours));
       if (taken > 0) {
         timbermellow_count += taken;
         ageCountFood(taken);
-        report.push(`${taken} timbermellow`);
+        report.push(`${taken} food`);
       }
       working_hours -= hours;
     } else if (type === "wood") {

@@ -167,6 +167,41 @@ function uiInstallTooltips() {
   });
   document.addEventListener("mouseleave", () => uiShowTooltip(null));
   document.addEventListener("mousedown", () => uiShowTooltip(null));
+  // T2 mobile: tap shows the reason a greyed-out button is greyed out.
+  // Disabled buttons never fire click, so listen on touchstart/click at the
+  // document and point the shared tooltip at whatever gizmo was tapped.
+  const showForTap = (clientX, clientY) => {
+    uiPointer.x = clientX;
+    uiPointer.y = clientY;
+    const stack = typeof document.elementsFromPoint === "function"
+      ? document.elementsFromPoint(clientX, clientY)
+      : [];
+    for (const element of stack) {
+      const owner = element.closest && element.closest("[data-tip-title]");
+      if (owner) {
+        uiTipTarget = null;      // force rebuild even if it was showing
+        uiShowTooltip(owner);
+        if (typeof setTimeout === "function") {
+          setTimeout(() => uiShowTooltip(null), 2600);
+        }
+        break;
+      }
+    }
+  };
+  document.addEventListener("touchstart", (event) => {
+    const touch = event.touches && event.touches[0];
+    if (touch) showForTap(touch.clientX, touch.clientY);
+  }, { passive: true });
+  // Disabled gizmos: a tap that hits nothing clickable still explains itself.
+  document.addEventListener("click", (event) => {
+    const owner = event.target && event.target.closest && event.target.closest("button[disabled][data-tip-block]");
+    if (owner && owner.dataset.tipBlock) {
+      uiPointer.x = event.clientX || 0;
+      uiPointer.y = event.clientY || 0;
+      uiTipTarget = null;
+      uiShowTooltip(owner);
+    }
+  });
   window.addEventListener("blur", () => uiShowTooltip(null));
 }
 
@@ -317,7 +352,7 @@ function uiBuildAlerts() {
     alerts.push({
       level: "bad", icon: typeof getIcon === "function" ? getIcon("seize") : "⚔",
       text: `Garlock raid on turn ${garlock_incomingattack_turn}`,
-      tip: `They come ${garlock_strangth} strong; your village stands at ${defence}. Each soldier is worth 2, each captain 2 more, each army camp 1. Come up short and they take food, wood and barns.`,
+      tip: `They come ${garlock_strangth} strong; your village stands at ${defence}. Each soldier is worth 3, each captain 2 more, each army camp 1. Come up short and they take food, wood and barns.`,
       go: () => uiPointAt("people", "btn_soldier"),
     });
   } else if (ageAtLeast("raids") && garlock_next_raid_turn) {
@@ -454,11 +489,20 @@ function uiRefreshAlerts() {
   // Rebuilding ten buttons on every single click is a lot of thrown-away
   // DOM, and it kills the hover state under the player's cursor. The list
   // only changes when one of the things it warns about changes.
-  const key = alerts.map((alert) => alert.level + alert.text).join("|");
+  // T2: cap at 4 so casuals never drown. Bad news first, the rest folded
+  // into one "+N more" row that opens the ledger/objectives.
+  const UI_MAX_ALERTS = 4;
+  const ordered = alerts.slice().sort((a, b) => {
+    const rank = (level) => (level === "bad" ? 0 : level === "warn" ? 1 : 2);
+    return rank(a.level) - rank(b.level);
+  });
+  const shown = ordered.slice(0, UI_MAX_ALERTS);
+  const overflow = ordered.length - shown.length;
+  const key = shown.map((alert) => alert.level + alert.text).join("|") + `|+${overflow}`;
   if (key === uiAlertKey) return;
   uiAlertKey = key;
   host.innerHTML = "";
-  alerts.forEach((alert) => {
+  shown.forEach((alert) => {
     const button = document.createElement("button");
     button.className = `rw-alert rw-alert--${alert.level}`;
     button.innerHTML = `<span class="rw-alert__icon">${alert.icon}</span><span>${alert.text}</span>`;
@@ -468,6 +512,16 @@ function uiRefreshAlerts() {
     button.onclick = alert.go;
     host.appendChild(button);
   });
+  if (overflow > 0) {
+    const more = document.createElement("button");
+    more.className = "rw-alert rw-alert--more";
+    more.innerHTML = `<span class="rw-alert__icon">…</span><span>+${overflow} more</span>`;
+    more.dataset.tipTitle = `${overflow} more notices`;
+    more.dataset.tip = ordered.slice(UI_MAX_ALERTS).map((alert) => alert.text).join(" · ");
+    more.dataset.tipCost = "Fix the red ones first — the rest can wait a turn.";
+    more.onclick = () => { if (typeof uiPointAt === "function") uiPointAt("empire", null); };
+    host.appendChild(more);
+  }
 }
 
 function uiHintExplore() {
@@ -501,7 +555,7 @@ const UI_LESSONS = [
   {
     id: "barn",
     title: "Build a Barn",
-    body: "Food left in the open is food the garlocks take: anything over your barn space vanishes the moment the turn ends. Open BUILD — 4 wood, 5 more spaces.",
+    body: "Food left in the open is food the garlocks take: anything over your barn space vanishes the moment the turn ends. Open BUILD — 4 wood, 8 more spaces.",
     when: () => ageHas("build_barn") && wood >= 4,
   },
   {
@@ -525,7 +579,7 @@ const UI_LESSONS = [
   {
     id: "explore",
     title: "Frontier Expansion",
-    body: "The dashed white hexes are wild land touching yours. Select one and press EXPLORE in the bottom-left panel. An expedition needs 3 settlers, a soldier as escort, food and hours.",
+    body: "The dashed white hexes are wild land touching yours. Select one and press EXPLORE in the bottom-left panel. The first trip needs no soldier escort — after that, bring one.",
     when: () => ageHas("soldiers") && humans >= 3 && human_army >= 1,
   },
   {
@@ -543,7 +597,7 @@ const UI_LESSONS = [
   {
     id: "garlocks",
     title: "Act III — The Raids",
-    body: "The garlocks come on a rhythm now, to knock you back down. Each soldier is worth 2 defence, each captain 2 more, each army camp 1. Match their strength and they break on your line.",
+    body: "The garlocks come about every 8 turns now, to knock you back down. Each soldier is worth 3 defence, each captain 2 more, each palisade ring 3, each tower 2. Match their strength and they break on your line.",
     when: () => ageAtLeast("raids"),
   },
   {
@@ -916,7 +970,64 @@ function uiRefresh() {
   uiRefreshProfessions();
   uiRefreshJobs();
   uiRefreshAlerts();
+  uiRefreshNextChip();
+  uiRefreshEndTurnPreview();
   if (typeof empireRefresh === "function") empireRefresh();
   uiRefreshTutor();
   if (uiTipTarget) { uiTipTarget = null; uiUpdateTooltip(); }
+}
+
+// T2: the gold Next chip above End Turn. One line, always actionable.
+function uiRefreshNextChip() {
+  const btn = document.getElementById("nextObjectiveBtn");
+  const label = document.getElementById("nextObjectiveText");
+  if (!btn || !label) return;
+  let next = null;
+  try {
+    next = typeof objectivesNext === "function" ? objectivesNext() : null;
+  } catch (error) {
+    next = null;
+  }
+  if (!next) {
+    btn.hidden = true;
+    return;
+  }
+  btn.hidden = false;
+  label.textContent = next.title;
+  btn.dataset.tipTitle = `Next: ${next.title}`;
+  btn.dataset.tip = next.hint || "";
+  btn.dataset.tipCost = "Click to be shown where.";
+}
+
+// T2: End Turn forecast — eats, spoil, winter countdown. The three deaths
+// new players never see coming, in one small line.
+function uiRefreshEndTurnPreview() {
+  const host = document.getElementById("endTurnPreview");
+  if (!host) return;
+  let mouths = 0;
+  try {
+    mouths = typeof mouthsToFeed === "function" ? mouthsToFeed() : humans + human_army;
+  } catch (error) {
+    mouths = 0;
+  }
+  const cap = typeof storage_capacity !== "undefined" ? storage_capacity : 0;
+  const have = typeof timbermellow_count !== "undefined" ? timbermellow_count : 0;
+  const spoil = Math.max(0, have - cap);
+  // Turns until winter: seasons 7-8 are winter, 9 wraps to spring.
+  let winterIn = 0;
+  try {
+    const s = typeof season !== "undefined" ? season : 1;
+    const checker = typeof seasonchecker !== "undefined" ? seasonchecker : 1;
+    winterIn = checker === 4 ? 0 : Math.max(0, 7 - s);
+  } catch (error) {
+    winterIn = 0;
+  }
+  const parts = [];
+  if (spoil > 0) parts.push(`spoil ${spoil}`);
+  parts.push(winterIn === 0 ? "winter now" : `winter in ${winterIn}`);
+  host.textContent = parts.length ? `· ${parts.join(" · ")}` : "";
+  const btn = host.closest && host.closest(".rw-endturn");
+  if (btn) {
+    btn.dataset.tip = `Excess food over barn capacity is lost (${spoil} would spoil). Everyone eats ${mouths}. ${winterIn === 0 ? "It is winter: nothing grows, roofs matter." : `Winter in ${winterIn} turn${winterIn === 1 ? "" : "s"}.`}`;
+  }
 }

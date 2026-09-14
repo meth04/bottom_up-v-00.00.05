@@ -388,15 +388,17 @@ const OBJECTIVES = [
     id: "continent",
     act: 3,
     title: "Rule the continent",
-    hint: "Make every village on your continent a vassal — that is the goal of the First Age.",
+    hint: "Make three villages on your continent vassals — that is the goal of the First Age.",
     check: () => {
       const report = objectivesContinent();
-      return !!report && report.total > 0 && report.remaining === 0;
+      // T1 casual: three vassals is a continent won (see raidsCheckVictory).
+      return !!report && report.total > 0 && (report.remaining === 0 || report.vassals >= 3);
     },
     progress: () => {
       const report = objectivesContinent();
       if (!report || report.total <= 0) return null;
-      return { have: report.total - report.remaining, need: report.total };
+      const need = Math.min(3, report.total);
+      return { have: Math.min(need, report.vassals), need };
     },
     reward: null,
     milestone: "Every village on the continent answers to you. The First Age is won.",
@@ -602,9 +604,9 @@ function objectivesAlerts() {
 const OBJECTIVES_INTRO_STEPS = [
   "<b>Gather.</b> The buttons in the bottom-right corner spend work hours. Everyone eats 1 food when the turn ends, so gather first.",
   "<b>Build.</b> A barn, or the surplus is stolen in the night; a house, or people freeze in winter.",
-  "<b>Explore.</b> Click a dashed hex next to your land and press Explore. More land means more to gather.",
+  "<b>Explore.</b> Click a dashed hex next to your land and press Explore. More land means more to gather. The first trip needs no soldier.",
   "<b>Soldiers.</b> Train them to defend against garlock raids and to raid the neighbours — select a neighbour's hex and press Raid.",
-  "<b>The goal.</b> Make every village on your continent your vassal. Roads make your land yield more, and carts bring the goods home.",
+  "<b>The goal.</b> Make three villages on your continent your vassals. Follow the gold Next button — it always points at what to do.",
 ];
 
 function objectivesOpenModal(modal) {
@@ -642,6 +644,20 @@ function closeIntroModal() {
   } catch (error) {
     // nowhere to remember it; it will show again next time
   }
+  // T2: turn-1 focus script — closing "Let's go" flashes where to press.
+  // Only points, never auto-presses, so the player still does it.
+  try {
+    if (typeof uiPointAt === "function") uiPointAt("gather", "btn_find_timbermellow");
+  } catch (error) {
+    // UI not ready yet (tests); the Next button covers the same path
+  }
+}
+
+// T2: the gold Next chip above End Turn calls this. One action, always.
+function objectivesGoNext() {
+  const next = objectivesNext();
+  if (next) objectivesGo(next.id);
+  else if (typeof uiSetTab === "function") uiSetTab("gather");
 }
 
 // The shell calls this after Begin Journey; the card shows once per browser.

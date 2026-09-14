@@ -34,24 +34,28 @@
 // ---------------------------------------------------------------------------
 
 // dawn -> growth: one whole year lived, and a village big enough to plan.
-const AGE_GROWTH_TURN = 9;            // turn 9 is the start of the second year
+// T1 portal tuning (casual 20-30 min): turn 9 -> 6 so Act II arrives fast.
+const AGE_GROWTH_TURN = 6;            // turn 6 is the start of the second year
 const AGE_GROWTH_POPULATION = 3;
 
 // growth -> raids: the village is worth robbing, and has had room to breathe.
+// T1: 7 people / 60 hexes -> 5 / 50 so casuals see raids without grinding.
 const AGE_RAIDS_MIN_TURNS_IN_GROWTH = 6;
-const AGE_RAIDS_POPULATION = 7;
+const AGE_RAIDS_POPULATION = 5;
 // A village is founded holding about thirty-seven hexes (js/territory.js,
 // VILLAGE_RADIUS), so "has grown" has to mean more than that — roughly the
 // home valley plus an expedition beyond it.
-const AGE_RAIDS_TILES = 60;
+// T1: 60 -> 50 for a shorter casual run.
+const AGE_RAIDS_TILES = 50;
 
 // raids -> famine. Two ways in: the land genuinely fails, or the village
 // has weathered the raids long enough that the story moves on without it.
 // Act IV is a beat in the story, not only an accident of the numbers.
-const AGE_FAMINE_MIN_TURNS_IN_RAIDS = 8;
-const AGE_FAMINE_POPULATION = 8;
-const AGE_FAMINE_TILES = 110;            // the valley plus three expeditions
-const AGE_FAMINE_PATIENCE = 20;          // turns in Act III before it comes anyway
+// T1: 8 turns -> 5, 8 people -> 6, 110 tiles -> 80, patience 20 -> 12.
+const AGE_FAMINE_MIN_TURNS_IN_RAIDS = 5;
+const AGE_FAMINE_POPULATION = 6;
+const AGE_FAMINE_TILES = 80;            // the valley plus two expeditions
+const AGE_FAMINE_PATIENCE = 12;          // turns in Act III before it comes anyway
 // The fraction is what actually decides it: the land has failed when it
 // holds a third of the most it ever did. The absolute floor is only there
 // for the truly dire case, and has to sit well below what even the poorest
@@ -114,7 +118,7 @@ const AGE_UNLOCKS = [
     tabs: ["build"],
     show: ["btn_barn"],
     title: "Somewhere to Put It",
-    note: "Food left in the open is food the garlocks take. Four wood makes a barn, and a barn holds five.",
+    note: "Food left in the open is food the garlocks take. Four wood makes a barn, and a barn holds eight.",
     when: () => wood >= 4,
   },
   {
@@ -196,7 +200,10 @@ const AGE_UNLOCKS = [
     show: ["jobRack"],
     title: "Standing Orders",
     note: "You have too many people to click for one at a time. Put villagers on a standing job and they will work it every turn without being told.",
-    when: () => ageAtLeast("famine"),
+    // T1 casual: standing orders from Act III (or 6 villagers) instead of
+    // Act IV, so a village of 6+ stops being click-heavy. Keeps the fantasy
+    // — "too many to click for" — just arrives before the famine.
+    when: () => ageAtLeast("raids") || (typeof humans !== "undefined" && humans >= 6),
   },
   {
     // With a soldier standing, the village starts thinking about walls —

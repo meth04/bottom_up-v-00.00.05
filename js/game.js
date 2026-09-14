@@ -17,12 +17,16 @@
         let working_hours = humans * 4;
 
 //wood variables barn 6 for testing was 0
+// T1 portal tuning: one barn holds 8 (was 5) so casuals spoil less and
+// build fewer barns per run. BARN_CAPACITY is the single source of truth;
+// storage_capacity is always barn * BARN_CAPACITY.
+        const BARN_CAPACITY = 8;
 
         let wood = 0;
 
         let barn = 1;
 
-        let storage_capacity = barn * 5;
+        let storage_capacity = barn * BARN_CAPACITY;
 
 //tech variables
 
@@ -221,9 +225,10 @@
 
         // How much one hour of work brings back, once the season, the tools
         // and the trained specialists (js/professions.js) have had their say.
+        // Autumn doubles the base harvest only, so baskets + 3 farmers cap
+        // at 6/h instead of 10/h.
         function foodPerHour() {
-          let per = 1 + (foodbasketmade >= 1 ? 1 : 0) + professionGatherBonus("timbermellow");
-          if (seasonchecker == 3) per = per * 2;          // the autumn harvest
+          let per = (seasonchecker == 3 ? 2 : 1) + (foodbasketmade >= 1 ? 1 : 0) + professionGatherBonus("timbermellow");
           return per;
         }
 
@@ -392,9 +397,12 @@
         function apont_soldier() {
           if (humans < 2){
             updatelog("Not enough humans to make an army! You need at least 2 humans.");
+          } else if (working_hours < 1) {
+            updatelog("Training a soldier takes 1 work hour.");
           } else {
             humans = humans - 1;
             human_army = human_army + 1;
+            working_hours = working_hours - 1;
             update();
           }
         }
@@ -402,11 +410,14 @@
         function soldier_5x() {
           if (humans < 5){
             updatelog("Not enough humans to make 5 armies! You need at least 5 humans.");
+          } else if (working_hours < 5) {
+            updatelog("Training 5 soldiers takes 5 work hours.");
           } else {
             let loop = 0;
             for (loop = 0; loop < 5; loop++) {
               humans = humans - 1;
               human_army = human_army + 1;
+              working_hours = working_hours - 1;
               update();
             }
           }  
@@ -441,7 +452,7 @@
             if (wood >= 4 && working_hours > 0) {
             wood = wood - 4;
             barn = barn + 1;
-            storage_capacity = barn * 5;
+            storage_capacity = barn * BARN_CAPACITY;
             working_hours = working_hours - 1;
             update();
             }
@@ -478,7 +489,8 @@
 // ---------------------------------------------------------------------------
 
         // Turns between raids once they have begun.
-        const GARLOCK_RAID_INTERVAL = 6;
+        // T1: 6 -> 8 so casuals breathe between knocks.
+        const GARLOCK_RAID_INTERVAL = 8;
 
         // How angry they are ever allowed to get. Without a ceiling a village
         // that loses one raid loses every raid after it, which is a death
@@ -486,7 +498,8 @@
         const GARLOCK_RAGE_CAP = 3;
 
         // The most damage a single raid can do, however badly it went.
-        const GARLOCK_MAX_BITE = 6;
+        // T1: 6 -> 4, a setback that never wipes a casual run.
+        const GARLOCK_MAX_BITE = 4;
 
         // The turn the next raiding party sets out. 0 means none is coming.
         let garlock_next_raid_turn = 0;
@@ -520,9 +533,11 @@
           // A turn before they arrive, the scouts are seen.
           if (!garlocks_attacking && turngame >= garlock_next_raid_turn - 1) {
             garlock_rage = Math.min(GARLOCK_RAGE_CAP, garlock_rage + 1);
+            // T-fix: land share capped — growing is the core loop, it must
+            // not auto-scale the punishment without limit.
             garlock_strangth = 3 + garlock_rage * 2 +
                                Math.floor((humans + human_army) / 4) +
-                               Math.floor(territoryClaimedCount() / 70);
+                               Math.min(4, Math.floor(territoryClaimedCount() / 70));
             garlock_defense = garlockVillageDefence();
             garlock_incomingattack_turn = garlock_next_raid_turn;
             garlocks_attacking = true;
@@ -551,11 +566,12 @@
           if (typeof onGarlockRaid === "function") onGarlockRaid(defence >= garlock_strangth);
 
           if (defence >= garlock_strangth) {
-            const lost = Math.min(human_army, Math.ceil(garlock_strangth / 4));
+            // T-fix: an overwhelming shield line holds clean. A close win
+            // still costs blood. Calm all the way back to 0 when answered.
+            const lost = defence >= garlock_strangth * 1.5 ? 0 : Math.min(human_army, Math.ceil(garlock_strangth / 4));
             human_army = human_army - lost;
-            // A village that answers every raid keeps them small; one that
-            // does not sees them grow. Never back to nothing, though.
-            garlock_rage = Math.max(1, garlock_rage - 1);
+            // A village that answers every raid keeps them small.
+            garlock_rage = Math.max(0, garlock_rage - 1);
             updatelog(
               "The garlocks broke on your shield line and went back into the trees" +
               (lost ? `, taking ${lost} of your soldiers with them.` : " without taking a soul."),
@@ -578,15 +594,17 @@
           human_army = human_army - soldiersLost;
           barn = barn - barnsLost;
           if (barn < 1) barn = 1;
-          storage_capacity = barn * 5;
+          storage_capacity = barn * BARN_CAPACITY;
           timbermellow_count = timbermellow_count - foodLost;
           wood = wood - woodLost;
 
           let peopleLost = 0;
           let housesLost = 0;
-          if (defence === 0 && shortfall >= GARLOCK_MAX_BITE) {
-            // Nobody even tried to stop them. This is the sacking.
-            peopleLost = Math.min(humans - 1, Math.floor(humans / 2));
+          // T-fix: sacking needs real anger, not just one empty guard post.
+          // A first undefended raid loots; a repeated one sacks.
+          if (defence === 0 && shortfall >= GARLOCK_MAX_BITE && garlock_rage >= 2) {
+            // Nobody even tried to stop them, twice in a row. This is the sacking.
+            peopleLost = Math.min(2, Math.max(0, humans - 1));
             humans = humans - peopleLost;
             housesLost = Math.min(Math.max(0, stonehouse - 1), 1 + Math.floor(shortfall / 5));
             stonehouse = stonehouse - housesLost;
@@ -635,29 +653,34 @@
             turnReportNote(`the land regrew ${regrown}`, "good");
         }
 //winter
-          if (seasonchecker == 4) {
+           if (seasonchecker == 4) {
 
-            updatelog("Winter has arrived! You cannot grow timbermellows this season.", "bad");
-            if (peoplecap < humans) {
-            humans = peoplecap;
-            
+             updatelog("Winter has arrived! You cannot grow timbermellows this season.", "bad");
+             if (peoplecap < humans) {
+             // T1: exposure takes at most two per winter turn, never the
+             // whole overflow at once. Still scary, never a run-ender.
+             const exposed = humans - peoplecap;
+             const froze = Math.min(exposed, 2);
+             humans = humans - froze;
+             
            
-            updatelog("Your population has exceeded your housing capacity. Some humans have died of exposure.");
+             updatelog(`${froze} died of exposure — build houses before winter.`);
            
-            updatelog("the garlocks are eating the people who have died of exposure.");
-            
-            
-            if (timbermellow_count < humans) {
-              timbermellow_count = 0;
-              humans = Math.floor(humans / 2);
-              
-              updatelog("half of your humans have starved to death due to lack of timbermellows.");
+             updatelog("the garlocks are eating the people who have died of exposure.");
+             
+             
+             if (timbermellow_count < humans) {
+               timbermellow_count = 0;
+               const starved = Math.min(2, Math.max(0, humans - 1));
+               humans = humans - starved;
+               
+               updatelog(`${starved} starved in the cold for want of timbermellows.`);
 
            
-           }
-          } 
-          working_hours = humans * 2;      
-        }
+            }
+           } 
+           working_hours = humans * 2;      
+         }
          update();
       }
 
@@ -666,8 +689,13 @@
         // Act II, The Growing Years (js/ages.js).
           if (!ageAtLeast("growth")) return;
 
+        // T-fix: unlocks measure capacity (people × season hours), not the
+        // leftover hours at click time. Spending all hours no longer locks
+        // techs out.
+        const capacityNow = (typeof jobHoursPerVillager === "function" ? jobHoursPerVillager() : 4) * Math.max(0, humans);
+
         //stone axe tech
-          if (working_hours >= 25 && techlevel < 1) {
+          if (capacityNow >= 25 && techlevel < 1) {
 
           
             updatelog("New technology unlocked: stone axe!");
@@ -677,8 +705,8 @@
                                   
            }
 
-           //food basket tech
-           if (working_hours >= 50 && techlevel < 2) {
+            //food basket tech
+            if (capacityNow >= 50 && techlevel < 2) {
               updatelog("New technology unlocked: food basket!");
 
                 foodbasketbt.style.display = "block";
@@ -686,15 +714,15 @@
 
             }
 
-           //farming tech — the end of "spread out to find more food"
-           if (working_hours >= 40 && farming_unlocked == false) {
+            //farming tech — the end of "spread out to find more food"
+            if (capacityNow >= 40 && farming_unlocked == false) {
               updatelog("New technology unlocked: farming!", "good");
               farmingbt.style.display = "block";
               farming_unlocked = true;
             }
 
-           //mapmaking tech — reveals the whole map
-           if (working_hours >= 60 && mapmaking_unlocked == false) {
+            //mapmaking tech — reveals the whole map
+            if (capacityNow >= 60 && mapmaking_unlocked == false) {
               updatelog("New technology unlocked: mapmaking!", "good");
               mapmakingbt.style.display = "block";
               mapmaking_unlocked = true;
@@ -713,6 +741,7 @@
         }
 
         function stoneaxe() {
+          const axeHours = researchHours(8);
           if (wood < 20) {
             updatelog("Not enough wood to make a stone axe! You need at least 20 wood.");
           }
@@ -722,10 +751,15 @@
             updatelog("Not enough stone to make a stone axe! You need at least 30 stone.");
           }  
 
-            if (stone >= 30 && wood >= 20){
+          if (working_hours < axeHours) {
+            updatelog("Not enough work hours to make a stone axe! You need at least " + axeHours + " work hours.");
+          }
+
+            if (stone >= 30 && wood >= 20 && working_hours >= axeHours){
 
             wood = wood - 20;
             stone = stone - 30;
+            working_hours = working_hours - axeHours;
             stoneaxe_made = stoneaxe_made + 1;
             techmade = techmade + 1;
             updatelog("You have made a stone axe! you can chop more wood now", "good");
@@ -862,26 +896,32 @@
               let timbermellow_deficit = timbermellow_needed - timbermellow_count;
 
               //this is to kill the army first 
-              if (human_army > 0 ) {
-             
-                if (timbermellow_deficit >=human_army) {
-                timbermellow_deficit = timbermellow_deficit - human_army;
-                human_army = 0;
-                updatelog("your entire army has starved to death due to lack of timbermellows.");
-                 }
+              // T-fix: soldiers starve proportionally, not all-or-nothing.
+              // A shortfall of 2 eats 2 soldiers, not 0 and not the whole guard.
+              if (human_army > 0 && timbermellow_deficit > 0) {
+                const soldiersStarved = Math.min(human_army, timbermellow_deficit);
+                if (soldiersStarved > 0) {
+                  human_army = human_army - soldiersStarved;
+                  timbermellow_deficit = timbermellow_deficit - soldiersStarved;
+                  updatelog(`${soldiersStarved} soldier${soldiersStarved === 1 ? "" : "s"} starved for want of food.`);
                 }
+              }
               //this is to check if you now have enough timbermellows to feed humans
               if (timbermellow_deficit > 0) {
                 timbermellow_count = 0;
               
+              // T1 casual: hunger is a setback, not a wipe. Small villages
+              // lose one soul; larger ones lose at most two per turn, never
+              // half the village at once.
               //2 human case
-              if (humans == 2 || humans == 3) {
+              if (humans <= 3) {
                 humans =  humans - 1;
                 updatelog("1 human starved to death due to lack of timbermellows.");
               //2 or greater case
               } else {
-                humans = Math.ceil(humans / 2);
-                updatelog("humans starved to death due to lack of timbermellows.");
+                const starved = Math.min(2, humans - 1);
+                humans = humans - starved;
+                updatelog(`${starved} humans starved to death due to lack of timbermellows.`);
               }
               let starvednumber = humanholder - humans;
 
@@ -938,9 +978,11 @@
             return;
           }
           let owner_name = territoryOwnerName(tile_id);
+          const armyBefore = human_army;
           let tile = territorySeize(tile_id);
           let tile_name = (typeof TERRAIN_NAMES !== "undefined" && TERRAIN_NAMES[tile.terrainType]) || tile.terrainType;
-          updatelog("Your soldiers seized " + tile_name + " from " + owner_name + ", losing " + SEIZE_SOLDIERS_LOST + " of their own.", "good");
+          const lostNow = armyBefore - human_army;
+          updatelog("Your soldiers seized " + tile_name + " from " + owner_name + (lostNow > 0 ? ", losing " + lostNow + " of their own." : " without losing a soul."), "good");
           update();
         }
 
@@ -966,7 +1008,9 @@
           if (!saved) return;
           timbermellow_count = saved.timbermellow_count; humans = saved.humans; stonehouse = saved.stonehouse;
           stone = saved.stone; peoplecap = saved.peoplecap; human_army = saved.human_army; working_hours = saved.working_hours;
-          wood = saved.wood; barn = saved.barn; storage_capacity = saved.storage_capacity;
+          wood = saved.wood; barn = saved.barn;
+          // T1 migration: older saves stored 5 per barn; recompute at 8.
+          storage_capacity = barn * (typeof BARN_CAPACITY !== "undefined" ? BARN_CAPACITY : 8);
           stoneaxe_made = saved.stoneaxe_made; foodbasketmade = saved.foodbasketmade;
           farming_made = saved.farming_made; farming_unlocked = saved.farming_unlocked;
           mapmaking_made = saved.mapmaking_made; mapmaking_unlocked = saved.mapmaking_unlocked;
@@ -1093,8 +1137,8 @@
             if (btn_stone_all) btn_stone_all.disabled = working_hours <= 0 || stone_on_land <= 0;
             btn_human.disabled = working_hours <= 0 || timbermellow_count < 3;
             btn_human_5x.disabled = working_hours < 5 || timbermellow_count < 15;
-            btn_soldier.disabled = humans < 2;
-            btn_soldier_5x.disabled = humans < 5;
+            btn_soldier.disabled = humans < 2 || working_hours < 1;
+            btn_soldier_5x.disabled = humans < 5 || working_hours < 5;
             btn_barn.disabled = working_hours <= 0 || wood < 4;
             btn_house.disabled = working_hours <= 0 || stone < 2;
             if (btn_school) btn_school.disabled = working_hours < SCHOOL_WORK_HOURS || wood < SCHOOL_WOOD_COST || stone < SCHOOL_STONE_COST;

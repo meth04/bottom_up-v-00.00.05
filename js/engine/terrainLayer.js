@@ -26,7 +26,9 @@ const VERTS_PER_HEX = 7;
 const INDICES_PER_HEX = 18;
 const REBUILDS_PER_FRAME = 6;
 const PARCHMENT = 0xe2d2b2;
-const OWNER_BLEND = 0.18;
+// T3 portal readability: 0.18 washed out on laptop screens — 0.28 reads as
+// territory at far zoom without hiding the biome underneath.
+const OWNER_BLEND = 0.28;
 const WINTER_TINT = 0xf2f5f7;
 const AUTUMN_TINT = 0xd9a441;
 // Ground that turns golden in autumn: anything grassy or leafy.
@@ -210,11 +212,22 @@ export class TerrainLayer {
       const alt = unpack(def.colorAlt !== undefined ? def.colorAlt : def.color, [0, 0, 0]);
       if (!def.water) {
         if (this.season === 4) {
-          lerp3(color, this.winterTint, 0.55, color);
-          lerp3(alt, this.winterTint, 0.55, alt);
+          // T3: 0.55 washed to paper-white on cheap screens — 0.42 keeps snow
+          // readable while hills and forests still read underneath.
+          lerp3(color, this.winterTint, 0.42, color);
+          lerp3(alt, this.winterTint, 0.42, alt);
         } else if (this.season === 3 && AUTUMN_TYPES.has(type)) {
-          lerp3(color, this.autumnTint, 0.08, color);
-          lerp3(alt, this.autumnTint, 0.08, alt);
+          // T3: 0.08 was invisible — 0.22 gives the harvest its gold.
+          lerp3(color, this.autumnTint, 0.22, color);
+          lerp3(alt, this.autumnTint, 0.22, alt);
+        }
+        // T3: +15% saturation so pastel biomes pop on portal thumbnails.
+        // Cheap trick: push each channel away from the grey mean.
+        for (const rgb of [color, alt]) {
+          const mean = (rgb[0] + rgb[1] + rgb[2]) / 3;
+          rgb[0] = Math.min(1, Math.max(0, mean + (rgb[0] - mean) * 1.15));
+          rgb[1] = Math.min(1, Math.max(0, mean + (rgb[1] - mean) * 1.15));
+          rgb[2] = Math.min(1, Math.max(0, mean + (rgb[2] - mean) * 1.15));
         }
       } else if (def.deep) {
         // Deep ocean reads a touch darker than shallows and lakes.

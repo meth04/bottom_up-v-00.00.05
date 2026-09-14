@@ -59,14 +59,16 @@ const WATCHTOWER_MAX = 3;
 
 // A village that has been raided holds a grudge; the grudge fades by one
 // every this many turns if it is left alone.
-const GRUDGE_DECAY_TURNS = 12;
+// T-fix: 12 locked trade for a whole era — 8 lets one raid be forgiven.
+const GRUDGE_DECAY_TURNS = 8;
 
 // Beat a village this many times (or once, overwhelmingly) and it is yours.
 const VASSAL_RAIDS_NEEDED = 2;
 
 // What a vassal sends every turn.
-const TRIBUTE_FOOD = 3;
-const TRIBUTE_WOOD = 2;
+// T-fix: 4+3 so submission beats trade (2+1) instead of stalling income.
+const TRIBUTE_FOOD = 4;
+const TRIBUTE_WOOD = 3;
 
 // An angry rival raids on a rhythm of this many turns (offset per village,
 // so they do not all arrive at once).
@@ -74,12 +76,17 @@ const RIVAL_RAID_INTERVAL = 7;
 
 // A neighbour that is not angry but sees full barns behind a thin guard
 // tries its luck now and then.
-const RIVAL_GREED_FOOD = 25;
+// T-fix: 25 punished normal stocking (barns hold 8 now) — 30 is the new greed line.
+const RIVAL_GREED_FOOD = 30;
 const RIVAL_GREED_CHANCE = 0.12;
 
 // The most a rival raid can take, however badly it went (the garlocks'
 // GARLOCK_MAX_BITE, for the same reason: a setback, not an ending).
 const RAID_MAX_BITE = 6;
+
+// How many raids may be on the road at once.
+// T1: 2 (was 1) so the short casual endgame does not queue behind itself.
+const RAIDS_MAX_OUTGOING = 2;
 
 // How many outcomes the ledger keeps.
 const RAID_LOG_MAX = 20;
@@ -346,7 +353,10 @@ function raidBlocker(villageId) {
   const home = raidHomeTile(villageId);
   if (!home || (typeof map.isRevealed === "function" && !map.isRevealed(home.id))) return `Nobody knows where ${village.name} is yet.`;
   if (!raidSameContinent(villageId)) return `Your soldiers have no boats — ${village.name} lies across the sea.`;
-  if (raidsOutgoing.length) return "A raid is already under way. Wait for the soldiers to come home.";
+  // T1: up to RAIDS_MAX_OUTGOING warbands at once, but never twice at the
+  // same hall — the second march would just wait outside anyway.
+  if (raidsOutgoing.some((raid) => raid.villageId === villageId)) return `A raid on ${village.name} is already under way. Wait for the soldiers to come home.`;
+  if (raidsOutgoing.length >= RAIDS_MAX_OUTGOING) return `Two raids are already under way. Wait for one to come home.`;
   if (human_army < RAID_MIN_SOLDIERS) return `A raid needs at least ${RAID_MIN_SOLDIERS} soldiers.`;
   if (timbermellow_count < RAID_FOOD_COST) return `The soldiers need ${RAID_FOOD_COST} timbermellows for the march.`;
   if (working_hours < RAID_WORK_HOURS) return `Sending a raid takes ${RAID_WORK_HOURS} work hours.`;
@@ -432,7 +442,9 @@ function raidsResolveOutgoing() {
       const room = Math.max(0, storage_capacity - timbermellow_count);
       loot.food = Math.min(each, room);
       loot.wood = each;
-      loot.stone = each;
+      // T-fix: stone comes home at half rate — there is no quarry yet, and
+      // a 4-hex hamlet should not pay 3 stone like a 40-hex town does food.
+      loot.stone = Math.max(RAID_LOOT_MIN === each ? 1 : 2, Math.floor(each / 2));
       timbermellow_count += loot.food;
       wood += loot.wood;
       stone += loot.stone;
@@ -494,7 +506,8 @@ function raidsScheduleIncoming() {
     const home = raidHomeTile(villageId);
     if (!home) continue;
     const revealed = typeof map.isRevealed === "function" ? map.isRevealed(home.id) : true;
-    if (!revealed && grudge <= 0) continue;
+    // T-fix: no invisible raiders — an unrevealed hall cannot march, grudge or not.
+    if (!revealed) continue;
     if (!raidSameContinent(villageId)) continue;
 
     const strength = typeof villageStrength === "function" ? villageStrength(village, map) : 2;
@@ -534,7 +547,8 @@ function raidsResolveIncoming() {
     if (typeof triggerRaidAlarm === "function") triggerRaidAlarm(name);
 
     if (repelled) {
-      lost = Math.min(human_army, Math.ceil(strength / 5));
+      // T-fix: an overwhelming line holds clean instead of always bleeding.
+      lost = defence >= strength * 1.5 ? 0 : Math.min(human_army, Math.ceil(strength / 5));
       human_army -= lost;
       raidGrudge[villageId] = Math.max(0, (raidGrudge[villageId] || 0) - 1);
       text = `${name}'s raiders broke on ${palisade > 0 ? "the palisade" : "your shield line"} and ran for home` +
@@ -550,7 +564,8 @@ function raidsResolveIncoming() {
       wood -= loot.wood;
       barn -= loot.barns;
       if (barn < 1) barn = 1;
-      storage_capacity = barn * 5;
+      // T1: barns hold 8 (see BARN_CAPACITY in game.js).
+      storage_capacity = barn * (typeof BARN_CAPACITY !== "undefined" ? BARN_CAPACITY : 8);
       human_army -= lost;
 
       const parts = [];
@@ -570,6 +585,7 @@ function raidsResolveIncoming() {
 }
 
 // (d) Tribute. Food only fits if there is room in the barns; wood keeps.
+// T-fix: say so when the barns are full instead of announcing 0 food.
 function raidsCollectTribute() {
   const vassals = Object.keys(raidVassals);
   if (!vassals.length) return { food: 0, wood: 0, from: [] };
@@ -579,7 +595,11 @@ function raidsCollectTribute() {
   timbermellow_count += food;
   wood += woodSent;
   const names = vassals.map((id) => raidName(id)).join(", ");
-  raidSay(`Tribute from ${names}: ${food} timbermellow${food === 1 ? "" : "s"} and ${woodSent} wood.`, "good");
+  if (food <= 0) {
+    raidSay(`Tribute from ${names}: ${woodSent} wood. The ${TRIBUTE_FOOD * vassals.length} food would not fit in the barns.`, "good");
+  } else {
+    raidSay(`Tribute from ${names}: ${food} food${food === 1 ? "" : "s"} and ${woodSent} wood.`, "good");
+  }
   raidNote(`tribute brought ${food} food and ${woodSent} wood`, "good");
   return { food, wood: woodSent, from: vassals };
 }
@@ -618,9 +638,13 @@ function raidsContinentReport() {
 
 // True once every other village on the continent is a vassal (and there
 // was at least one to beat). main.js shows the victory screen.
+// T1 casual: three vassals is a continent won — a 30-minute run cannot be
+// asked to subdue eight. Small continents still need them all.
 function raidsCheckVictory() {
   const report = raidsContinentReport();
-  return report.total > 0 && report.vassals === report.total;
+  if (!(report.total > 0)) return false;
+  if (report.vassals === report.total) return true;
+  return report.vassals >= 3;
 }
 
 // ---------------------------------------------------------------------------

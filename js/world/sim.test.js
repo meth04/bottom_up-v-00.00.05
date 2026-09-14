@@ -225,7 +225,7 @@ test("syncTown places houses-1, barns-1, schools and camps, idempotently", () =>
     for (const type of hexMap.getBuildings("player").values()) tally[type] = (tally[type] || 0) + 1;
     return tally;
   };
-  const first = improvements.syncTown("player", { houses: 3, barns: 2, schools: 1, camps: 1 });
+  const first = improvements.syncTown("player", { houses: 3, barns: 2, schools: 1, camps: 1, watchtowers: 1 });
   assert.ok(first.placed.length >= 7);
   const tally = count();
   assert.equal(tally.hall, 1);
@@ -235,7 +235,7 @@ test("syncTown places houses-1, barns-1, schools and camps, idempotently", () =>
   assert.equal(tally.school, 1);
   assert.equal(tally.armyCamp, 1);
   assert.equal(tally.well, 1, "a well once there are two houses");
-  assert.equal(tally.watchtower, 1, "a watchtower once there is a camp");
+  assert.equal(tally.watchtower, 1, "a watchtower only when paid for (no free tower)");
   assert.equal(tally.market || 0, 0, "no market under four houses");
   for (const [tileId, type] of hexMap.getBuildings("player")) {
     const tile = hexMap.getTile(tileId);
@@ -244,19 +244,19 @@ test("syncTown places houses-1, barns-1, schools and camps, idempotently", () =>
     assert.ok(!isWaterTerrain(tile.terrainType) && tile.terrainType !== "mountains");
   }
 
-  const second = improvements.syncTown("player", { houses: 3, barns: 2, schools: 1, camps: 1 });
+  const second = improvements.syncTown("player", { houses: 3, barns: 2, schools: 1, camps: 1, watchtowers: 1 });
   assert.equal(second.placed.length, 0, "second sync placed something");
   assert.equal(second.removed.length, 0, "second sync removed something");
 
   // A raid takes a barn and a house: the outermost of each comes down.
-  const third = improvements.syncTown("player", { houses: 2, barns: 1, schools: 1, camps: 1 });
+  const third = improvements.syncTown("player", { houses: 2, barns: 1, schools: 1, camps: 1, watchtowers: 1 });
   assert.equal(third.removed.length, 2);
   assert.equal(count().house, 1);
   assert.equal(count().barn || 0, 0);
 
   // Four houses earn a market; a preferred hex is honoured when free.
   const free = improvements.townPlots(home, "player")[0];
-  const fourth = improvements.syncTown("player", { houses: 5, barns: 1, schools: 1, camps: 1 }, free.id);
+  const fourth = improvements.syncTown("player", { houses: 5, barns: 1, schools: 1, camps: 1, watchtowers: 1 }, free.id);
   assert.ok(fourth.placed.includes(free.id));
   assert.equal(count().market, 1);
   assert.equal(IMPROVEMENTS.market.name, "Market");

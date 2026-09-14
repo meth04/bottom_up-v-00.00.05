@@ -341,7 +341,8 @@ export class OverlayLayer {
         const edge = DIRECTION_TO_EDGE[dir];
         if (tile.owner && (!neighbor || neighbor.owner !== tile.owner)) {
           const color = this.colorOf(tile.owner);
-          if (!borders.has(color)) borders.set(color, { width: tile.owner === "player" ? 3 : 2, segments: [] });
+          // T3: thicker borders read at far zoom (player 4, others 2.5).
+          if (!borders.has(color)) borders.set(color, { width: tile.owner === "player" ? 4 : 2.5, segments: [] });
           borders.get(color).segments.push([c, edge]);
         }
         if (!revealed && neighbor && !neighbor.seen) fog.push([c, edge]);
@@ -369,7 +370,8 @@ export class OverlayLayer {
         g.moveTo(pts[edge][0], pts[edge][1]);
         g.lineTo(pts[(edge + 1) % 6][0], pts[(edge + 1) % 6][1]);
       }
-      g.stroke({ width: group.width, color, alpha: 0.9, cap: "round", join: "round" });
+      // T3: full alpha so territory reads on bright meadows.
+      g.stroke({ width: group.width, color, alpha: 1, cap: "round", join: "round" });
     }
     if (frontier.length) {
       for (const c of frontier) dashPolygon(g, hexCorners(c.x, c.y, HEX_SIZE * 0.94), 4, 3);
@@ -397,7 +399,8 @@ export class OverlayLayer {
       const c = this.grid.center(tile);
       if (lens === "territory") {
         if (!tile.owner) continue;
-        this.addFill(root, fill, c, this.colorOf(tile.owner), 0.35);
+        // T3: 0.35 -> 0.5 so the territory lens survives daylight.
+        this.addFill(root, fill, c, this.colorOf(tile.owner), 0.5);
       } else if (lens === "resources") {
         const { amount, max } = totals(tile.resources);
         if (max <= 0) continue;

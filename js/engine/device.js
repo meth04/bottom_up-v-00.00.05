@@ -159,8 +159,10 @@ export class AdaptiveQuality {
     this.slowFor = 0;
     this.fastFor = 0;
     this.sinceStep = 0;
-    this.minInterval = 4;
-    this.slowThreshold = 22;
+    // T4 portal: react faster (3s between steps, 1.5s of slow to step down)
+    // and trip earlier (18ms) so phones stop juddering before the player notices.
+    this.minInterval = 3;
+    this.slowThreshold = 18;
     this.fastThreshold = 11;
   }
 
@@ -185,7 +187,7 @@ export class AdaptiveQuality {
       this.fastFor = Math.max(0, this.fastFor - dt);
     }
     if (this.sinceStep < this.minInterval) return;
-    if (this.slowFor >= 2 && this.step < STEP_SCALES.length - 1) {
+    if (this.slowFor >= 1.5 && this.step < STEP_SCALES.length - 1) {
       this.applyStep(this.step + 1);
     } else if (this.fastFor >= 10 && this.step > 0) {
       this.applyStep(this.step - 1);
@@ -205,10 +207,15 @@ export class AdaptiveQuality {
     q.particles = Math.max(f.particles, c.particles * scale);
     q.maxAgents = Math.max(f.maxAgents, Math.round(c.maxAgents * scale));
     q.ambientPerChunk = Math.max(f.ambientPerChunk, Math.round(c.ambientPerChunk * scale));
+    // T4: cut fill-rate before cutting life. Resolution is the biggest cost
+    // on high-DPR phones, so step 1 caps at 1.25 and step 2 at 1.0.
+    if (step >= 1) q.resolution = Math.min(c.resolution || 1.5, 1.25);
+    if (step >= 2) q.resolution = Math.min(c.resolution || 1.5, 1);
     // The expensive booleans go at the last step only.
     if (step >= STEP_SCALES.length - 1) {
       q.shadows = f.shadows;
       q.animateWater = f.animateWater;
+      q.clouds = false;
     }
     this._quality = q;
     if (this.onChange) this.onChange(q);

@@ -173,9 +173,14 @@ function empireRefresh() {
   const pane = document.querySelector('.rw-pane[data-pane="empire"]');
   if (!pane || pane.hidden) return;
 
+  // T-fix: palisade/watchtower in the key so building walls refreshes the
+  // ledger instead of leaving it stale.
+  const palisadeNow = typeof palisade !== "undefined" ? palisade : 0;
+  const towerNow = typeof watchtower !== "undefined" ? watchtower : 0;
   const key = [
     humans, human_army, professionTraineeCount(), timbermellow_count, wood, stone,
-    barn, stonehouse, school, armycamp, territoryClaimedCount(), seasonchecker, turngame,
+    barn, stonehouse, school, armycamp, palisadeNow, towerNow,
+    territoryClaimedCount(), seasonchecker, turngame,
     Object.values(professionCounts).join(""), Object.values(jobAssignments).join(""),
   ].join("|");
   if (key === empirePanelKey) return;
@@ -223,6 +228,10 @@ function empireRefresh() {
   const terrainLines = land.byTerrain.slice(0, 7)
     .map(([terrain, count]) => row(TERRAIN_NAMES[terrain] || terrain, `${count} hex${count === 1 ? "" : "es"}`))
     .join("");
+  // T-fix: the town itself, counted — houses/barns/schools/camps plus the
+  // walls the ledger used to hide.
+  const palisadeShown = typeof palisade !== "undefined" ? palisade : 0;
+  const towerShown = typeof watchtower !== "undefined" ? watchtower : 0;
   setPanel("empireLand", [
     row(`${icon("tiles")} Hexes held`, land.tiles),
     terrainLines,
@@ -230,6 +239,8 @@ function empireRefresh() {
     row(`${icon("timbermellow")} Food still on the land`, land.stores.timbermellow + (farming_made > 0 ? land.stores.grain : 0)),
     row(`${icon("wood")} Wood still standing`, land.stores.wood),
     row(`${icon("stone")} Stone still in the ground`, land.stores.stone),
+    row(`${icon("house")} Houses · barns · schools · camps`, `${stonehouse} · ${barn} · ${school} · ${armycamp}`),
+    (palisadeShown || towerShown) ? row(`${icon("shield")} Walls · towers`, `${palisadeShown} · ${towerShown}`) : "",
   ].join(""));
 
   // --- everyone else -------------------------------------------------------

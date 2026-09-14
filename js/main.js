@@ -116,22 +116,66 @@ function bootFailed(error) {
     label.textContent = `Could not start: ${error && error.message ? error.message : error}`;
     label.style.color = "#b83928";
   }
+  // T5: a dead boot gets a Retry button instead of a dead screen.
+  const bar = document.getElementById("bootBarFill");
+  if (bar && bar.parentElement && !document.getElementById("bootRetryBtn")) {
+    const btn = document.createElement("button");
+    btn.id = "bootRetryBtn";
+    btn.className = "rw-btn";
+    btn.textContent = "Try again";
+    btn.style.marginTop = "12px";
+    btn.onclick = () => location.reload();
+    bar.parentElement.after(btn);
+  }
+}
+
+// T5: ?seed=abc used to become 0 silently. Now: digits only, else random
+// with a visible note, so shared seeds always reproduce.
+function parseSeedParam(value) {
+  if (value == null || value === "") return null;
+  const trimmed = String(value).trim();
+  if (!/^\d{1,10}$/.test(trimmed)) return { invalid: true, raw: trimmed };
+  const num = Number(trimmed) >>> 0;
+  return { seed: num };
 }
 
 // Generates the world in a worker so the boot screen keeps animating.
 // Falls back to the main thread if workers are unavailable (file:// pages).
+// T4: 20s watchdog — a hung worker falls back instead of hanging the boot.
 function generateWorldAsync(spec) {
   return new Promise((resolve, reject) => {
     let worker = null;
+    let settled = false;
+    const finish = (fn) => (value) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      fn(value);
+    };
+    const done = finish(resolve);
+    const fail = finish(reject);
+    const fallbackToMainThread = () => {
+      import("./world/worldGen.js")
+        .then(({ generateWorld }) => done(generateWorld(spec, (fraction, caption) => bootStage(caption, 0.1 + fraction * 0.4))))
+        .catch(fail);
+    };
+    const timer = typeof setTimeout === "function" ? setTimeout(() => {
+      if (settled) return;
+      try {
+        if (worker) worker.terminate();
+      } catch (error) {
+        // terminating a dead worker is fine
+      }
+      worker = null;
+      fallbackToMainThread();
+    }, 20000) : null;
     try {
       worker = new Worker(new URL("./world/worldGen.worker.js", import.meta.url), { type: "module" });
     } catch (error) {
       worker = null;
     }
     if (!worker) {
-      import("./world/worldGen.js")
-        .then(({ generateWorld }) => resolve(generateWorld(spec, (fraction, caption) => bootStage(caption, 0.1 + fraction * 0.4))))
-        .catch(reject);
+      fallbackToMainThread();
       return;
     }
     worker.onmessage = (event) => {
@@ -139,20 +183,31 @@ function generateWorldAsync(spec) {
       if (message.type === "progress") {
         bootStage(message.caption || "Raising the land out of the sea…", 0.1 + (message.fraction || 0) * 0.4);
       } else if (message.type === "done") {
-        worker.terminate();
-        resolve(message.world);
+        try {
+          worker.terminate();
+        } catch (error) {
+          // already gone
+        }
+        done(message.world);
       } else if (message.type === "error") {
-        worker.terminate();
-        reject(new Error(message.message || "world generation failed"));
+        try {
+          worker.terminate();
+        } catch (error) {
+          // already gone
+        }
+        // T4: worker errors fall back to main thread instead of a dead boot.
+        fallbackToMainThread();
       }
     };
     worker.onerror = (event) => {
-      worker.terminate();
+      try {
+        worker.terminate();
+      } catch (error) {
+        // already gone
+      }
       // A worker that cannot even start (old browser, blocked module
       // workers) is not fatal: do the work here instead.
-      import("./world/worldGen.js")
-        .then(({ generateWorld }) => resolve(generateWorld(spec, (fraction, caption) => bootStage(caption, 0.1 + fraction * 0.4))))
-        .catch(() => reject(new Error(event.message || "world worker failed")));
+      fallbackToMainThread();
     };
     worker.postMessage({ spec });
   });
@@ -180,8 +235,14 @@ async function boot() {
   if (qualitySelect) qualitySelect.value = preferred || "auto";
 
   const saved = callLegacy("loadSavedGame");
-  if (saved) worldSeed = saved.seed;
-  else if (params.get("seed")) worldSeed = Number(params.get("seed")) >>> 0;
+  // T5: validate ?seed= — digits only. Bad seeds fall back to random and
+  // say so on the boot card instead of silently becoming world 0.
+  const seedParam = parseSeedParam(params.get("seed"));
+  if (seedParam && seedParam.invalid) {
+    bootStage(`Ignoring bad seed "${seedParam.raw}" — rolling a fresh world…`, 0.06);
+  }
+  if (saved) worldSeed = saved.seed >>> 0;
+  else if (seedParam && !seedParam.invalid && seedParam.seed != null) worldSeed = seedParam.seed >>> 0;
   else worldSeed = Math.floor(Math.random() * 1e9);
 
   const titleScreen = document.getElementById("titleScreen");
@@ -210,9 +271,26 @@ async function boot() {
 
   callLegacy("villagesSet", world.villages);
   hexMap.beginBatch();
-  if (saved) {
-    hexMap.deserialize(saved.map);
-    callLegacy("villagesSet", saved.villages);
+  // T5: never trust a save whose world no longer matches this generator.
+  // Mismatched saves start fresh on the new world instead of loading
+  // sideways onto wrong tiles.
+  let useSave = saved;
+  try {
+    if (saved && typeof saveWorldMismatch === "function" && saveWorldMismatch(saved, worldSeed, world)) {
+      useSave = null;
+      bootStage("Old save did not match this world — starting fresh…", 0.5);
+      try {
+        if (typeof updatelog === "function") updatelog("An old save did not match this world, so a fresh village was founded.", "bad");
+      } catch (error) {
+        // log not ready during boot; the boot caption already said it
+      }
+    }
+  } catch (error) {
+    useSave = saved;
+  }
+  if (useSave) {
+    hexMap.deserialize(useSave.map);
+    callLegacy("villagesSet", useSave.villages);
   } else {
     for (const village of world.villages) {
       callLegacy("territoryFoundVillage", hexMap, village.homeTileId, village.id);
@@ -224,6 +302,16 @@ async function boot() {
   hexMap.selectTile(home.id);
   hexMap.endBatch();
   callLegacy("territorySetMap", hexMap, world.grid, onTerritoryChanged);
+  // T5: persist the fresh world immediately so a reload before turn 1 keeps
+  // the same seed instead of rolling a new one. Best-effort; quotas/private
+  // windows just mean the next boot rolls again.
+  if (!useSave) {
+    try {
+      callLegacy("saveGame", worldSeed);
+    } catch (error) {
+      // boot continues unsaved
+    }
+  }
 
   roads = new RoadNetwork(hexMap);
   improvements = new Improvements(hexMap, roads);
@@ -255,7 +343,16 @@ async function boot() {
   bootStage("Setting out the villages…", 0.8);
   await nextFrame();
   minimap = new Minimap(document.getElementById("minimap"), world, hexMap, () => callLegacy("villagesGet") || []);
-  minimap.onClick((x, y) => renderer.camera.focusOn(x, y, undefined, { animate: true }));
+  // T-fix: no free scouting — clicks into unseen parchment stay put.
+  minimap.onClick((x, y) => {
+    try {
+      const tile = typeof tileAtWorld === "function" ? tileAtWorld(x, y) : null;
+      if (tile && hexMap && typeof hexMap.isRevealed === "function" && !hexMap.isRevealed(tile.id) && !hexMap.mapmakingUnlocked) return;
+    } catch (error) {
+      // mapping failed; fall through to the focus
+    }
+    renderer.camera.focusOn(x, y, undefined, { animate: true });
+  });
   renderer.camera.onChange((view) => minimap.draw(view));
 
   const seedLabel = document.getElementById("seedLabel");
@@ -270,6 +367,18 @@ async function boot() {
     callLegacy("updatelog", `Welcome back — turn ${saved.game.turngame}, saved ${new Date(saved.savedAt).toLocaleString()}.`, "good");
   } else {
     callLegacy("updatelog", "Your village stands in a single timbermellow grove. When it starts to run dry, explore the land around it — and mind the neighbours.", "good");
+  }
+  // T-fix: restore view state saved alongside the game (lens/grid/selected).
+  try {
+    if (saved && saved.view) {
+      if (saved.view.lens) setMapLens(saved.view.lens);
+      if (saved.view.grid && !gridOn) toggleMapGrid();
+      if (saved.view.selected && hexMap && typeof hexMap.getTile === "function" && hexMap.getTile(saved.view.selected)) {
+        hexMap.selectTile(saved.view.selected);
+      }
+    }
+  } catch (error) {
+    // view restore is cosmetic; the game stands without it
   }
 
   // Towns and work sites for everyone, then the people who live in them.
@@ -292,8 +401,42 @@ async function boot() {
   minimap.draw(currentView());
   startSiteIncome();
   window.addEventListener("resize", () => { if (renderer) renderer.resize(); });
+  // T6 portal: pause the ticker when the page loses focus (portal iframe
+  // blur does not always set document.hidden). Resume resets the FPS meter
+  // so one huge frame never trips adaptive quality.
+  installPauseOnBlur();
   await nextFrame();
   bootDone();
+}
+
+// T6: portals bury games in iframes — blur/focus is the reliable pause signal.
+function installPauseOnBlur() {
+  if (installPauseOnBlur.done) return;
+  installPauseOnBlur.done = true;
+  const stop = () => {
+    try {
+      if (renderer && renderer.app && renderer.app.ticker) renderer.app.ticker.stop();
+    } catch (error) {
+      // already stopped
+    }
+  };
+  const start = () => {
+    try {
+      if (renderer && renderer.app && renderer.app.ticker) {
+        renderer.app.ticker.start();
+        // Drop the hitch frame from the meter (see device.js FpsMeter).
+        if (typeof onFps === "function") onFps(60, 16.7, quality || { tier: "mid" });
+      }
+    } catch (error) {
+      // will resume on next frame anyway
+    }
+  };
+  window.addEventListener("blur", stop);
+  window.addEventListener("focus", start);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stop();
+    else start();
+  });
 }
 
 function currentView() {
@@ -832,6 +975,9 @@ const PLACEABLE = [
   { type: "barn", label: "Barn", pay: "make_barn", icon: "barn" },
   { type: "school", label: "School", pay: "make_school", icon: "tech" },
   { type: "armyCamp", label: "Army camp", pay: "make_armycamp", icon: "soldier" },
+  // T-fix: dock was auto-only, so sea trade could never be chosen. Now it is
+  // placeable like any town building (needs shore water, see canPlace).
+  { type: "dock", label: "Dock", pay: null, cost: { wood: 6, hours: 1 }, icon: "explore" },
   { type: "farm", label: "Farm", site: true, icon: "farming" },
   { type: "pasture", label: "Pasture", site: true, icon: "timbermellow" },
   { type: "lumberCamp", label: "Lumber camp", site: true, icon: "wood" },
@@ -847,12 +993,16 @@ function fillBuildPalette() {
   host.innerHTML = PLACEABLE.map((entry) => {
     const active = mapTool && mapTool.mode === "build" && mapTool.type === entry.type;
     const blocked = entry.type === "farm" && !(state.farming_made > 0);
-    const cost = entry.site ? `${SITE_COST.wood} wood · ${SITE_COST.hours} hour` : "same as the Build tab";
+    const price = entry.cost || (entry.site ? SITE_COST : null);
+    const cost = price ? `${price.wood} wood · ${price.hours} hour${price.hours === 1 ? "" : "s"}` : "same as the Build tab";
+    const tip = entry.type === "dock"
+      ? "Pick a shore hex you own. Sea lanes from the world join here — a docked neighbour becomes a trading partner."
+      : "Pick where it stands. Work sites bring carts and roads with them.";
     return `
       <button class="rw-gizmo rw-gizmo--place ${active ? "is-on" : ""}" ${blocked ? "disabled" : ""}
               data-place="${entry.type}"
               data-tip-title="Place a ${entry.label.toLowerCase()}"
-              data-tip="Pick where it stands. Work sites bring carts and roads with them."
+              data-tip="${tip}"
               data-tip-cost="${cost}"
               data-tip-block="${blocked ? "Learn farming first." : ""}">
         <span class="rw-gizmo__icon">${icon(entry.icon)}</span>
@@ -921,9 +1071,12 @@ function applyMapTool(tileId) {
       if (JSON.stringify(before) === JSON.stringify(after)) pendingPlacementTile = null;
       return true;
     }
-    if (state.wood < SITE_COST.wood) { callLegacy("updatelog", `A ${mapTool.type} needs ${SITE_COST.wood} wood.`, "bad"); return true; }
-    if (state.working_hours < SITE_COST.hours) { callLegacy("updatelog", "No work hours left for that.", "bad"); return true; }
-    callLegacy("legacySpend", { wood: SITE_COST.wood, hours: SITE_COST.hours });
+    // T-fix: town buildings without a legacy button (dock) pay their own
+    // entry.cost, defaulting to the work-site price.
+    const price = (entry && entry.cost) || SITE_COST;
+    if (state.wood < price.wood) { callLegacy("updatelog", `A ${mapTool.type} needs ${price.wood} wood.`, "bad"); return true; }
+    if (state.working_hours < price.hours) { callLegacy("updatelog", "No work hours left for that.", "bad"); return true; }
+    callLegacy("legacySpend", { wood: price.wood, hours: price.hours });
     improvements.place(mapTool.type, tileId, "player");
     callLegacy("updatelog", `A ${IMPROVEMENTS[mapTool.type].name || mapTool.type} is staked out on the land.`, "good");
     callLegacy("update");
