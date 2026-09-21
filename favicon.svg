@@ -1,0 +1,27 @@
+<!--
+  favicon.svg — the tab icon for "bottom up".
+
+  A timbermellow on parchment: the crop the whole game is built around,
+  drawn in the same ink-and-gold cartographer style as js/icons.js, but
+  stripped to a silhouette because a tab icon is 16 pixels wide and fine
+  line work turns to mud at that size.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Parchment ground with an ink edge, so the mark reads on a light
+       tab bar and a dark one alike. -->
+  <rect x="1" y="1" width="62" height="62" rx="12" fill="#f4eee0"/>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="11.5" fill="none" stroke="#6b5138" stroke-width="3"/>
+
+  <!-- The bulb: the timbermellow's fat body, low and round. -->
+  <path d="M32 56c-11 0-19-6.5-19-15.5S21 27 32 27s19 4.5 19 13.5S43 56 32 56z"
+        fill="#c48a47" stroke="#4a3014" stroke-width="2.6" stroke-linejoin="round"/>
+  <!-- Its two shoulder ridges. -->
+  <path d="M20 40c4 3 8 4.5 12 4.5s8-1.5 12-4.5" fill="none" stroke="#7a5528" stroke-width="2.2" stroke-linecap="round"/>
+
+  <!-- The sprout: two leaves and a stem, in the gold the HUD uses. -->
+  <path d="M32 27c0-6 1.5-10 4-12" fill="none" stroke="#4a3014" stroke-width="2.6" stroke-linecap="round"/>
+  <path d="M35 17c-1.5-3.5-4.5-5.5-7.5-5.5.5 3.5 3 6 7.5 5.5z"
+        fill="#e5b945" stroke="#4a3014" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M36 17c.5-3.5 3-6 6-6.5.5 3.5-1.5 6.5-6 6.5z"
+        fill="#d4a32b" stroke="#4a3014" stroke-width="2" stroke-linejoin="round"/>
+</svg>
