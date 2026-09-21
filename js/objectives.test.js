@@ -57,6 +57,9 @@ Object.assign(global, {
   AGE_ORDER: ["dawn", "growth", "raids", "famine"],
   agePhase: "dawn",
   ageAtLeast: (phase) => global.AGE_ORDER.indexOf(global.agePhase) >= global.AGE_ORDER.indexOf(phase),
+  // Item 7: the barn, the land and ageFoodGathered all count calories now.
+  // js/territory.js declares this once for the whole classic-script scope.
+  CALORIES_PER_TIMBERMELLOW: 1000,
   ageFoodGathered: 0,
   humans: 2, human_army: 0, wood: 0, stone: 0, timbermellow_count: 0,
   barn: 1, stonehouse: 1, school: 0, armycamp: 0, turngame: 1,
@@ -95,11 +98,29 @@ for (const objective of read("OBJECTIVES")) {
 objectivesRefresh();
 assert.deepStrictEqual(read("objectivesDone"), {}, "nothing done at start");
 assert.strictEqual(objectivesNext().id, "gather_5", "the first goal is to gather");
-assert.strictEqual(elements.objectivePanel.hidden, false, "panel shows as soon as something is showable");
-assert.strictEqual(elements.objectiveCount.textContent, "0/24");
+// Sếp's "lets go back to the start": Act I is deliberately bare, so the
+// checklist panel and the Next chip stay hidden until Act II (js/ages.js).
+assert.strictEqual(elements.objectivePanel.hidden, true, "Act I shows no checklist");
 assert.strictEqual(read("objectivesBaseTiles"), 37, "home tiles were noted");
 
-// The panel lists the next three pending, nothing done yet.
+// A later act's objective is not checked before its act begins, even when its
+// condition is plainly met. (villager_3 does complete — it is an Act I goal.)
+global.human_army = 1;
+objectivesRefresh();
+assert.strictEqual(read("objectivesDone").villager_3, 1, "Act I objective completes");
+assert.ok(!read("objectivesDone").soldier_1, "a later act's objective is not checked yet");
+read("delete objectivesDone.villager_3");
+global.human_army = 0;
+objectivesRefresh();
+assert.deepStrictEqual(read("objectivesDone"), {}, "back to nothing done");
+floated.length = 0;
+logLines.length = 0;
+
+// Act II: the panel appears, listing the next three pending, nothing done yet.
+global.agePhase = "growth";
+objectivesRefresh();
+assert.strictEqual(elements.objectivePanel.hidden, false, "panel shows once Act II begins");
+assert.strictEqual(elements.objectiveCount.textContent, "0/24");
 assert.strictEqual((elements.objectiveList.innerHTML.match(/<li>/g) || []).length, 3, "three rows");
 assert.ok(!elements.objectiveList.innerHTML.includes("rw-objective--done"), "no done row yet");
 assert.ok(elements.objectiveList.innerHTML.includes("rw-objective--new"), "first rows flash as new");
@@ -111,7 +132,7 @@ objectivesRefresh();
 assert.strictEqual(elements.objectiveList.innerHTML, "UNTOUCHED", "no rebuild when nothing changed");
 
 // Gathering 5 completes the first objective and pays the reward (2 wood).
-global.ageFoodGathered = 5;
+global.ageFoodGathered = 5 * 1000;
 global.wood = 1;
 objectivesRefresh();
 assert.strictEqual(read("objectivesDone").gather_5, 1, "gather_5 done on turn 1");
@@ -130,13 +151,8 @@ assert.ok(!html.includes("Raise a third villager"), "fourth pending is not shown
 assert.ok(!html.includes("Train a soldier"), "a later act's objective is not shown");
 assert.ok(html.includes("✓") && html.includes("○"), "marks");
 
-// Later acts are neither shown nor checked before their act begins.
+// Act II objectives complete once their act begins.
 global.human_army = 1;
-objectivesRefresh();
-assert.ok(!read("objectivesDone").soldier_1, "soldier objective ignored in Act I");
-assert.deepStrictEqual(objectivesPending().map((o) => o.act).filter((act) => act > 0), [], "only Act I pending");
-
-global.agePhase = "growth";
 objectivesRefresh();
 assert.strictEqual(read("objectivesDone").soldier_1, 1, "soldier objective completes once Act II begins");
 assert.ok(objectivesPending().some((o) => o.id === "explore_1"), "Act II objectives now pending");

@@ -25,14 +25,22 @@ function legacyState() {
     watchtower: (typeof watchtower !== "undefined" ? watchtower : 0),
     seasonchecker, season, turngame,
     farming_made, mapmaking_made,
+    // Item 2: the module side decides the loss, so it needs the streak.
+    hungerStreak, difficulty,
     garlocks_attacking, garlock_next_raid_turn,
   };
 }
 
 // gain: { food, wood, stone } — what the carts bring in between turns
 // (js/main.js, siteIncomeTick). Food never overfills the barns.
+//
+// Item 7: `gain.food` is what the MAP hands over — one timbermellow at a
+// time, because that is what a tile's yield is written in — and the barn
+// counts calories, so it is scaled on the way in. Wood and stone are
+// untouched by the calorie layer.
 function legacyAdd(gain) {
-  timbermellow_count = Math.min(storage_capacity, timbermellow_count + (gain.food || 0));
+  const calories = (gain.food || 0) * CALORIES_PER_TIMBERMELLOW;
+  timbermellow_count = Math.min(storage_capacity, timbermellow_count + calories);
   wood += gain.wood || 0;
   stone += gain.stone || 0;
   return legacyState();

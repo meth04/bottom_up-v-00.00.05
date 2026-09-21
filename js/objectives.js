@@ -151,8 +151,12 @@ const OBJECTIVES = [
     act: 0,
     title: "Gather 5 timbermellows",
     hint: "Press Gather in the bottom-right; each press is one hour of work.",
-    check: () => ageFoodGathered >= 5,
-    progress: () => ({ have: Math.min(5, ageFoodGathered), need: 5 }),
+    // Item 7: ageFoodGathered counts calories; the goal is five timbermellows.
+    check: () => ageFoodGathered >= 5 * CALORIES_PER_TIMBERMELLOW,
+    progress: () => ({
+      have: Math.min(5, Math.floor(ageFoodGathered / CALORIES_PER_TIMBERMELLOW)),
+      need: 5,
+    }),
     reward: { wood: 2 },
     go: () => objectivesPoint("gather", "btn_find_timbermellow"),
   },
@@ -160,7 +164,9 @@ const OBJECTIVES = [
     id: "wood_4",
     act: 0,
     title: "Pick up 4 wood",
-    hint: "The Wood button sits beside Gather once someone has thought of it.",
+    hint: "The Wood button sits beside Gather once there are three of you to carry it.",
+    // Item 6: wood is a technology now, earned with a third villager.
+    avail: () => typeof ageHas !== "function" || ageHas("gather_wood"),
     check: () => wood >= 4 || barn >= 2,
     progress: () => ({ have: Math.min(4, wood), need: 4 }),
     reward: { food: 3 },
@@ -171,6 +177,7 @@ const OBJECTIVES = [
     act: 0,
     title: "Build a barn",
     hint: "Open Build and press Barn — 4 wood, and food over your barn space is stolen at the end of the turn.",
+    avail: () => typeof ageHas !== "function" || ageHas("gather_wood"),
     check: () => barn >= 2,
     progress: () => ({ have: Math.min(1, Math.max(0, barn - 1)), need: 1 }),
     reward: { food: 5 },
@@ -201,8 +208,12 @@ const OBJECTIVES = [
     act: 0,
     title: "Store 20 food before winter",
     hint: "Nothing grows in winter; fill the barns in autumn so nobody starves.",
-    check: () => timbermellow_count >= 20,
-    progress: () => ({ have: Math.min(20, timbermellow_count), need: 20 }),
+    // Item 7: the title says timbermellows, the barn counts calories.
+    check: () => timbermellow_count >= 20 * CALORIES_PER_TIMBERMELLOW,
+    progress: () => ({
+      have: Math.min(20, Math.floor(timbermellow_count / CALORIES_PER_TIMBERMELLOW)),
+      need: 20,
+    }),
     reward: { wood: 4 },
     go: () => objectivesPoint("gather", "btn_find_timbermellow"),
   },
@@ -211,6 +222,8 @@ const OBJECTIVES = [
     act: 0,
     title: "Build a house",
     hint: "Gather 2 stone, then Build → House; anyone without a roof dies in winter.",
+    // Items 4: stone and roofs arrive in the spring after the first winter.
+    avail: () => typeof ageHas !== "function" || ageHas("gather_stone"),
     check: () => stonehouse >= 2,
     progress: () => ({ have: Math.min(2, stone), need: 2 }),
     reward: { stone: 3 },
@@ -425,9 +438,25 @@ function objectivesById(id) {
   return OBJECTIVES.find((objective) => objective.id === id) || null;
 }
 
-// The objectives the player can see right now: not done, act begun.
+// The objectives the player can see right now: not done, act begun, and —
+// since Sếp's notes (items 4 and 6) made wood, stone and houses technologies —
+// actually reachable. An objective that says "build a house" while the House
+// button is still hidden is worse than no objective at all, so anything whose
+// target has not been unlocked yet waits its turn.
+function objectivesAvailable(objective) {
+  if (typeof objective.avail !== "function") return true;
+  try {
+    return !!objective.avail();
+  } catch (error) {
+    return false;
+  }
+}
+
 function objectivesPending() {
-  return OBJECTIVES.filter((objective) => !objectivesDone[objective.id] && objectivesActReached(objective.act));
+  return OBJECTIVES.filter((objective) =>
+    !objectivesDone[objective.id] &&
+    objectivesActReached(objective.act) &&
+    objectivesAvailable(objective));
 }
 
 // The first unfinished objective — what the tool hint and the tutor point at.
@@ -473,9 +502,15 @@ function objectivesRewardText(reward) {
   return parts.join(", ");
 }
 
+// Item 7: every `reward.food` in the table above is written the way the
+// player reads it — timbermellows — and converted here, at the one place a
+// reward reaches the barn. Keeping the table in timbermellows is what keeps
+// objectivesRewardText() honest without a second conversion.
+// (CALORIES_PER_TIMBERMELLOW is the global from js/territory.js.)
 function objectivesGrant(reward) {
   if (!reward) return;
-  if (reward.food && typeof timbermellow_count !== "undefined") timbermellow_count += reward.food;
+  const food = (reward.food || 0) * CALORIES_PER_TIMBERMELLOW;
+  if (food && typeof timbermellow_count !== "undefined") timbermellow_count += food;
   if (reward.wood && typeof wood !== "undefined") wood += reward.wood;
   if (reward.stone && typeof stone !== "undefined") stone += reward.stone;
   if (typeof spawnFloatingReward === "function") {
@@ -548,6 +583,15 @@ function objectivesRender() {
   const panel = document.getElementById("objectivePanel");
   const list = document.getElementById("objectiveList");
   if (!panel || !list) return;
+
+  // Item: Act I is deliberately bare (js/ages.js, act_one_minimal). The
+  // checklist is one of the things that waits for Act II — and since this
+  // runs after ageApplyVisibility() in update(), it has to enforce that
+  // itself rather than leave it to the unlock.
+  if (typeof ageAtLeast === "function" && !ageAtLeast("growth")) {
+    panel.hidden = true;
+    return;
+  }
 
   const pending = objectivesPending().slice(0, OBJECTIVES_SHOWN);
   const last = objectivesLastDone();

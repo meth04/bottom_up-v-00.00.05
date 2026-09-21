@@ -74,8 +74,16 @@ function turnReportBuild() {
   const now = turnSnapshotState();
   const lines = [];
 
+  // Item 7: the snapshot is taken in calories (game.js stores them that
+  // way), but the report is read next to the timbermellow readout — so the
+  // DIFFERENCE is divided down, not the two values before subtracting.
+  // (CALORIES_PER_TIMBERMELLOW is the global from js/territory.js.)
   for (const store of TURN_REPORT_STORES) {
-    const delta = now[store.field] - turnSnapshot[store.field];
+    const raw = now[store.field] - turnSnapshot[store.field];
+    if (raw === 0) continue;
+    const delta = store.field === "timbermellow"
+      ? (raw > 0 ? Math.floor(raw / CALORIES_PER_TIMBERMELLOW) : Math.ceil(raw / CALORIES_PER_TIMBERMELLOW))
+      : raw;
     if (delta === 0) continue;
     lines.push({
       icon: store.icon,

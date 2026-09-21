@@ -1,6 +1,5 @@
 {
   "_readme": "The world is generated from a seed (js/world/worldGen.js, run in a Web Worker): several continents on a wide sea with mountain spines, rivers, lakes, deserts in the rain shadow and cold tundra in the north. What you can change here: how big the world is, how many villages and continents it has, what the player's home starts with, and what each kind of ground holds. NOTE: the grid is 360x240 hexes of 24 world units; a hex is a field, not a county, and one expedition claims a whole district of hexes (js/territory.js).",
-
   "world": {
     "cols": 360,
     "rows": 240,
@@ -8,84 +7,174 @@
     "villageCount": 42,
     "continents": 4
   },
-
   "_startingTile": "The hall's own hex. The village now begins holding the whole valley around it (js/territory.js, VILLAGE_RADIUS), so this no longer has to carry a whole game's worth of stores on its own — the thirty-odd hexes around it supply the rest, and because the hall is the oldest claim it is still the ground the village works dry first.",
-
   "startingTile": {
     "resources": {
-      "timbermellow": { "amount": 90, "renewable": true },
-      "wood": { "amount": 44, "renewable": true },
-      "stone": { "amount": 24, "renewable": false }
+      "timbermellow": {
+        "amount": 90000,
+        "renewable": true
+      },
+      "wood": {
+        "amount": 44,
+        "renewable": true
+      },
+      "stone": {
+        "amount": 24,
+        "renewable": false
+      }
     }
   },
-
   "terrainDefaults": {
     "timbermellowForest": {
-      "timbermellow": { "amount": 28, "renewable": true },
-      "wood": { "amount": 11, "renewable": true }
+      "timbermellow": {
+        "amount": 28000,
+        "renewable": true
+      },
+      "wood": {
+        "amount": 11,
+        "renewable": true
+      }
     },
     "flowerMeadow": {
-      "timbermellow": { "amount": 17, "renewable": true }
+      "timbermellow": {
+        "amount": 17000,
+        "renewable": true
+      }
     },
     "forest": {
-      "wood": { "amount": 22, "renewable": true },
-      "timbermellow": { "amount": 7, "renewable": true }
+      "wood": {
+        "amount": 22,
+        "renewable": true
+      },
+      "timbermellow": {
+        "amount": 7000,
+        "renewable": true
+      }
     },
     "birchWood": {
-      "wood": { "amount": 19, "renewable": true },
-      "timbermellow": { "amount": 9, "renewable": true }
+      "wood": {
+        "amount": 19,
+        "renewable": true
+      },
+      "timbermellow": {
+        "amount": 9000,
+        "renewable": true
+      }
     },
     "denseBush": {
-      "wood": { "amount": 28, "renewable": true },
-      "timbermellow": { "amount": 5, "renewable": true }
+      "wood": {
+        "amount": 28,
+        "renewable": true
+      },
+      "timbermellow": {
+        "amount": 5000,
+        "renewable": true
+      }
     },
     "taiga": {
-      "wood": { "amount": 26, "renewable": true },
-      "timbermellow": { "amount": 3, "renewable": true }
+      "wood": {
+        "amount": 26,
+        "renewable": true
+      },
+      "timbermellow": {
+        "amount": 3000,
+        "renewable": true
+      }
     },
     "plains": {
-      "grain": { "amount": 28, "renewable": true }
+      "grain": {
+        "amount": 28000,
+        "renewable": true
+      }
     },
     "overgrownHighlands": {
-      "grain": { "amount": 22, "renewable": true },
-      "stone": { "amount": 11, "renewable": false }
+      "grain": {
+        "amount": 22000,
+        "renewable": true
+      },
+      "stone": {
+        "amount": 11,
+        "renewable": false
+      }
     },
     "rockyOutcrop": {
-      "stone": { "amount": 28, "renewable": false }
+      "stone": {
+        "amount": 28,
+        "renewable": false
+      }
     },
     "mountains": {
-      "stone": { "amount": 28, "renewable": false }
+      "stone": {
+        "amount": 28,
+        "renewable": false
+      }
     },
     "badlands": {
-      "stone": { "amount": 22, "renewable": false },
-      "grain": { "amount": 5, "renewable": true }
+      "stone": {
+        "amount": 22,
+        "renewable": false
+      },
+      "grain": {
+        "amount": 5000,
+        "renewable": true
+      }
     },
     "snowfield": {
-      "stone": { "amount": 9, "renewable": false }
+      "stone": {
+        "amount": 9,
+        "renewable": false
+      }
     },
     "tundra": {
-      "timbermellow": { "amount": 5, "renewable": true },
-      "stone": { "amount": 7, "renewable": false }
+      "timbermellow": {
+        "amount": 5000,
+        "renewable": true
+      },
+      "stone": {
+        "amount": 7,
+        "renewable": false
+      }
     },
     "marsh": {
-      "wood": { "amount": 9, "renewable": true },
-      "timbermellow": { "amount": 10, "renewable": true }
+      "wood": {
+        "amount": 9,
+        "renewable": true
+      },
+      "timbermellow": {
+        "amount": 10000,
+        "renewable": true
+      }
     },
     "beach": {
-      "stone": { "amount": 7, "renewable": false }
+      "stone": {
+        "amount": 7,
+        "renewable": false
+      }
     },
     "river": {},
     "lake": {},
     "ocean": {},
     "hills": {
-      "grain": { "amount": 6, "renewable": true },
-      "stone": { "amount": 5, "renewable": false }
+      "grain": {
+        "amount": 6000,
+        "renewable": true
+      },
+      "stone": {
+        "amount": 5,
+        "renewable": false
+      }
     },
     "desert": {
-      "stone": { "amount": 2, "renewable": false }
+      "stone": {
+        "amount": 2,
+        "renewable": false
+      }
     },
     "cliffs": {
-      "stone": { "amount": 9, "renewable": false }
+      "stone": {
+        "amount": 9,
+        "renewable": false
+      }
     },
     "shallows": {}
   }

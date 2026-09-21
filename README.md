@@ -474,13 +474,20 @@ make each of them cheaper.
 | Technology | Comes at | Costs | Does |
 | --- | --- | --- | --- |
 | **Stone axe** | 25 hours | 20 wood, 30 stone | gather 2 wood per hour |
+| **A Day's Work at Once** | 35 hours | 25 wood, 10 hours | the ×5 and ALL buttons appear |
 | **Farming** | 40 hours, or the famine | 30 wood, 12 hours | grain on plains and terraced hills counts as food |
 | **Food basket** | 50 hours | 50 wood, 16 hours | gather 2 timbermellows per hour |
 | **Mapmaking** | 60 hours | 20 wood, 10 hours | the whole world is drawn in |
 
+Food is measured in **calories** under the hood — one timbermellow is 1000
+calories, and a person eats at least one a turn, up to two and a half once
+the village has gone ten turns without losing anyone. What is eaten beyond
+the minimum buys extra work hours, so a well-fed village works longer days.
+The player never sees a calorie: the readouts still say "timbermellow".
+
 ### The neighbours
 
-Twelve villages share the island: yours, the rivals, and one or two
+42 villages share the island: yours, the rivals, and one or two
 **garlock camps** placed as far from you as the map allows. Every turn each
 of them may settle one more tile next to its own land — the garlocks more
 eagerly than the rest, and nobody settles rock, snow or water. The

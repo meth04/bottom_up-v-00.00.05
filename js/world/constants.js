@@ -30,4 +30,6 @@ export const ZOOM_NEAR = 1.4;
 export const DAY_LENGTH_SECONDS = 150;
 
 // Save format. Bumped whenever the world spec or the tile record changes.
-export const SAVE_VERSION = 4;
+// v5: food is counted in calories (item 7), so tile amounts are ×1000.
+// js/save.js carries a v4 save across — see saveMigrate() there.
+export const SAVE_VERSION = 5;

@@ -28,9 +28,17 @@
 
 // What a raid costs to send. Provisions for the march, and the hours it
 // takes the village to kit the soldiers out and see them off.
+// Item 7: the barn counts calories; everything written here in timbermellows
+// is converted on the way out (raidFoodCost / timbermellowsToCalories).
+// CALORIES_PER_TIMBERMELLOW lives in js/territory.js — one classic-script
+// lexical scope, so it is declared exactly once.
 const RAID_MIN_SOLDIERS = 2;
 const RAID_FOOD_COST = 6;
 const RAID_WORK_HOURS = 4;
+
+function raidFoodCost() {
+  return RAID_FOOD_COST * CALORIES_PER_TIMBERMELLOW;
+}
 
 // A raid launched this turn arrives this many turns later.
 const RAID_TRAVEL_TURNS = 1;
@@ -77,7 +85,8 @@ const RIVAL_RAID_INTERVAL = 7;
 // A neighbour that is not angry but sees full barns behind a thin guard
 // tries its luck now and then.
 // T-fix: 25 punished normal stocking (barns hold 8 now) — 30 is the new greed line.
-const RIVAL_GREED_FOOD = 30;
+// Item 7: the barn is in calories now, so the greed line is 30 timbermellows.
+const RIVAL_GREED_FOOD = 30 * 1000;
 const RIVAL_GREED_CHANCE = 0.12;
 
 // The most a rival raid can take, however badly it went (the garlocks'
@@ -358,7 +367,7 @@ function raidBlocker(villageId) {
   if (raidsOutgoing.some((raid) => raid.villageId === villageId)) return `A raid on ${village.name} is already under way. Wait for the soldiers to come home.`;
   if (raidsOutgoing.length >= RAIDS_MAX_OUTGOING) return `Two raids are already under way. Wait for one to come home.`;
   if (human_army < RAID_MIN_SOLDIERS) return `A raid needs at least ${RAID_MIN_SOLDIERS} soldiers.`;
-  if (timbermellow_count < RAID_FOOD_COST) return `The soldiers need ${RAID_FOOD_COST} timbermellows for the march.`;
+  if (timbermellow_count < raidFoodCost()) return `The soldiers need ${RAID_FOOD_COST} timbermellows for the march.`;
   if (working_hours < RAID_WORK_HOURS) return `Sending a raid takes ${RAID_WORK_HOURS} work hours.`;
   return null;
 }
@@ -377,7 +386,7 @@ function raidLaunch(villageId, soldiersSent) {
   soldiers = raidClamp(soldiers, RAID_MIN_SOLDIERS, human_army);
 
   human_army -= soldiers;
-  timbermellow_count -= RAID_FOOD_COST;
+  timbermellow_count -= raidFoodCost();
   working_hours -= RAID_WORK_HOURS;
 
   const raid = {
@@ -434,13 +443,19 @@ function raidsResolveOutgoing() {
 
     let lost = 0;
     const loot = { food: 0, wood: 0, stone: 0 };
+    // Item 7: the loot is counted in timbermellows, the barn in calories, so
+    // the figure the log quotes is worked out here — outside the won/lost
+    // branches, because the note below is written either way.
+    let foodShown = 0;
     let text;
     let becameVassal = false;
 
     if (won) {
       const each = raidClamp(Math.round(raidHeldTiles(villageId) * RAID_LOOT_PER_TILE), RAID_LOOT_MIN, RAID_LOOT_MAX);
+      // Item 7: the loot is counted in timbermellows; the barn in calories.
+      const eachCalories = each * CALORIES_PER_TIMBERMELLOW;
       const room = Math.max(0, storage_capacity - timbermellow_count);
-      loot.food = Math.min(each, room);
+      loot.food = Math.min(eachCalories, room);
       loot.wood = each;
       // T-fix: stone comes home at half rate — there is no quarry yet, and
       // a 4-hex hamlet should not pay 3 stone like a 40-hex town does food.
@@ -462,12 +477,13 @@ function raidsResolveOutgoing() {
       }
 
       const parts = [];
-      if (loot.food) parts.push(`${loot.food} timbermellows`);
+      foodShown = Math.floor(loot.food / CALORIES_PER_TIMBERMELLOW);
+      if (foodShown) parts.push(`${foodShown} timbermellows`);
       if (loot.wood) parts.push(`${loot.wood} wood`);
       if (loot.stone) parts.push(`${loot.stone} stone`);
       text = `Your soldiers broke into ${name}'s hall and carried off ${parts.length ? parts.join(", ") : "nothing worth the trip"}` +
         (lost ? `, losing ${raidPlural(lost, "soldier")}.` : " without losing a soul.") +
-        (loot.food < each ? " Some of the food would not fit in the barns." : "");
+        (loot.food < eachCalories ? " Some of the food would not fit in the barns." : "");
     } else {
       lost = Math.min(soldiers, Math.ceil(soldiers / 2));
       raidGrudge[villageId] = (raidGrudge[villageId] || 0) + 1;
@@ -477,7 +493,7 @@ function raidsResolveOutgoing() {
     human_army += soldiers - lost;
 
     raidSay(text, won ? "good" : "bad");
-    raidNote(won ? `raid on ${name} won: +${loot.food} food, +${loot.wood} wood, +${loot.stone} stone` : `raid on ${name} lost: ${lost} soldiers`, won ? "good" : "bad");
+    raidNote(won ? `raid on ${name} won: +${foodShown} food, +${loot.wood} wood, +${loot.stone} stone` : `raid on ${name} lost: ${lost} soldiers`, won ? "good" : "bad");
     if (becameVassal) {
       raidSay(`${name} bends the knee. It will send ${TRIBUTE_FOOD} timbermellows and ${TRIBUTE_WOOD} wood every turn, and its raiders will never trouble you again.`, "good");
       raidNote(`${name} became your vassal`, "good");
@@ -554,8 +570,11 @@ function raidsResolveIncoming() {
       text = `${name}'s raiders broke on ${palisade > 0 ? "the palisade" : "your shield line"} and ran for home` +
         (lost ? `, taking ${raidPlural(lost, "soldier")} with them.` : " without taking a soul.");
     } else {
+      // Item 7: `shortfall` is still spoken in the old head-count tongue —
+      // turn it into calories before it joins the barn's numbers, or a raid
+      // that used to take six timbermellows takes six calories.
       const shortfall = Math.min(RAID_MAX_BITE, strength - defence);
-      loot.food = Math.min(timbermellow_count, Math.ceil(timbermellow_count / 2) + shortfall);
+      loot.food = Math.min(timbermellow_count, Math.ceil(timbermellow_count / 2) + shortfall * CALORIES_PER_TIMBERMELLOW);
       loot.wood = Math.min(wood, shortfall * 3);
       loot.barns = shortfall >= 3 && barn > 1 ? 1 : 0;
       lost = Math.min(human_army, Math.ceil(shortfall / 2));
@@ -564,12 +583,15 @@ function raidsResolveIncoming() {
       wood -= loot.wood;
       barn -= loot.barns;
       if (barn < 1) barn = 1;
-      // T1: barns hold 8 (see BARN_CAPACITY in game.js).
-      storage_capacity = barn * (typeof BARN_CAPACITY !== "undefined" ? BARN_CAPACITY : 8);
+      // T1: barns hold 8 (see BARN_CAPACITY in game.js) — in calories now.
+      storage_capacity = typeof barnCapacity === "function"
+        ? barnCapacity(barn)
+        : barn * (typeof BARN_CAPACITY !== "undefined" ? BARN_CAPACITY : 8) * CALORIES_PER_TIMBERMELLOW;
       human_army -= lost;
 
+      const foodShown = Math.floor(loot.food / CALORIES_PER_TIMBERMELLOW);
       const parts = [];
-      if (loot.food) parts.push(`${loot.food} timbermellows`);
+      if (foodShown) parts.push(`${foodShown} timbermellows`);
       if (loot.wood) parts.push(`${loot.wood} wood`);
       if (loot.barns) parts.push(`${raidPlural(loot.barns, "barn")}`);
       if (lost) parts.push(raidPlural(lost, "soldier"));
@@ -578,7 +600,7 @@ function raidsResolveIncoming() {
     }
 
     raidSay(text, repelled ? "good" : "bad");
-    raidNote(repelled ? `${name}'s raid repelled` : `${name}'s raiders took ${loot.food} food, ${loot.wood} wood`, repelled ? "good" : "bad");
+    raidNote(repelled ? `${name}'s raid repelled` : `${name}'s raiders took ${Math.floor(loot.food / CALORIES_PER_TIMBERMELLOW)} food, ${loot.wood} wood`, repelled ? "good" : "bad");
     raidRemember({ turn: turngame, villageId, name, incoming: true, won: repelled, loot, lost, text });
     if (typeof onRaidResolved === "function") onRaidResolved({ villageId, incoming: true, won: repelled, loot, lost });
   }
@@ -590,17 +612,20 @@ function raidsCollectTribute() {
   const vassals = Object.keys(raidVassals);
   if (!vassals.length) return { food: 0, wood: 0, from: [] };
   const room = Math.max(0, storage_capacity - timbermellow_count);
-  const food = Math.min(room, TRIBUTE_FOOD * vassals.length);
+  // Item 7: tribute is spoken in timbermellows, paid into a barn of calories.
+  const foodOffered = TRIBUTE_FOOD * vassals.length * CALORIES_PER_TIMBERMELLOW;
+  const food = Math.min(room, foodOffered);
   const woodSent = TRIBUTE_WOOD * vassals.length;
   timbermellow_count += food;
   wood += woodSent;
   const names = vassals.map((id) => raidName(id)).join(", ");
+  const foodShown = Math.floor(food / CALORIES_PER_TIMBERMELLOW);
   if (food <= 0) {
     raidSay(`Tribute from ${names}: ${woodSent} wood. The ${TRIBUTE_FOOD * vassals.length} food would not fit in the barns.`, "good");
   } else {
-    raidSay(`Tribute from ${names}: ${food} food${food === 1 ? "" : "s"} and ${woodSent} wood.`, "good");
+    raidSay(`Tribute from ${names}: ${foodShown} food${foodShown === 1 ? "" : "s"} and ${woodSent} wood.`, "good");
   }
-  raidNote(`tribute brought ${food} food and ${woodSent} wood`, "good");
+  raidNote(`tribute brought ${foodShown} food and ${woodSent} wood`, "good");
   return { food, wood: woodSent, from: vassals };
 }
 

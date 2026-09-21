@@ -171,9 +171,25 @@ function professionBlocker(id) {
     return `Three ${trade.name.toLowerCase()}s already teach the village everything they can.`;
   }
   // Taking one of three workers off the rota is not a choice, it is a wound.
-  if (humans < 4) return "You need four villagers before you can spare one to train.";
-  if (timbermellow_count < trade.food) return `Feeding a trainee costs ${trade.food} timbermellows up front.`;
+  // Item 2: and the village never falls below its two-villager floor, so a
+  // trainee cannot be the last one left.
+  if (humans <= (typeof MIN_VILLAGERS !== "undefined" ? MIN_VILLAGERS : 2) + 1) {
+    return "You need four villagers before you can spare one to train.";
+  }
+  // Item 7: `trade.food` is written in timbermellows — the way the tooltip
+  // and the log both say it — while the barn counts calories. Convert at the
+  // two places the cost is actually paid, or a trainee costs four calories
+  // instead of four meals.
+  if (timbermellow_count < professionTrainFood(id)) return `Feeding a trainee costs ${trade.food} timbermellows up front.`;
   return null;
+}
+
+// What feeding a trainee of this trade costs, in the barn's own unit.
+function professionTrainFood(id) {
+  const trade = PROFESSIONS[id];
+  if (!trade) return 0;
+  const scale = typeof CALORIES_PER_TIMBERMELLOW === "number" ? CALORIES_PER_TIMBERMELLOW : 1000;
+  return trade.food * scale;
 }
 
 function professionTrain(id) {
@@ -182,7 +198,7 @@ function professionTrain(id) {
 
   const trade = PROFESSIONS[id];
   humans -= 1;
-  timbermellow_count -= trade.food;
+  timbermellow_count -= professionTrainFood(id);
   professionTrainees.push({ id, left: trade.turns });
   updatelog(`One villager leaves the work rota to train as a ${trade.name.toLowerCase()} — ${trade.turns} turn${trade.turns > 1 ? "s" : ""}, and they still eat.`, "good");
   update();
@@ -253,9 +269,11 @@ function professionTotal() {
 
 const JOB_TYPES = ["timbermellow", "wood", "stone"];
 
-// Hours the standing orders may never touch, so the player is never locked
-// out of building.
+// The hours the standing orders may never touch, so the player is never
+// locked out of building. It used to be a flat hour, which was half the
+// winter day — it is a share of the day now, never less than one hour.
 const JOB_RESERVED_HOURS = 1;
+const JOB_RESERVED_FRACTION = 0.1;
 
 const JOB_LABELS = {
   timbermellow: "Gathering food",
@@ -289,12 +307,20 @@ function jobClear() {
   update();
 }
 
-// How many hours one villager has this season. Kept in step with
-// seasons_effect() in game.js.
+// How many hours one villager has this season, at a BARE ration. Since the
+// village went onto calories (game.js, item 7) this is no longer the number
+// of hours anybody actually has — it is the price of an hour expressed the
+// other way up (`calPerHour = 1000 / jobHoursPerVillager()`), and the figure
+// the tooltips quote for "what a villager does on minimum rations".
 function jobHoursPerVillager() {
   if (seasonchecker === 2) return 6;
   if (seasonchecker === 4) return 2;
   return 4;
+}
+
+function jobReservedHours(dayHours) {
+  const day = dayHours === undefined ? Math.max(0, working_hours) : Math.max(0, dayHours);
+  return Math.max(JOB_RESERVED_HOURS, Math.ceil(day * JOB_RESERVED_FRACTION));
 }
 
 // Run at the start of every turn, after the season has handed out hours.
@@ -326,7 +352,18 @@ function jobsRunAuto() {
   const assigned = jobAssignedTotal();
   if (assigned <= 0) return;
 
-  const perVillager = jobHoursPerVillager();
+  // Item 7: the day is whatever the villagers' calories bought this turn,
+  // which on minimum rations is the old season figure and on a full plate is
+  // half again as long. Split it between the villagers who were actually
+  // given a standing job — the old code clamped every job at the season
+  // constant and silently threw the rest of the day away, so the whole
+  // reward for feeding the village well never reached the player.
+  //
+  // The headman's reserve comes off the top, so the jobs can never spend the
+  // whole day and leave the village unable to build (see jobReservedHours).
+  const dayHours = Math.max(0, working_hours);
+  const reserved = jobReservedHours(dayHours);
+  const hoursPerWorker = Math.floor(Math.max(0, dayHours - reserved) / Math.max(1, assigned));
   const report = [];
 
   // Roads: fields joined to the hall by road haul more home in the same
@@ -338,10 +375,7 @@ function jobsRunAuto() {
   for (const type of JOB_TYPES) {
     const workers = Math.min(jobAssignments[type] || 0, humans);
     if (workers <= 0) continue;
-    // The headman always keeps an hour back. Without it, a village with
-    // everybody on standing orders has no hours left to build with and no
-    // way out of it — one hour out of many is a cheap guarantee.
-    let hours = Math.min(workers * perVillager, Math.max(0, working_hours - JOB_RESERVED_HOURS));
+    let hours = Math.min(workers * hoursPerWorker, Math.max(0, working_hours - reserved));
     if (hours <= 0) break;
 
     if (type === "timbermellow") {
@@ -349,7 +383,10 @@ function jobsRunAuto() {
       // Autumn doubles the base harvest only — baskets and farmers add
       // after, so the cap of 3 specialists still means something.
       let perHour = (seasonchecker === 3 ? 2 : 1) + (foodbasketmade >= 1 ? 1 : 0) + professionGatherBonus("timbermellow");
-      const taken = territoryTake(territoryFoodTypes(), haul(perHour * hours));
+      // The land and the barn count calories (game.js, item 7) while
+      // perHour still speaks timbermellows — convert at the one place the
+      // harvest comes off the tile.
+      const taken = territoryTake(territoryFoodTypes(), haul(perHour * hours) * CALORIES_PER_TIMBERMELLOW);
       if (taken > 0) {
         timbermellow_count += taken;
         ageCountFood(taken);

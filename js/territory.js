@@ -22,10 +22,24 @@
 // requirement is lower here.
 // T1 portal tuning (casual 20-30 min): food 10 -> 6, hours 4 -> 3, so the
 // first district lands around turn 5 instead of turn 12.
+// Item 7: every food figure below is TIMBERMELLOWS as the player reads them;
+// the barn itself counts calories, so the costs are scaled on the way out
+// (see territoryExploreFood()/territorySeizeFood()).
+//
+// This constant is declared HERE, and nowhere else, because classic scripts
+// share one lexical scope — a second `const CALORIES_PER_TIMBERMELLOW` in
+// game.js or raids.js would be a SyntaxError, not a shadow. territory.js is
+// the first-loaded file that needs it (villages, save, then this).
+const CALORIES_PER_TIMBERMELLOW = 1000;
+
 const EXPLORE_MIN_HUMANS = 3;
 const EXPLORE_MIN_SOLDIERS = 1;
 const EXPLORE_FOOD_COST = 6;
 const EXPLORE_WORK_HOURS = 3;
+
+function timbermellowsToCalories(amount) {
+  return Math.round(amount * CALORIES_PER_TIMBERMELLOW);
+}
 
 // The grid is fine — a hex is a field, not a county — so an expedition does
 // not trudge out to claim one field. It settles the ground around where it
@@ -77,6 +91,12 @@ const SEIZE_MIN_SOLDIERS = 2;
 const SEIZE_SOLDIERS_LOST = 1;
 const SEIZE_FOOD_COST = 8;
 const SEIZE_WORK_HOURS = 4;
+
+// The march's provisions, in calories for the barn to pay. Written in
+// timbermellows above because that is what the player is told.
+function territorySeizeFood() {
+  return timbermellowsToCalories(SEIZE_FOOD_COST);
+}
 
 // How much of a tile's carrying capacity comes back each autumn
 // (ask.txt, "Resource pool merge behaviour": "different per resource").
@@ -230,15 +250,16 @@ function territoryExploreBlocker(tileId) {
   // expeditions need their soldier again.
   const claimedNow = typeof territoryClaimedCount === "function" ? territoryClaimedCount() : 99;
   if (human_army < EXPLORE_MIN_SOLDIERS && claimedNow > 40) return `An expedition needs ${EXPLORE_MIN_SOLDIERS} soldier${EXPLORE_MIN_SOLDIERS > 1 ? "s" : ""} as escort.`;
-  if (timbermellow_count < territoryExploreFood()) return `An expedition needs ${territoryExploreFood()} timbermellows as provisions.`;
+  if (timbermellow_count < territoryExploreFood()) return `An expedition needs ${EXPLORE_FOOD_COST} timbermellows as provisions.`;
   if (working_hours < territoryExploreHours()) return `Exploring takes ${territoryExploreHours()} work hours.`;
   return null;
 }
 
-// What an expedition costs today. Scouts trained at the army camp make the
-// march cheaper (see js/professions.js).
+// What an expedition costs today, in calories for the barn to pay. Scouts
+// trained at the army camp make the march cheaper (see js/professions.js).
 function territoryExploreFood() {
-  return typeof professionExploreFoodCost === "function" ? professionExploreFoodCost() : EXPLORE_FOOD_COST;
+  const cost = typeof professionExploreFoodCost === "function" ? professionExploreFoodCost() : EXPLORE_FOOD_COST;
+  return timbermellowsToCalories(cost);
 }
 
 function territoryExploreHours() {
@@ -289,7 +310,7 @@ function territorySeizeBlocker(tileId) {
   if (typeof territoryMap.isRevealed === "function" && !territoryMap.isRevealed(tileId)) return "Scout it first — you cannot seize land you have not seen.";
   const needed = territorySeizeSoldiersNeeded(tileId);
   if (human_army < needed) return `Seizing this from ${villageName(tile.owner)} needs ${needed} soldiers.`;
-  if (timbermellow_count < SEIZE_FOOD_COST) return `The soldiers need ${SEIZE_FOOD_COST} timbermellows for the march.`;
+  if (timbermellow_count < territorySeizeFood()) return `The soldiers need ${SEIZE_FOOD_COST} timbermellows for the march.`;
   if (working_hours < SEIZE_WORK_HOURS) return `Seizing takes ${SEIZE_WORK_HOURS} work hours.`;
   return null;
 }
@@ -313,7 +334,7 @@ function territorySeize(tileId) {
     territoryMap.claimTile(neighbour.id, "player");
   }
   human_army -= lost;
-  timbermellow_count -= SEIZE_FOOD_COST;
+  timbermellow_count -= territorySeizeFood();
   working_hours -= SEIZE_WORK_HOURS;
   territoryChangedCallback({ kind: "seize", tile, from: previousOwner });
   return tile;
@@ -396,7 +417,8 @@ function territoryTradeTurn() {
   if (!partners.length) return partners;
 
   // Food only fits if there is room in the barns; wood keeps anywhere.
-  const foodOffered = TRADE_FOOD_PER_PARTNER * partners.length;
+  // Item 7: the traders are still counted in timbermellows, the barn is not.
+  const foodOffered = timbermellowsToCalories(TRADE_FOOD_PER_PARTNER * partners.length);
   const room = Math.max(0, storage_capacity - timbermellow_count);
   const foodTaken = Math.min(room, foodOffered);
   const woodTaken = TRADE_WOOD_PER_PARTNER * partners.length;
@@ -404,18 +426,25 @@ function territoryTradeTurn() {
   wood += woodTaken;
 
   const names = partners.map((id) => villageName(id)).join(", ");
+  const foodShown = Math.floor(foodTaken / CALORIES_PER_TIMBERMELLOW);
   if (typeof updatelog === "function") {
-    updatelog(`Traders from ${names} came up the road with ${foodTaken} food${foodTaken === 1 ? "" : "s"} and ${woodTaken} wood.`, "good");
+    updatelog(`Traders from ${names} came up the road with ${foodShown} food${foodShown === 1 ? "" : "s"} and ${woodTaken} wood.`, "good");
   }
-  if (typeof turnReportNote === "function") turnReportNote(`trade brought ${foodTaken} food and ${woodTaken} wood`, "good");
+  if (typeof turnReportNote === "function") turnReportNote(`trade brought ${foodShown} food and ${woodTaken} wood`, "good");
   return partners;
 }
 
 // One-line description of what a tile holds, for the log and tile panel.
+// Item 7: tiles hold calories, the player reads timbermellows.
 function territoryDescribeResources(tile) {
   const parts = Object.keys(tile.resources).map((type) => {
     const entry = tile.resources[type];
-    return `${entry.amount} ${type}${entry.renewable ? " (regrows)" : ""}`;
+    // Wood and stone are counted the way they always were; only the food
+    // types (timbermellow, grain) went onto the calorie scale.
+    const amount = type === "timbermellow" || type === "grain"
+      ? Math.floor(entry.amount / CALORIES_PER_TIMBERMELLOW)
+      : entry.amount;
+    return `${amount} ${type}${entry.renewable ? " (regrows)" : ""}`;
   });
   return parts.length ? parts.join(", ") : "nothing to gather";
 }

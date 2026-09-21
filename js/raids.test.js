@@ -64,6 +64,10 @@ G.createRandom = (seed) => {
 
 const log = [];
 const hooks = { launched: [], incoming: [], resolved: [], milestones: [] };
+// Item 7: the barn and every food cost count calories; js/territory.js
+// declares this once for the whole classic-script scope in the browser.
+const CAL = 1000;
+G.CALORIES_PER_TIMBERMELLOW = CAL;
 G.updatelog = (text, kind) => log.push({ text, kind });
 G.turnReportNote = () => {};
 G.update = () => {};
@@ -74,8 +78,11 @@ G.onRaidResolved = (result) => hooks.resolved.push(result);
 
 function resetVillage(over) {
   Object.assign(G, {
-    humans: 6, human_army: 4, wood: 20, stone: 10, timbermellow_count: 10, working_hours: 8,
-    storage_capacity: 20, barn: 4, turngame: 5, worldSeed: 777,
+    // Item 7: the barn, the loot and the food costs are all calories now.
+    // One timbermellow is CAL, so these fixtures stay readable as
+    // "ten timbermellows in a barn that holds twenty".
+    humans: 6, human_army: 4, wood: 20, stone: 10, timbermellow_count: 10 * CAL, working_hours: 8,
+    storage_capacity: 20 * CAL, barn: 4, turngame: 5, worldSeed: 777,
     professionCounts: { farmer: 0, forester: 0, mason: 0, scholar: 0, scout: 0, captain: 0 },
   }, over || {});
   log.length = 0;
@@ -134,7 +141,7 @@ test("strength: attack counts soldiers, captains and a scout; defence counts wal
 });
 
 test("blockers, in order", () => {
-  resetVillage({ human_army: 1, timbermellow_count: 2, working_hours: 1 });
+  resetVillage({ human_army: 1, timbermellow_count: 2 * CAL, working_hours: 1 });
   resetRaids();
   assert.match(raidBlocker("nowhere"), /not a village/);
   assert.match(raidBlocker("player"), /own village/);
@@ -143,7 +150,7 @@ test("blockers, in order", () => {
   assert.match(raidBlocker("rival_1"), /at least 2 soldiers/);
   G.human_army = 2;
   assert.match(raidBlocker("rival_1"), /6 timbermellows/);
-  G.timbermellow_count = 6;
+  G.timbermellow_count = 6 * CAL;
   assert.match(raidBlocker("rival_1"), /4 work hours/);
   G.working_hours = 4;
   assert.equal(raidBlocker("rival_1"), null);
@@ -174,7 +181,7 @@ test("a launch pays, takes the soldiers off the roster and tells the map", () =>
   const raid = raidLaunch("rival_1", 3);
   assert.ok(raid);
   assert.equal(G.human_army, 1);
-  assert.equal(G.timbermellow_count, 10 - RAID_FOOD_COST);
+  assert.equal(G.timbermellow_count, (10 - RAID_FOOD_COST) * CAL);
   assert.equal(G.working_hours, 8 - RAID_WORK_HOURS);
   assert.equal(raid.arriveTurn, 5 + RAID_TRAVEL_TURNS);
   assert.deepEqual(hooks.launched, [{ villageId: "rival_1", soldiers: 3 }]);
@@ -204,7 +211,7 @@ test("a sure win loots the hall and the survivors come home", () => {
   const state = raidsGetState();
   assert.equal(state.raidsOutgoing.length, 0);
   // 15 tiles * 0.25 = 4 food/wood; stone comes home at half rate (no quarry).
-  assert.equal(G.timbermellow_count, 4 + 4);
+  assert.equal(G.timbermellow_count, (10 - RAID_FOOD_COST + 4) * CAL);
   assert.equal(G.wood, 24);
   assert.equal(G.stone, 12);
   // T1: ceil(6 / 6) = 1 soldier lost, two come home.
@@ -213,20 +220,20 @@ test("a sure win loots the hall and the survivors come home", () => {
   assert.equal(state.raidGrudge.rival_1, 2);
   assert.equal(state.raidVassals.rival_1, undefined, "one ordinary win is not a vassal");
   assert.equal(hooks.resolved.length, 1);
-  assert.deepEqual(hooks.resolved[0], { villageId: "rival_1", incoming: false, won: true, loot: { food: 4, wood: 4, stone: 2 }, lost: 1, vassal: false });
+  assert.deepEqual(hooks.resolved[0], { villageId: "rival_1", incoming: false, won: true, loot: { food: 4 * CAL, wood: 4, stone: 2 }, lost: 1, vassal: false });
   assert.equal(state.raidLog.length, 1);
   assert.equal(state.raidLog[0].won, true);
   assert.ok(log.some((entry) => /carried off 4 timbermellows, 4 wood, 2 stone/.test(entry.text)));
 });
 
 test("food loot is capped by the barns", () => {
-  resetVillage({ human_army: 5, timbermellow_count: 12, storage_capacity: 8 });
+  resetVillage({ human_army: 5, timbermellow_count: 12 * CAL, storage_capacity: 8 * CAL });
   resetRaids();
   raidLaunch("rival_1", 4);           // food 12 -> 6, room for 2
   G.turngame = turnFor("rival_1", false, 6);
   raidsTakeTurn();
-  assert.equal(G.timbermellow_count, 8);
-  assert.equal(hooks.resolved[0].loot.food, 2);
+  assert.equal(G.timbermellow_count, 8 * CAL);
+  assert.equal(hooks.resolved[0].loot.food, 2 * CAL);
 });
 
 test("a hopeless raid loses half the party and earns a grudge", () => {
@@ -274,20 +281,20 @@ test("two wins make a vassal; so does one overwhelming win", () => {
 });
 
 test("vassals pay tribute every turn and never raid", () => {
-  resetVillage({ timbermellow_count: 4, wood: 0, storage_capacity: 20 });
+  resetVillage({ timbermellow_count: 4 * CAL, wood: 0, storage_capacity: 20 * CAL });
   resetRaids({ raidVassals: { rival_1: 3 }, raidGrudge: { rival_1: 5 } });
   G.turngame = turnFor("rival_1", true, 8);        // on Eastmere's raiding beat, yet nothing comes
   raidsTakeTurn();
-  assert.equal(G.timbermellow_count, 4 + TRIBUTE_FOOD);
+  assert.equal(G.timbermellow_count, (4 + TRIBUTE_FOOD) * CAL);
   assert.equal(G.wood, TRIBUTE_WOOD);
   assert.equal(raidsGetState().raidsIncoming.length, 0);
   assert.ok(log.some((entry) => /Tribute from Eastmere/.test(entry.text)));
   // Food only fits if there is room.
-  resetVillage({ timbermellow_count: 19, wood: 0, storage_capacity: 20 });
+  resetVillage({ timbermellow_count: 19 * CAL, wood: 0, storage_capacity: 20 * CAL });
   resetRaids({ raidVassals: { rival_1: 3, garlock_1: 4 } });
   G.turngame = turnFor("rival_1", false, 8);
   raidsTakeTurn();
-  assert.equal(G.timbermellow_count, 20);
+  assert.equal(G.timbermellow_count, 20 * CAL);
   assert.equal(G.wood, 2 * TRIBUTE_WOOD);
 });
 
@@ -342,13 +349,13 @@ test("a rival with a grudge schedules a raid on its beat; watchtowers see it a t
 test("an incoming raid is resolved against the defence, palisades counting", () => {
   // Fourteen strong against two soldiers (6) and three rings (9): repelled.
   // T1: barns hold 8 each (3 barns = 24).
-  resetVillage({ human_army: 2, timbermellow_count: 20, wood: 30, barn: 3, storage_capacity: 24 });
+  resetVillage({ human_army: 2, timbermellow_count: 20 * CAL, wood: 30, barn: 3, storage_capacity: 24 * CAL });
   resetRaids({ palisade: 3, raidGrudge: { rival_1: 3 }, raidsIncoming: [{ villageId: "rival_1", strength: 14, turn: 9, seenTurn: 8 }] });
   G.turngame = turnFor("rival_1", false, 9);
   raidsSetState(Object.assign(raidsGetState(), { raidsIncoming: [{ villageId: "rival_1", strength: 14, turn: G.turngame, seenTurn: G.turngame - 1 }] }));
   raidsTakeTurn();
   assert.equal(raidsGetState().raidsIncoming.length, 0);
-  assert.equal(G.timbermellow_count, 20, "repelled: the barns are untouched");
+  assert.equal(G.timbermellow_count, 20 * CAL, "repelled: the barns are untouched");
   assert.equal(G.wood, 30);
   assert.equal(G.barn, 3);
   assert.equal(G.human_army, 0, "ceil(14 / 5) = 3, capped at the two we had");
@@ -357,18 +364,18 @@ test("an incoming raid is resolved against the defence, palisades counting", () 
   assert.ok(log.some((entry) => /broke on the palisade/.test(entry.text)));
 
   // The same raid with no walls: shortfall 8, capped at 6.
-  resetVillage({ human_army: 2, timbermellow_count: 20, wood: 30, barn: 3, storage_capacity: 24 });
+  resetVillage({ human_army: 2, timbermellow_count: 20 * CAL, wood: 30, barn: 3, storage_capacity: 24 * CAL });
   resetRaids({ raidsIncoming: [{ villageId: "rival_1", strength: 14, turn: G.turngame, seenTurn: G.turngame - 1 }] });
   raidsTakeTurn();
-  assert.equal(G.timbermellow_count, 20 - (10 + 6));
+  assert.equal(G.timbermellow_count, (20 - (10 + 6)) * CAL);
   assert.equal(G.wood, 30 - 18);
   assert.equal(G.barn, 2);
-  assert.equal(G.storage_capacity, 16, "T1: 2 barns hold 16");
+  assert.equal(G.storage_capacity, 16 * CAL, "T1: 2 barns hold 16");
   assert.equal(G.human_army, 0);
   assert.equal(G.humans, 6, "a rival raid never sacks the village");
   const result = hooks.resolved[0];
   assert.equal(result.won, false);
-  assert.deepEqual(result.loot, { food: 16, wood: 18, stone: 0, barns: 1 });
+  assert.deepEqual(result.loot, { food: 16 * CAL, wood: 18, stone: 0, barns: 1 });
   assert.ok(log.some((entry) => /Eastmere's raiders carried off 16 timbermellows, 18 wood, 1 barn, 2 soldiers/.test(entry.text)));
 });
 

@@ -60,8 +60,10 @@ const AGE_FAMINE_PATIENCE = 12;          // turns in Act III before it comes any
 // holds a third of the most it ever did. The absolute floor is only there
 // for the truly dire case, and has to sit well below what even the poorest
 // founding valley starts with — otherwise a hard seed begins in famine.
+// Item 7: these measure food still ON THE LAND, and the land counts calories
+// now, so the floor is 45 timbermellows' worth rather than 45 calories.
 const AGE_FAMINE_LAND_FRACTION = 0.35;
-const AGE_FAMINE_LAND_FLOOR = 45;
+const AGE_FAMINE_LAND_FLOOR = 45 * 1000;
 
 // Once the famine has begun the land never fully recovers: every autumn a
 // little of each tile's carrying capacity is gone for good.
@@ -101,25 +103,41 @@ const AGE_INFO = {
 
 const AGE_UNLOCKS = [
   {
+    // The PDF's "lets go back to the start", and Sếp: "I want the player to be
+    // greeted with as little info as possible when they start playing."
+    //
+    // Act I is the clock, the End Turn button, the log and the two gathering
+    // buttons — nothing that belongs to a later act. Everything here is
+    // hidden while the phase is "dawn" and appears together the moment the
+    // village reaches Act II. ageApplyVisibility() does the hiding; the
+    // panels that redraw themselves every update() (the alerts, the objective
+    // list, the Next chip, the tutor) each check ageAtLeast("growth") too, or
+    // they would simply switch themselves back on.
+    id: "act_one_minimal",
+    show: [
+      "colonistBar", "agePhase", "ageProgress",
+      "objectivePanel", "nextObjectiveBtn", "toasts", "tutorPanel",
+    ],
+    when: () => ageAtLeast("growth"),
+  },
+  {
     id: "gather_food",
     tabs: ["gather"],
     show: ["btn_find_timbermellow"],
     when: () => true,
   },
   {
+    // Sếp's notes, item 6: "add a tech for wood triggers with 3 people and
+    // lets the player gather wood. have the wood button show up" — and the
+    // barn comes with it, because wood with nothing to put it in is a
+    // resource the player cannot use. "I want the player to be greeted with
+    // as little info as possible when they start playing the game."
     id: "gather_wood",
-    show: ["btn_wood"],
-    title: "Deadwood",
-    note: "There is fallen wood everywhere under the timbermellows. Somebody thinks to pick it up.",
-    when: () => ageFoodGathered >= 6,
-  },
-  {
-    id: "build_barn",
     tabs: ["build"],
-    show: ["btn_barn"],
-    title: "Somewhere to Put It",
-    note: "Food left in the open is food the garlocks take. Four wood makes a barn, and a barn holds eight.",
-    when: () => wood >= 4,
+    show: ["btn_wood", "btn_barn"],
+    title: "Deadwood",
+    note: "There is fallen wood everywhere under the timbermellows, and now there are hands enough to carry it. Four wood makes a barn, and a barn holds eight — food left in the open is food the garlocks take.",
+    when: () => humans >= 3,
   },
   {
     id: "people",
@@ -127,24 +145,37 @@ const AGE_UNLOCKS = [
     show: ["btn_human"],
     title: "More Hands",
     note: "With food put by, the village can raise another pair of hands — and another mouth.",
-    when: () => barn >= 2 || timbermellow_count >= 6,
+    // Item 7: six timbermellows is what the note has always promised, and the
+    // barn counts calories now — a bare `>= 6` would open this on the first
+    // turn, because six calories is a hundredth of a meal.
+    when: () => barn >= 2 || timbermellow_count >= 6 * CALORIES_PER_TIMBERMELLOW,
   },
   {
+    // Sếp's notes, item 3: "hide all 5X buttons they are for when you get some
+    // tech." They stay hidden until the work-gang tech has actually been made
+    // — a tech of its own, not a reward for any old research (game.js, bulk()).
     id: "bulk_five",
     show: [
       "btn_timbermellow_5x", "btn_wood_5x", "btn_stone_5x", "btn_human_5x", "btn_soldier_5x",
       "btn_timbermellow_all", "btn_wood_all", "btn_stone_all",
     ],
     title: "A Day's Work at Once",
-    note: "There are enough hands now that a whole morning can be spent on one job. ×5 does five hours in one press; ALL spends everything you have left.",
-    when: () => humans >= 3,
+    note: "The village has learned something, and with it a quicker way to work. ×5 does five hours in one press; ALL spends everything you have left.",
+    when: () => bulkmade >= 1,
   },
+  // TODO(age2 tech): Sếp's notes, item 3 also asked for a way to "set an
+  // amount" — how many times a button presses at once. That is a second Age
+  // II tech of its own and is deliberately not built yet.
   {
+    // Sếp's notes, item 4: "hide stone and house's they will also be a tech"
+    // — "Rn stone houses only do anything when winter comes so it should
+    // appear after the first winter happens." Stone and roofs arrive together
+    // in the spring after the village has lived through its first winter.
     id: "gather_stone",
-    show: ["btn_stone"],
-    title: "Loose Stone",
-    note: "Stone is lying about for the taking. Unlike wood, it never grows back — what you dig out is gone.",
-    when: () => humans >= 3,
+    show: ["btn_stone", "btn_house"],
+    title: "Stone and Roofs",
+    note: "The frost has shown the village what a roof is worth. Two stone raises a house and shelters three; stone itself is lying about for the taking — and unlike wood, it never grows back.",
+    when: () => survivedFirstWinter,
   },
   {
     id: "soldiers",
@@ -152,13 +183,6 @@ const AGE_UNLOCKS = [
     title: "Someone Who Watches",
     note: "One villager can stop working and stand guard instead. Soldiers do no work, but nothing leaves the village without them.",
     when: () => humans >= 3,
-  },
-  {
-    id: "build_house",
-    show: ["btn_house"],
-    title: "A Roof Before the Frost",
-    note: "Two stone raises a house, and a house shelters three. Anyone without a roof dies in winter.",
-    when: () => stone >= 2,
   },
   {
     id: "empire_panel",
@@ -186,7 +210,7 @@ const AGE_UNLOCKS = [
     show: ["btn_school", "btn_armycamp"],
     title: "Schools and Camps",
     note: "Raise a school or an army camp and you can pull a villager off the work rota to learn a trade properly.",
-    when: () => ageAtLeast("growth"),
+    when: () => ageAtLeast("growth") && survivedFirstWinter,
   },
   {
     id: "professions",
@@ -397,6 +421,13 @@ function ageApplyVisibility() {
       // ×5 buttons sit in a wrapper next to their gizmo; hide the gap too.
       if (element.parentElement && element.parentElement.classList.contains("rw-gizmowrap")) {
         element.parentElement.hidden = element.parentElement.querySelectorAll(":scope > :not([hidden])").length === 0;
+      }
+      // Sếp's notes, items 4 and 5: a store the village cannot gather yet has
+      // no business taking up a row of the readout. The row and its button
+      // are revealed by the same unlock, so they arrive together.
+      if (element.dataset.readoutRow) {
+        const row = document.getElementById(element.dataset.readoutRow);
+        if (row) row.hidden = !visible;
       }
     }
   }

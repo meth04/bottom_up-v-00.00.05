@@ -17,6 +17,7 @@
 <head>
 <meta charset="UTF-8">
 <title>bottom up — playtest</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <style>
   body { margin: 0; font-family: Consolas, monospace; background: #efe7d6; }
   iframe { width: 1440px; height: 900px; border: 0; display: block; }
@@ -107,7 +108,7 @@ frame.onload = async function () {
   // A village is founded on a valley, not a hex (js/territory.js).
   log("founding valley:", w.territoryClaimedCount(), "hexes | food", land(["timbermellow"]), "wood", land(["wood"]), "stone", land(["stone"]));
   check("starts on a whole valley, not one hex", w.territoryClaimedCount() >= 30);
-  check("the valley can feed a village", land(["timbermellow"]) >= 90);
+  check("the valley can feed a village", land(["timbermellow"]) >= 90 * 1000);
   check("the valley has wood in it", land(["wood"]) >= 60);
   check("the valley has stone in it", land(["stone"]) >= 40);
   check("none of the valley is open water", w.hexMap.getClaimedTiles().every((t) => !["ocean", "lake"].includes(t.terrainType)));
@@ -119,7 +120,7 @@ frame.onload = async function () {
   const foodOnLandAtStart = land(["timbermellow"]);
   for (let i = 0; i < 8; i++) w.find_timbermellow();
   log("after 8 gathers: food", g("timbermellow_count"), "| land food", land(["timbermellow"]), "| hours", g("working_hours"));
-  check("gathering takes food off the land", land(["timbermellow"]) === foodOnLandAtStart - g("timbermellow_count") && g("timbermellow_count") >= 8);
+  check("gathering takes food off the land", land(["timbermellow"]) === foodOnLandAtStart - g("timbermellow_count") && g("timbermellow_count") >= 8 * 1000);
   check("gather button greys out at 0 hours", w.document.getElementById("btn_find_timbermellow").disabled === true);
 
   // Explore should be refused, for a reason the player can read.
@@ -170,13 +171,17 @@ frame.onload = async function () {
   check("explore allowed", blocker === null);
   const tilesBefore = w.territoryClaimedCount();
   const foodBefore = g("timbermellow_count");
+  // Ask the game what the march costs instead of hard-coding it: scouts and
+  // later tuning both move this number, and a test that guesses it just goes
+  // stale (it said 10 while js/territory.js had already dropped to 6).
+  const foodCost = w.territoryExploreFood();
   const landBefore = land(["timbermellow", "wood", "stone", "grain"]);
   const expected = w.territoryExploreYield(target.id);
   w.explore();
   log("after explore: tiles", w.territoryClaimedCount(), "(expected +" + expected + ")", "food", g("timbermellow_count"));
   // The grid is fine now, so an expedition settles a district, not one field.
   check("explore claimed a whole district", w.territoryClaimedCount() === tilesBefore + expected && expected >= 7);
-  check("explore cost 10 food", g("timbermellow_count") === foodBefore - 10);
+  check("explore cost " + Math.floor(foodCost / 1000) + " food", g("timbermellow_count") === foodBefore - foodCost);
   check("the district's resources joined the land", land(["timbermellow", "wood", "stone", "grain"]) > landBefore);
   await wait(1400);
   check("new tile is claimed", map.isClaimed(target.id));
@@ -212,7 +217,7 @@ frame.onload = async function () {
   const foreignAfter = map.getAllTiles().filter((tile) => tile.owner && tile.owner !== "player").length;
   log("other villages' tiles:", foreignBefore, "->", foreignAfter);
   check("other villages expand over time", foreignAfter > foreignBefore);
-  check("autumn regrowth refilled the home valley", land(["timbermellow"]) >= 90);
+  check("autumn regrowth refilled the home valley", land(["timbermellow"]) >= 90 * 1000);
   check("the save is small enough for a browser to hold",
     localStorage.getItem("bottom_up.save.v1").length < 2 * 1024 * 1024);
   check("season class updates", w.document.getElementById("season").className.indexOf("season--") >= 0);
@@ -225,7 +230,7 @@ frame.onload = async function () {
   check("Act II opened research", w.document.querySelector('.rw-tab[data-tab="research"]').hidden === false);
 
   // Build a school and put somebody through it.
-  g("wood = Math.max(wood, 40); stone = Math.max(stone, 40); working_hours = 30; timbermellow_count = Math.max(timbermellow_count, 30); humans = Math.max(humans, 5); update()");
+  g("wood = Math.max(wood, 40); stone = Math.max(stone, 40); working_hours = 30; timbermellow_count = Math.max(timbermellow_count, 30 * 1000); humans = Math.max(humans, 5); update()");
   w.make_school();
   check("a school can be built", g("school") === 1);
   const humansBeforeTraining = g("humans");
@@ -234,13 +239,13 @@ frame.onload = async function () {
   check("the trainee still eats", g("professionTraineeCount()") === 1);
   // Two turns of training. Nobody may freeze or starve meanwhile, so the
   // village is given roofs and food for the duration.
-  g("stonehouse = 10; peoplecap = 30; timbermellow_count = 60; storage_capacity = 200; barn = 40; update()");
+  g("stonehouse = 10; peoplecap = 30; timbermellow_count = 60 * 1000; storage_capacity = 200 * 1000; barn = 40; update()");
   w.end_turn(); w.end_turn();
   check("the trainee came back a farmer", g("professionCounts.farmer") === 1 && g("humans") === humansBeforeTraining);
 
   // Spending a whole day in one press, and a turn that asks before it hurts.
   // (Not in winter — nothing can be gathered then, by design.)
-  g("seasonchecker = 1; document.getElementById('season').innerText = 'spring'; working_hours = 12; timbermellow_count = 0; barn = 20; storage_capacity = 100; update()");
+  g("seasonchecker = 1; document.getElementById('season').innerText = 'spring'; working_hours = 12; timbermellow_count = 0; barn = 20; storage_capacity = 100 * 1000; update()");
   const hoursBefore = g("working_hours");
   w.timbermellow_all();
   log("ALL: hours", hoursBefore, "->", g("working_hours"), "| food", g("timbermellow_count"));
@@ -248,7 +253,7 @@ frame.onload = async function () {
 
   g("timbermellow_count = 0; update()");
   check("a starving turn warns before it happens", w.endTurnWarnings().some((t) => /unfed/.test(t)));
-  g("timbermellow_count = 80; update()");
+  g("timbermellow_count = 80 * 1000; update()");
   check("a safe turn asks nothing", w.endTurnWarnings().length === 0);
 
   // The village is populated, and the people in it have trades.
@@ -284,7 +289,7 @@ frame.onload = async function () {
   check("it lists every settlement on the island",
     w.document.getElementById("empireRivals").children.length >= 10);
   check("it shows the whole tech tree, locked ones included",
-    w.document.getElementById("empireTechs").children.length === 4);
+    w.document.getElementById("empireTechs").children.length === 5);
   check("the age bar shows progress toward the next act",
     w.document.getElementById("ageProgressFill").style.width !== "");
   uiSetTabBack();

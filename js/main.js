@@ -393,6 +393,11 @@ async function boot() {
   bootStage("Ready.", 1);
   installMapTools();
   callLegacy("uiInit");
+  // uiInit() reads the browser's last difficulty pick; a village that was
+  // saved under a different one keeps the rules it was founded under.
+  if (saved && saved.game && saved.game.difficulty) {
+    callLegacy("setDifficulty", saved.game.difficulty);
+  }
   refreshTilePanel();
   refreshVillagesPanel();
   callLegacy("update");
@@ -667,6 +672,15 @@ function afterTurnEnded() {
   callLegacy("saveGame", worldSeed);
 
   const after = legacy();
+  // Item 2: three turns running with the barns empty ends the run on any
+  // difficulty — the softer way to lose than an empty village.
+  if ((after.hungerStreak || 0) >= 3) {
+    const year = Math.floor((after.turngame - 1) / 8) + 1;
+    callLegacy("showGameOverScreen",
+      "Three turns with nothing in the barns. Hunger took the last of them.",
+      { year, turns: after.turngame, tiles: hexMap.countClaimed() });
+    return;
+  }
   if ((after.humans || 0) <= 0 && (after.human_army || 0) <= 0) {
     const year = Math.floor((after.turngame - 1) / 8) + 1;
     callLegacy("showGameOverScreen",
@@ -724,7 +738,11 @@ function siteIncomeTick() {
     if (!roads.isConnected(site.tileId, "player")) continue;
     const types = site.yields === "food" ? (callLegacy("territoryFoodTypes") || ["timbermellow"]) : SITE_YIELD_TYPES[site.yields];
     if (!types) continue;
-    if (site.yields === "food" && state.timbermellow_count >= state.storage_capacity) continue;
+    // Item 7: a food site yields one timbermellow per cart, and the barn
+    // counts calories — the room check and the delivery both go through the
+    // calorie scale (legacyAdd does the multiplying).
+    const perDelivery = 1000;
+    if (site.yields === "food" && state.timbermellow_count + perDelivery > state.storage_capacity) continue;
     const taken = callLegacy("territoryTakeQuiet", types, 1);
     if (!taken) continue;
     callLegacy("legacyAdd", site.yields === "food" ? { food: taken } : site.yields === "wood" ? { wood: taken } : { stone: taken });
@@ -1271,10 +1289,15 @@ function resourceBars(tile) {
     const percent = entry.max ? Math.round((entry.amount / entry.max) * 100) : 0;
     const note = entry.renewable ? "replenishes in autumn" : "finite — never regrows";
     const iconSvg = typeof window.getIcon === "function" ? window.getIcon(type) : (RESOURCE_ICONS[type] || "");
+    // Item 7: food tiles hold calories, the player reads timbermellows —
+    // the percentage above still uses the raw pair, so the bar is exact.
+    const show = (value) => (type === "timbermellow" || type === "grain")
+      ? Math.floor(value / 1000)
+      : value;
     return `
       <div class="bar">
         <span>${iconSvg} <b>${type}</b> <small>(${note})</small></span>
-        <b>${entry.amount} / ${entry.max}</b>
+        <b>${show(entry.amount)} / ${show(entry.max)}</b>
         <div class="bar__track"><div class="bar__fill ${entry.renewable ? "" : "bar__fill--finite"}" style="width:${percent}%"></div></div>
       </div>`;
   }).join("");

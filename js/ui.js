@@ -136,7 +136,7 @@ function uiRefreshJobs() {
     return `
       <div class="rw-jobrow"
            data-tip-title="${JOB_LABELS[type]}"
-           data-tip="Every villager here works ${perVillager} hours on this job the moment the turn begins — no clicking. Hours they spend are taken off your total.">
+           data-tip="Every villager here works ${perVillager} hours on this job the moment the turn begins — no clicking. Feed the village well and they work longer. Hours they spend are taken off your total.">
         <span class="rw-jobrow__icon">${icon}</span>
         <span class="rw-jobrow__label">${JOB_LABELS[type]}</span>
         <button class="rw-x5" onclick="jobAssign('${type}', -1)" ${count <= 0 ? "disabled" : ""}>−</button>
@@ -284,7 +284,10 @@ function uiRefreshColonists() {
 
   const trainees = professionTraineeCount();
   const total = humans + human_army + trainees;
-  const needed = total;
+  // Item 7: the barn is calories, so one mouth's share is 1000 of them —
+  // comparing the raw store against a head count would call every village
+  // starving from the first turn.
+  const needed = total * 1000;
   const fed = needed > 0 ? Math.min(1, timbermellow_count / needed) : 1;
   const hungry = timbermellow_count < needed;
   const roofless = Math.max(0, humans - peoplecap);
@@ -302,8 +305,8 @@ function uiRefreshColonists() {
                     (noRoof && seasonchecker === 4 ? `<span style="color:#336699;" title="Freezing">❄</span>` : noRoof ? `<span style="color:#557799;" title="Roofless">🌧</span>` : "");
     const tipParts = [];
     tipParts.push(trainee ? "In training. Off the work rota for now — and still eating — but will come back qualified."
-                 : soldier ? "A soldier. Escorts expeditions, seizes land and defends the settlement."
-                 : "A settler. Each provides 4 work hours in spring/autumn, 6 in summer, 2 in winter.");
+                 : soldier ? "A soldier. Escorts expeditions, seizes land and defends the settlement. Soldiers eat but do no work."
+                 : "A settler. Eats a timbermellow a turn; anything they eat past that buys the village more work hours.");
     if (hungry) tipParts.push("Starving! There is not enough timbermellow in the barns.");
     if (noRoof) tipParts.push("Exposed to elements! Lacks a roof for the coming winter.");
     html += `
@@ -338,11 +341,14 @@ function uiBuildAlerts() {
   const woodOnLand = typeof territoryAvailable === "function" ? territoryAvailable(["wood"]) : 0;
   const stoneOnLand = typeof territoryAvailable === "function" ? territoryAvailable(["stone"]) : 0;
 
-  if (timbermellow_count < mouths) {
+  // Item 7: the barn counts calories and a mouth needs a whole ration, so
+  // "who goes unfed" is rations in the barn against mouths at the table.
+  const rationsInBarn = Math.floor(timbermellow_count / 1000);
+  if (rationsInBarn < mouths) {
     alerts.push({
       level: "bad", icon: typeof getIcon === "function" ? getIcon("hungry") : "☠",
-      text: `Starvation — ${mouths - timbermellow_count} will go unfed`,
-      tip: "Everyone eats one timbermellow when the turn ends. Soldiers starve first, then villagers. Gather more before you end the turn.",
+      text: `Starvation — ${mouths - rationsInBarn} will go unfed`,
+      tip: "Everyone eats a timbermellow when the turn ends. Soldiers starve first, then villagers. Gather more before you end the turn.",
       go: () => uiPointAt("gather", "btn_find_timbermellow"),
     });
   }
@@ -404,7 +410,8 @@ function uiBuildAlerts() {
     });
   }
 
-  if (timbermellow_count >= 20 && human_army === 0) {
+  // Item 7: 20 timbermellows of stores, which is 20000 calories in the barn.
+  if (timbermellow_count >= 20 * 1000 && human_army === 0) {
     alerts.push({
       level: "warn", icon: typeof getIcon === "function" ? getIcon("soldier") : "🛡",
       text: "Abundant stores, no soldiers",
@@ -413,7 +420,8 @@ function uiBuildAlerts() {
     });
   }
 
-  if (foodOnLand <= 3 && seasonchecker !== 4) {
+  // Item 7: the land is measured in calories too — three timbermellows' worth.
+  if (foodOnLand <= 3 * 1000 && seasonchecker !== 4) {
     alerts.push({
       level: "warn", icon: typeof getIcon === "function" ? getIcon("timbermellow") : "🌰",
       text: "The land is running dry",
@@ -476,6 +484,14 @@ function uiBuildAlerts() {
   // The next objective, at the bottom: the checklist panel already shows
   // it, this is just so the alert column is never empty of things to do.
   if (typeof objectivesAlerts === "function") alerts.push(...(objectivesAlerts() || []));
+
+  // Act I is deliberately bare (js/ages.js, act_one_minimal). Bad news still
+  // gets through — hunger and cold are the only things telling a new player
+  // the village is dying, and Sếp's item 2 turns hunger into the defeat. All
+  // the helpful chatter waits for Act II.
+  if (typeof ageAtLeast === "function" && !ageAtLeast("growth")) {
+    return alerts.filter((alert) => alert.level === "bad");
+  }
 
   return alerts;
 }
@@ -556,7 +572,7 @@ const UI_LESSONS = [
     id: "barn",
     title: "Build a Barn",
     body: "Food left in the open is food the garlocks take: anything over your barn space vanishes the moment the turn ends. Open BUILD — 4 wood, 8 more spaces.",
-    when: () => ageHas("build_barn") && wood >= 4,
+    when: () => ageHas("gather_wood") && wood >= 4,
   },
   {
     id: "winter",
@@ -652,6 +668,15 @@ function uiDismissLesson() {
 function uiRefreshTutor() {
   const panel = document.getElementById("tutorPanel");
   if (!panel) return;
+  // Act I is deliberately bare (js/ages.js, act_one_minimal). The lessons
+  // that teach the very first moves would be the whole of the interface if
+  // they ran — so the tutor, too, waits for Act II. The "how to play" card
+  // still shows once at the start (js/objectives.js, objectivesMaybeIntro).
+  if (typeof ageAtLeast === "function" && !ageAtLeast("growth")) {
+    panel.hidden = true;
+    uiTutorShowing = null;
+    return;
+  }
   if (uiTutorOff) { panel.hidden = true; uiTutorShowing = null; return; }
   if (uiTutorShowing) return;
 
@@ -685,7 +710,7 @@ function uiBlockReasons() {
   reason("btn_timbermellow_5x",
     working_hours < 5 ? "Needs 5 work hours." :
     seasonchecker === 4 ? "Nothing grows in winter." :
-    foodOnLand < 5 ? "Not enough left on your land." : "");
+    foodOnLand < 5 * 1000 ? "Not enough left on your land." : "");
   reason("btn_wood", working_hours <= 0 ? noHours : woodOnLand <= 0 ? "No wood left on your land." : "");
   reason("btn_wood_5x", working_hours < 5 ? "Needs 5 work hours." : woodOnLand <= 0 ? "No wood left on your land." : "");
   reason("btn_stone", working_hours <= 0 ? noHours : stoneOnLand <= 0 ? "No stone left on your land — stone never grows back." : "");
@@ -697,10 +722,14 @@ function uiBlockReasons() {
     foodOnLand <= 0 ? "Nothing left to gather on your land — take more land." : "");
   reason("btn_wood_all", working_hours <= 0 ? noHours : woodOnLand <= 0 ? "No wood left on your land." : "");
   reason("btn_stone_all", working_hours <= 0 ? noHours : stoneOnLand <= 0 ? "No stone left on your land." : "");
-  reason("btn_human", working_hours <= 0 ? noHours : timbermellow_count < 3 ? "Needs 3 timbermellows." : "");
-  reason("btn_human_5x", working_hours < 5 ? "Needs 5 work hours." : timbermellow_count < 15 ? "Needs 15 timbermellows." : "");
-  reason("btn_soldier", humans < 2 ? "Needs a villager to spare — you would be left with none." : "");
-  reason("btn_soldier_5x", humans < 5 ? "Needs at least 5 villagers." : "");
+  // Item 7: three timbermellows to raise a villager, which is 3000 calories
+  // in the barn (HUMAN_FOOD_COST in game.js).
+  reason("btn_human", working_hours <= 0 ? noHours : timbermellow_count < 3000 ? "Needs 3 timbermellows." : "");
+  reason("btn_human_5x", working_hours < 5 ? "Needs 5 work hours." : timbermellow_count < 15000 ? "Needs 15 timbermellows." : "");
+  // Item 2: MIN_VILLAGERS is the floor the village never falls below.
+  const floor = typeof MIN_VILLAGERS !== "undefined" ? MIN_VILLAGERS : 2;
+  reason("btn_soldier", humans <= floor ? "Needs a villager to spare — the village never drops below two." : "");
+  reason("btn_soldier_5x", humans < floor + 5 ? `Needs at least ${floor + 5} villagers.` : "");
   reason("btn_barn", working_hours <= 0 ? noHours : wood < 4 ? "Needs 4 wood." : "");
   reason("btn_house", working_hours <= 0 ? noHours : stone < 2 ? "Needs 2 stone." : "");
   reason("btn_school",
@@ -894,6 +923,36 @@ function uiLoadMotion() {
   setMotion(on);
 }
 
+// ---------------------------------------------------------------------------
+// Difficulty (Sếp's notes, item 2)
+//
+// Normal keeps the two-villager floor; Hard lifts it so a sack can empty the
+// village. Picked on the title screen, remembered per browser, and stored in
+// the save so a village keeps the rules it was founded under.
+// ---------------------------------------------------------------------------
+
+const UI_DIFFICULTY_STORE = "bottomup.difficulty.v1";
+
+function setDifficulty(mode) {
+  const picked = mode === "hard" ? "hard" : "normal";
+  if (typeof difficulty !== "undefined") difficulty = picked;
+  const normalBtn = document.getElementById("btnDifficultyNormal");
+  const hardBtn = document.getElementById("btnDifficultyHard");
+  if (normalBtn) normalBtn.classList.toggle("is-picked", picked === "normal");
+  if (hardBtn) hardBtn.classList.toggle("is-picked", picked === "hard");
+  try {
+    localStorage.setItem(UI_DIFFICULTY_STORE, picked);
+  } catch (error) { /* private window; the choice just won't stick */ }
+}
+
+function uiLoadDifficulty() {
+  let picked = "normal";
+  try {
+    picked = localStorage.getItem(UI_DIFFICULTY_STORE) === "hard" ? "hard" : "normal";
+  } catch (error) { /* ignored */ }
+  setDifficulty(picked);
+}
+
 // A one-off message over the map, for code that has no log line to attach to.
 function uiToast(text, kind) {
   if (typeof onLogEntry === "function") onLogEntry(text, kind);
@@ -933,6 +992,7 @@ function uiInit() {
 
   uiLoadTutor();
   uiLoadMotion();
+  uiLoadDifficulty();
   uiPopulateStaticIcons();
   uiInstallTooltips();
   uiInstallKeys();
@@ -956,7 +1016,10 @@ function uiRefresh() {
   }
 
   const endturn = document.querySelector(".rw-endturn");
-  if (endturn) endturn.classList.toggle("rw-endturn--short", timbermellow_count < humans + human_army);
+  // Item 7: the barn is calories, the question is rations. Every mouth eats
+  // its ration, so trainees count too — foodNeededCalories() is the one
+  // place that sum lives (game.js).
+  if (endturn) endturn.classList.toggle("rw-endturn--short", timbermellow_count < foodNeededCalories());
 
   const research = document.querySelector('.rw-tab[data-tab="research"]');
   if (research) {
@@ -982,6 +1045,12 @@ function uiRefreshNextChip() {
   const btn = document.getElementById("nextObjectiveBtn");
   const label = document.getElementById("nextObjectiveText");
   if (!btn || !label) return;
+  // Act I shows no objective checklist, so it shows no Next chip either
+  // (js/ages.js, act_one_minimal).
+  if (typeof ageAtLeast === "function" && !ageAtLeast("growth")) {
+    btn.hidden = true;
+    return;
+  }
   let next = null;
   try {
     next = typeof objectivesNext === "function" ? objectivesNext() : null;
@@ -1004,15 +1073,13 @@ function uiRefreshNextChip() {
 function uiRefreshEndTurnPreview() {
   const host = document.getElementById("endTurnPreview");
   if (!host) return;
-  let mouths = 0;
-  try {
-    mouths = typeof mouthsToFeed === "function" ? mouthsToFeed() : humans + human_army;
-  } catch (error) {
-    mouths = 0;
-  }
   const cap = typeof storage_capacity !== "undefined" ? storage_capacity : 0;
   const have = typeof timbermellow_count !== "undefined" ? timbermellow_count : 0;
-  const spoil = Math.max(0, have - cap);
+  // Item 7: spoil is a difference of two calorie stores; show it in the
+  // timbermellows the player reads. The forecast cannot model the widening
+  // plate (that follows the well-fed streak, game.js), so it may understate
+  // how much the village eats — the tooltip says so.
+  const spoil = Math.floor(Math.max(0, have - cap) / 1000);
   // Turns until winter: seasons 7-8 are winter, 9 wraps to spring.
   let winterIn = 0;
   try {
@@ -1028,6 +1095,6 @@ function uiRefreshEndTurnPreview() {
   host.textContent = parts.length ? `· ${parts.join(" · ")}` : "";
   const btn = host.closest && host.closest(".rw-endturn");
   if (btn) {
-    btn.dataset.tip = `Excess food over barn capacity is lost (${spoil} would spoil). Everyone eats ${mouths}. ${winterIn === 0 ? "It is winter: nothing grows, roofs matter." : `Winter in ${winterIn} turn${winterIn === 1 ? "" : "s"}.`}`;
+    btn.dataset.tip = `Excess food over barn capacity is lost (${spoil} would spoil). Everyone eats a timbermellow a turn, and a village fed past that works longer hours. ${winterIn === 0 ? "It is winter: nothing grows, roofs matter." : `Winter in ${winterIn} turn${winterIn === 1 ? "" : "s"}.`}`;
   }
 }

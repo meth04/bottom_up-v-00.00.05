@@ -533,7 +533,8 @@ body {
 .rw-colonistbar {
   position: fixed;
   top: 8px;
-  left: 270px;
+  /* Item 5: the readout is 178px wide now, so the bar starts just past it. */
+  left: 194px;
   right: 280px;
   z-index: 12;
   display: flex;
@@ -635,21 +636,32 @@ body {
 /* Resource Readout (Top Left Ledger)                                     */
 /* ---------------------------------------------------------------------- */
 
+/* Sếp's notes, item 5: "shrink the resources tab a good bit." It is a
+   glance-and-go ledger, not a panel — narrow, tight rows, small numerals.
+   It no longer carries the "settlement ledger" flourish either; the head
+   says what the panel is and stops. */
 .rw-readout {
   position: fixed;
   top: 8px;
   left: 8px;
   z-index: 11;
-  width: 250px;
-  padding: 6px 8px;
+  width: 178px;
+  padding: 4px 6px;
 }
+
+.rw-readout .rw-panel__head {
+  padding: 3px 4px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+.rw-readout .rw-panel__head .rw-hint { display: none; }
 
 .rw-readout__row {
   display: grid;
-  grid-template-columns: 24px auto 1fr;
+  grid-template-columns: 17px auto 1fr;
   align-items: center;
-  gap: 0 8px;
-  padding: 3px 5px;
+  gap: 0 5px;
+  padding: 2px 3px;
   border-radius: 3px;
   white-space: nowrap;
   transition: background 0.1s ease;
@@ -663,13 +675,13 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 13px;
   line-height: 1;
 }
 
 .rw-readout__row b {
   font-family: var(--font-ui);
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: #24190f;
@@ -677,7 +689,7 @@ body {
 
 .rw-readout__row small {
   font-family: var(--font-ui);
-  font-size: 12px;
+  font-size: 10.5px;
   color: var(--ink-faint);
   text-align: right;
 }
@@ -1016,6 +1028,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 5px;
+  /* Sếp's notes, item 1: the turn report hangs off the left of this column
+     (see .rw-report), so it needs to be a positioning context. */
+  position: relative;
 }
 
 .rw-clock {
@@ -1460,6 +1475,42 @@ body {
 .title-btn--primary:hover {
   background: linear-gradient(180deg, #6ec04e 0%, #468630 100%);
   border-color: var(--edge-gold-bright);
+}
+
+/* Difficulty (item 2): two picks, one of them chosen. */
+.title-difficulty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--edge-leather);
+}
+.title-difficulty__label {
+  font-family: var(--font-display);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #7a5b36;
+  text-align: left;
+}
+.title-btn--pick {
+  font-size: 13px;
+  padding: 8px 14px;
+  justify-content: flex-start;
+  gap: 8px;
+  opacity: 0.72;
+}
+.title-btn--pick small {
+  font-family: var(--font-ui);
+  font-weight: 400;
+  letter-spacing: 0;
+  opacity: 0.75;
+}
+.title-btn--pick.is-picked {
+  opacity: 1;
+  border-color: var(--edge-gold);
+  box-shadow: 0 0 0 2px rgba(229, 192, 107, 0.4), var(--shadow-button);
 }
 
 .title-seed-row {
@@ -1959,9 +2010,15 @@ body {
 }
 
 /* --- the turn ledger ------------------------------------------------- */
+/* Sếp's notes, item 1: "have the game log on the left of the turn bubble".
+   It is taken out of the clock column's flow and hung to the left of it, so
+   it opens beside the clock rather than pushing the clock up the screen. */
 .rw-report {
+  position: absolute;
+  right: calc(100% + 8px);
+  bottom: 0;
   width: 262px;
-  margin: 0 0 6px auto;
+  margin: 0;
   animation: report-in 0.36s cubic-bezier(0.2, 0.9, 0.3, 1.2);
   transition: opacity 0.36s ease, transform 0.36s ease;
   cursor: pointer;
@@ -2544,10 +2601,12 @@ body {
 /* Phones and small tablets: shrink the HUD so the map is still the star. */
 @media (max-width: 900px), (max-height: 600px) {
   body { font-size: 13px; }
-  .rw-readout { width: 200px; padding: 4px 6px; }
+  /* Item 5: the readout is narrower now, so the colonist bar can start
+     further left and the map gains the width. */
+  .rw-readout { width: 160px; padding: 3px 5px; }
   .rw-readout__row { padding: 2px 0; }
   .rw-readout__row small { display: none; }
-  .rw-colonistbar { left: 216px; right: 200px; top: 6px; }
+  .rw-colonistbar { left: 176px; right: 200px; top: 6px; }
   .rw-pawn { width: 42px; }
   .rw-pawn__name { display: none; }
   .rw-rightcol { width: 190px; bottom: 210px; }
@@ -2607,6 +2666,9 @@ body {
   .bar small { display: none; }
   .rw-reason { font-size: 11px; }
   .rw-bottomright { right: 4px; bottom: 4px; transform: scale(0.82); transform-origin: bottom right; max-width: calc(100vw / 0.82 - 8px); }
+  /* On a phone there is no room to the left of the clock column, so the turn
+     report opens above it instead of beside it. */
+  .rw-report { right: 0; bottom: calc(100% + 6px); width: min(262px, calc(100vw / 0.82 - 16px)); }
   .rw-palette .rw-pane__body { max-width: calc(100vw / 0.82 - 200px); }
   .rw-maptools { top: auto; bottom: 4px; left: 4px; transform: none; gap: 2px; padding: 2px; }
   .rw-tool { width: 40px; font-size: 8px; padding: 3px 1px 2px; }

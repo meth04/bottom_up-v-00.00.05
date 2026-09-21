@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#1a2a38">
   <title>bottom up — A Village Survival Story</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -96,7 +97,11 @@
       <small>on land <span id="text_land_food">0</span></small>
     </div>
 
-    <div class="rw-readout__row"
+    <!-- Sếp's notes, items 4 and 6: stone, houses and wood are technologies
+         now, so their rows are hidden with their buttons (js/ages.js) until
+         the village has earned them. The readout starts as food, hours,
+         people and land — nothing else. -->
+    <div class="rw-readout__row" id="row_wood"
          data-tip-title="Wood"
          data-tip="Barns and most technologies. Grows back every autumn on the tiles you hold.">
       <span class="rw-ico" data-icon="wood"></span>
@@ -105,7 +110,7 @@
       <small>on land <span id="text_land_wood">0</span></small>
     </div>
 
-    <div class="rw-readout__row"
+    <div class="rw-readout__row" id="row_stone"
          data-tip-title="Stone"
          data-tip="Houses and the stone axe. Stone does NOT grow back — when the rock on your land is gone you must take more land.">
       <span class="rw-ico" data-icon="stone"></span>
@@ -132,7 +137,7 @@
       <small>soldiers</small>
     </div>
 
-    <div class="rw-readout__row"
+    <div class="rw-readout__row" id="row_barn"
          data-tip-title="Barn space"
          data-tip="Anything over this is eaten by the garlocks when the turn ends. Each barn holds 8.">
       <span class="rw-ico" data-icon="barn"></span>
@@ -140,9 +145,9 @@
       <small><span id="text_barn">0</span> barns</small>
     </div>
 
-    <div class="rw-readout__row"
+    <div class="rw-readout__row" id="row_house"
          data-tip-title="Roofs"
-         data-tip="Villagers without a roof die of exposure in winter (soldiers bunk in the camp, trainees in the school). Each house shelters 3 villagers.">
+         data-tip="Villagers without a roof die of exposure in winter (soldiers bunk in the camp, trainees in the school). Each house shelters 3 villagers, and the village always counts at least 6 roofs.">
       <span class="rw-ico" data-icon="house"></span>
       <b><span id="text_peoplecap_current">0</span>/<span id="text_peoplecap">0</span></b>
       <small><span id="text_house">0</span> houses</small>
@@ -244,15 +249,6 @@
   <!-- ================================================================= -->
   <div class="rw-bottomright">
 
-    <!-- What just happened, in six lines (js/turnReport.js) -->
-    <section class="rw-panel rw-report" id="turnReport" hidden onclick="turnReportHide()">
-      <div class="rw-panel__head">
-        <span>Turn <b id="turnReportTurn">1</b> — what happened</span>
-        <small class="rw-hint">click to dismiss</small>
-      </div>
-      <ul class="rw-report__body" id="turnReportBody"></ul>
-    </section>
-
     <div class="rw-cmdrow">
 
       <div class="rw-palette" id="palette" hidden>
@@ -275,7 +271,7 @@
                       data-tip-title="Gather until the barns are full" data-tip="Spends every hour you have left picking timbermellows, and stops before the barns overflow." data-tip-cost="every remaining hour">ALL</button>
             </div>
             <div class="rw-gizmowrap">
-              <button class="rw-gizmo" id="btn_wood" onclick="get_wood()"
+              <button class="rw-gizmo" id="btn_wood" data-readout-row="row_wood" onclick="get_wood()"
                       data-tip-title="Cut wood"
                       data-tip="One hour for one wood — two once you have the stone axe."
                       data-tip-cost="1 hour">
@@ -288,7 +284,7 @@
                       data-tip-title="Cut wood all day" data-tip="Spends every hour you have left cutting wood." data-tip-cost="every remaining hour">ALL</button>
             </div>
             <div class="rw-gizmowrap">
-              <button class="rw-gizmo" id="btn_stone" onclick="get_stone()"
+              <button class="rw-gizmo" id="btn_stone" data-readout-row="row_stone" onclick="get_stone()"
                       data-tip-title="Quarry stone"
                       data-tip="One hour for one stone. Stone never grows back — once the rock on your land is gone, you need new land."
                       data-tip-cost="1 hour">
@@ -307,7 +303,7 @@
         <div class="rw-pane" data-pane="build" hidden>
           <div class="rw-pane__head">Build <small>one hour plus materials</small></div>
           <div class="rw-pane__body">
-            <button class="rw-gizmo" id="btn_barn" onclick="make_barn()"
+            <button class="rw-gizmo" id="btn_barn" data-readout-row="row_barn" onclick="make_barn()"
                     data-tip-title="Barn"
                     data-tip="Holds 8 more food. Anything over your barn space is lost the moment the turn ends."
                     data-tip-cost="4 wood · 1 hour">
@@ -315,7 +311,7 @@
               <span class="rw-gizmo__label">Barn</span>
               <span class="rw-gizmo__cost">4 Wood</span>
             </button>
-            <button class="rw-gizmo" id="btn_house" onclick="make_house()"
+            <button class="rw-gizmo" id="btn_house" data-readout-row="row_house" onclick="make_house()"
                     data-tip-title="House"
                     data-tip="Shelters 3 villagers. Villagers without a roof die of exposure in winter."
                     data-tip-cost="2 stone · 1 hour">
@@ -442,6 +438,14 @@
               <span class="rw-gizmo__label">Mapmaking</span>
               <span class="rw-gizmo__cost">20🪵 10h</span>
             </button>
+            <button class="rw-gizmo rw-gizmo--tech" id="bulkbt" style="display:none" onclick="bulk()"
+                    data-tip-title="A Day's Work at Once"
+                    data-tip="The ×5 and ALL buttons appear — five hours of one job in one press, or every hour you have left."
+                    data-tip-cost="25 wood · 10 hours">
+              <span class="rw-gizmo__icon" data-icon="tech"></span>
+              <span class="rw-gizmo__label">A Day's Work at Once</span>
+              <span class="rw-gizmo__cost">25🪵 10h</span>
+            </button>
           </div>
         </div>
 
@@ -519,6 +523,19 @@
 
       <!-- Clock + End turn -->
       <div class="rw-globals">
+
+        <!-- Sếp's notes, item 1: "have the game log on the left of the turn
+             bubble". It lives inside the clock column so it opens beside the
+             clock instead of above it, and is hidden until a turn produces
+             something to report (js/turnReport.js). -->
+        <section class="rw-panel rw-report" id="turnReport" hidden onclick="turnReportHide()">
+          <div class="rw-panel__head">
+            <span>Turn <b id="turnReportTurn">1</b> — what happened</span>
+            <small class="rw-hint">click to dismiss</small>
+          </div>
+          <ul class="rw-report__body" id="turnReportBody"></ul>
+        </section>
+
         <button class="rw-idlechip" id="idleChip" hidden onclick="uiPointAt('gather', 'btn_find_timbermellow')">
           <span class="rw-ico" data-icon="hours"></span>
           <b id="idleChipCount">0</b>
@@ -622,6 +639,15 @@
         <button class="title-btn" id="btnContinueGame" onclick="startGameFromTitle(true)" style="display:none">
           Continue Saved Village
         </button>
+        <div class="title-difficulty" id="titleDifficulty">
+          <span class="title-difficulty__label">Difficulty</span>
+          <button class="title-btn title-btn--pick is-picked" id="btnDifficultyNormal" onclick="setDifficulty('normal')">
+            Normal <small>the village never falls below two</small>
+          </button>
+          <button class="title-btn title-btn--pick" id="btnDifficultyHard" onclick="setDifficulty('hard')">
+            Hard <small>the garlocks may take everyone</small>
+          </button>
+        </div>
         <button class="title-btn" onclick="openCodexModal()">
           Survival Codex & Rules
         </button>

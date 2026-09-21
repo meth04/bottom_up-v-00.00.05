@@ -8,25 +8,80 @@
 
         let humans = 2;
 
+// Sếp's notes, item 2: the village never falls below two people. One villager
+// left is not a difficulty setting, it is a soft lock — no soldier, no
+// trainee, no way back — and the player's only move is to start again.
+        const MIN_VILLAGERS = 2;
+
+// Sếp's notes, item 2: "It will be a hard limit on normal. But a soft one on
+// hard. So depending on what the player picks when they start it would be one
+// or the other." Chosen on the title screen, remembered per village.
+        let difficulty = "normal";
+
+// Sếp's notes, item 4: "we will need a floor for peoplecap of maybe 6 or
+// something to keep the player from gaining or losing too much the first
+// winter". Roofs never count for fewer than six, so the founding village
+// cannot freeze to death in a winter it had no way to prepare for.
+        const MIN_PEOPLE_CAP = 6;
+
+        function peopleCapFor(houses) {
+          return Math.max(MIN_PEOPLE_CAP, houses * 3);
+        }
+
         let stonehouse = 1, stone = 0;
 
-        let peoplecap = stonehouse * 3;
+        let peoplecap = peopleCapFor(stonehouse);
 
         let human_army = 0;
 
         let working_hours = humans * 4;
 
+// Sếp's notes, item 7: the barn holds CALORIES now. One "timbermellow" is
+// 1000 of them, and timbermellow is still the only word the player ever
+// sees — the calorie layer stays under the floor until the famine teaches
+// it (Sếp: "They will have to feel it out as they play").
+//
+// CALORIES_PER_TIMBERMELLOW itself is declared in js/territory.js: classic
+// scripts share one lexical scope, so a second `const` here would be a
+// SyntaxError rather than a shadow.
+
+// One living ration a head a turn is what keeps a village alive. What the
+// VILLAGERS eat past that buys the village work hours (see seasons_effect) —
+// soldiers and trainees eat but never work, which is the rule the game has
+// always played by.
+        const MIN_CALORIES = CALORIES_PER_TIMBERMELLOW;
+
+// The most one person can usefully eat. Ten turns in a row without losing a
+// villager widens the plate by a quarter ration, up to 2500 cal. It is a
+// calorie cap, not an hour cap: the same plate is 10 hours in spring and 15
+// in summer (Sếp chose the calorie cap knowingly).
+        const FEAST_CAP_BASE = 1000;
+        const FEAST_CAP_STEP = 250;
+        const FEAST_CAP_MAX = 2500;
+        const FEAST_STREAK_TURNS = 10;
+        const FEAST_CAP_TIERS = (FEAST_CAP_MAX - FEAST_CAP_BASE) / FEAST_CAP_STEP;
+
+// The day the village was handed before anyone spent it (seasons_effect).
+// techcheck() runs after jobsRunAuto() has already eaten into working_hours,
+// so the tech gates need the size of the day, not what is left of it.
+        let hoursCapacity = humans * 4;
+
 //wood variables barn 6 for testing was 0
 // T1 portal tuning: one barn holds 8 (was 5) so casuals spoil less and
 // build fewer barns per run. BARN_CAPACITY is the single source of truth;
-// storage_capacity is always barn * BARN_CAPACITY.
+// a barn's room is always barns * BARN_CAPACITY timbermellows — counted in
+// calories underneath, so the number on screen is the same 8 it always was.
         const BARN_CAPACITY = 8;
+
+        function barnCapacity(barns) {
+          return barns * BARN_CAPACITY * CALORIES_PER_TIMBERMELLOW;
+        }
 
         let wood = 0;
 
         let barn = 1;
 
-        let storage_capacity = barn * BARN_CAPACITY;
+        let storage_capacity = barnCapacity(barn);
 
 //tech variables
 
@@ -43,6 +98,15 @@
         let mapmaking_made = 0;
 
         let mapmaking_unlocked = false;
+
+        // Sếp's notes, item 3: "hide all 5X buttons they are for when you get
+        // some tech." A tech of its own, not a reward for any old research —
+        // so it gets a flag, not the sequential techlevel counter (stone axe
+        // and food basket own that one, and a third bump would lock the food
+        // basket out for good).
+        let bulk_unlocked = false;
+
+        let bulkmade = 0;
 
         let techlevel = 0;
 
@@ -124,6 +188,8 @@
 
         const mapmakingbt = document.getElementById("mapmakingbt");
 
+        const bulkbt = document.getElementById("bulkbt");
+
         const techHint = document.getElementById("techHint");
 
         //what is left on the land (filled in from the map tiles)
@@ -183,6 +249,80 @@
         function mouthsToFeed() {
           return humans + human_army + professionTraineeCount();
         }
+
+        // Sếp's notes, item 7: the barn counts calories, the screen counts
+        // timbermellows. Every number that leaves this file for a human eye
+        // goes through here — and the remainder under a whole one is
+        // deliberately dropped rather than shown (no decimals, or the
+        // calorie layer is on display).
+        function timbermellowsShown(calories) {
+          return Math.floor(Math.max(0, calories) / CALORIES_PER_TIMBERMELLOW);
+        }
+
+        // The whole rations one head needs to live a turn.
+        function foodNeededCalories() {
+          return mouthsToFeed() * MIN_CALORIES;
+        }
+
+        // How many calories a head can usefully eat, given the well-fed run.
+        // Ten turns without a villager dying widens it by a quarter ration.
+        function feastCap() {
+          const tiers = Math.min(FEAST_CAP_TIERS, Math.floor(barnFeastStreak / FEAST_STREAK_TURNS));
+          return FEAST_CAP_BASE + FEAST_CAP_STEP * tiers;
+        }
+
+        // What one work hour costs, in calories, this season. Derived from
+        // the season's old hours-per-villager figure so that a village on
+        // minimum rations works exactly as many hours as it always did —
+        // only a village that eats past that buys extra hours.
+        function calPerHour() {
+          const per = typeof jobHoursPerVillager === "function" ? jobHoursPerVillager() : 4;
+          return CALORIES_PER_TIMBERMELLOW / Math.max(1, per);
+        }
+
+        // Sếp's notes, item 2: nobody dies below the floor. Every death of a
+        // VILLAGER — winter, hunger, a sacking — comes through here, so there
+        // is exactly one place to be wrong. Returns how many actually died,
+        // which is what the log lines should say.
+        //
+        // `noFloor` lifts the floor for this one call. Only the garlock sack
+        // on Hard passes it (Sếp: "a hard limit on normal … a soft one on
+        // hard"); hunger and exposure never do.
+        //
+        // This is also the one place the well-fed streak breaks: Sếp decided
+        // only a villager dying counts. Soldiers falling in battle and
+        // villagers lost seizing land do NOT come through here, and that is
+        // deliberate — do not "fix" it by adding them.
+        function killVillagers(count, noFloor) {
+          const floor = noFloor ? 0 : MIN_VILLAGERS;
+          const wanted = Math.max(0, Math.floor(count) || 0);
+          const allowed = Math.max(0, humans - floor);
+          const died = Math.min(wanted, allowed);
+          humans = humans - died;
+          if (died > 0) barnFeastStreak = 0;
+          return died;
+        }
+
+        // Sếp's notes, item 2/7: ten turns in a row without losing a villager
+        // widens what each one can eat — and a person who eats more works
+        // longer hours. Broken only by a villager dying (see killVillagers).
+        let barnFeastStreak = 0;
+
+        // Sếp's notes, item 4: "hide stone and houses … Rn stone houses only do
+        // anything when winter comes so it should appear after the first winter
+        // happens". Set at the end of the winter the village lived through, so
+        // houses and the stone that builds them arrive with the frost, not with
+        // the first stone the player happens to pick up.
+        let survivedFirstWinter = false;
+
+        function winterSurvived() {
+          survivedFirstWinter = true;
+        }
+
+        // Sếp's notes, item 2: how the village loses on Normal. Three turns
+        // in a row with not enough food in the barns and the settlement is
+        // finished — see end_turn() and afterTurnEnded() (js/main.js).
+        let hungerStreak = 0;
 
         //tracking variables
 //timbermellow needed
@@ -250,6 +390,11 @@
 
         // One gathering job, run for `hours` hours. Everything comes off the
         // tiles the village holds, oldest claim first (js/territory.js).
+        //
+        // Item 7: the land and the barn are both counted in calories, while
+        // foodPerHour() still speaks the old language of timbermellows per
+        // hour — so the harvest is converted here, at the one place it is
+        // lifted off the tile. The player never sees the difference.
         function gatherFood(hours) {
           let food_on_land = territoryAvailable(territoryFoodTypes());
           if (seasonchecker == 4) {
@@ -269,7 +414,7 @@
           }
 
           working_hours = working_hours - hours;
-          let gathered = territoryTake(territoryFoodTypes(), roadHaul(foodPerHour() * hours));
+          let gathered = territoryTake(territoryFoodTypes(), roadHaul(foodPerHour() * hours) * CALORIES_PER_TIMBERMELLOW);
           timbermellow_count = timbermellow_count + gathered;
           ageCountFood(gathered);
           update();
@@ -328,8 +473,10 @@
           if (job === "timbermellow") {
             const room = storage_capacity - timbermellow_count;
             if (room <= 0) { updatelog("The barns are already full — build another before gathering more.", "bad"); update(); return; }
-            const perHour = Math.max(1, foodPerHour());
-            gatherFood(Math.max(1, Math.min(working_hours, Math.ceil(room / perHour))));
+            // The room is calories and an hour brings back timbermellows, so
+            // the hours that fit in the barn are room / (perHour × 1000).
+            const perHourCalories = Math.max(1, foodPerHour()) * CALORIES_PER_TIMBERMELLOW;
+            gatherFood(Math.max(1, Math.min(working_hours, Math.ceil(room / perHourCalories))));
           } else if (job === "wood") {
             gatherWood(working_hours);
           } else {
@@ -346,57 +493,66 @@
         // to apologise afterwards.
         function endTurnWarnings() {
           const warnings = [];
-          const hungry = mouthsToFeed() - timbermellow_count;
+          // Item 7: the barn is calories, the question is rations.
+          const hungry = mouthsToFeed() - Math.floor(timbermellow_count / MIN_CALORIES);
           if (hungry > 0) warnings.push(`${hungry} will go unfed`);
           // Winter is two turns away at most when autumn is half over.
           if (seasonchecker === 4 && humans > peoplecap) {
             warnings.push(`${humans - peoplecap} have no roof in the frost`);
           }
           if (timbermellow_count > storage_capacity) {
-            warnings.push(`${timbermellow_count - storage_capacity} timbermellows will spoil`);
+            const spoiled = timbermellowsShown(timbermellow_count - storage_capacity);
+            if (spoiled > 0) warnings.push(`${spoiled} timbermellows will spoil`);
           }
           return warnings;
         }
 
         
+        // Item 7: raising a villager costs three timbermellows, which is
+        // 3000 calories in the barn. The player is told the same three they
+        // have always been told.
+        const HUMAN_FOOD_COST = 3 * CALORIES_PER_TIMBERMELLOW;
+
         function make_human() {
           if (working_hours <= 0) {
             updatelog("not enough work.");
           }
-          if (timbermellow_count < 3) {
+          if (timbermellow_count < HUMAN_FOOD_COST) {
             updatelog("Not enough timbermellows to make a human! You need at least 3 timbermellows.");
           }
 
-          if (working_hours > 0 && timbermellow_count >= 3) {
-            timbermellow_count = timbermellow_count - 3;
+          if (working_hours > 0 && timbermellow_count >= HUMAN_FOOD_COST) {
+            timbermellow_count = timbermellow_count - HUMAN_FOOD_COST;
             humans = humans + 1;
             working_hours = working_hours - 1;
             update();
             }
           }
-        
+
         function human_5x() {
           if (working_hours < 5) {
             updatelog("not enough work.");
-          } 
-          if (timbermellow_count < 15) {
+          }
+          if (timbermellow_count < HUMAN_FOOD_COST * 5) {
             updatelog("Not enough timbermellows to make 5 humans! You need at least 15 timbermellows.");
           }
 
-          if (working_hours >= 5 && timbermellow_count >= 15) {
+          if (working_hours >= 5 && timbermellow_count >= HUMAN_FOOD_COST * 5) {
             let loop = 0;
             for (loop = 0; loop < 5; loop++) {
-              timbermellow_count = timbermellow_count - 3;
+              timbermellow_count = timbermellow_count - HUMAN_FOOD_COST;
               humans = humans + 1;
               working_hours = working_hours - 1;
               update();
             }
-          }  
+          }
         }
 
         function apont_soldier() {
-          if (humans < 2){
-            updatelog("Not enough humans to make an army! You need at least 2 humans.");
+          // Item 2: a soldier takes a villager off the rota for good, and the
+          // village never drops below two people.
+          if (humans <= MIN_VILLAGERS){
+            updatelog(`Not enough humans to make an army! You need at least ${MIN_VILLAGERS + 1} humans.`);
           } else if (working_hours < 1) {
             updatelog("Training a soldier takes 1 work hour.");
           } else {
@@ -408,8 +564,10 @@
         }
 
         function soldier_5x() {
-          if (humans < 5){
-            updatelog("Not enough humans to make 5 armies! You need at least 5 humans.");
+          // Item 2: five soldiers would leave fewer than two villagers behind
+          // for any village that cannot spare them.
+          if (humans < MIN_VILLAGERS + 5){
+            updatelog(`Not enough humans to make 5 armies! You need at least ${MIN_VILLAGERS + 5} humans.`);
           } else if (working_hours < 5) {
             updatelog("Training 5 soldiers takes 5 work hours.");
           } else {
@@ -452,7 +610,7 @@
             if (wood >= 4 && working_hours > 0) {
             wood = wood - 4;
             barn = barn + 1;
-            storage_capacity = barn * BARN_CAPACITY;
+            storage_capacity = barnCapacity(barn);
             working_hours = working_hours - 1;
             update();
             }
@@ -469,7 +627,7 @@
           if (stone >= 2 && working_hours > 0) {
             stone = stone - 2;
             stonehouse = stonehouse + 1;
-            peoplecap = stonehouse * 3;
+            peoplecap = peopleCapFor(stonehouse);
             working_hours = working_hours - 1;
             update();
           }
@@ -588,13 +746,16 @@
           garlock_rage = Math.min(GARLOCK_RAGE_CAP, garlock_rage + 1);   // success breeds appetite
           const soldiersLost = Math.min(human_army, Math.ceil(shortfall / 2));
           const barnsLost = Math.min(Math.max(0, barn - 1), 1 + Math.floor(shortfall / 3));
-          const foodLost = Math.min(timbermellow_count, Math.ceil(timbermellow_count / 2) + shortfall);
+          // Item 7: the barn holds calories, and `shortfall` is still spoken
+          // in the old head-count tongue — convert it, or a raid that used to
+          // carry off three timbermellows carries off three calories.
+          const foodLost = Math.min(timbermellow_count, Math.ceil(timbermellow_count / 2) + shortfall * CALORIES_PER_TIMBERMELLOW);
           const woodLost = Math.min(wood, shortfall * 3);
 
           human_army = human_army - soldiersLost;
           barn = barn - barnsLost;
           if (barn < 1) barn = 1;
-          storage_capacity = barn * BARN_CAPACITY;
+          storage_capacity = barnCapacity(barn);
           timbermellow_count = timbermellow_count - foodLost;
           wood = wood - woodLost;
 
@@ -604,16 +765,18 @@
           // A first undefended raid loots; a repeated one sacks.
           if (defence === 0 && shortfall >= GARLOCK_MAX_BITE && garlock_rage >= 2) {
             // Nobody even tried to stop them, twice in a row. This is the sacking.
-            peopleLost = Math.min(2, Math.max(0, humans - 1));
-            humans = humans - peopleLost;
+            // Item 2: on Normal even a sacking stops at the two-villager floor
+            // — killVillagers enforces it. On Hard the floor is lifted, and an
+            // empty village is the defeat (js/main.js, afterTurnEnded).
+            peopleLost = killVillagers(2, difficulty === "hard");
             housesLost = Math.min(Math.max(0, stonehouse - 1), 1 + Math.floor(shortfall / 5));
             stonehouse = stonehouse - housesLost;
             if (stonehouse < 1) stonehouse = 1;
-            peoplecap = stonehouse * 3;
+            peoplecap = peopleCapFor(stonehouse);
           }
 
           const losses = [];
-          if (foodLost) losses.push(`${foodLost} timbermellows`);
+          if (foodLost) losses.push(`${timbermellowsShown(foodLost)} timbermellows`);
           if (woodLost) losses.push(`${woodLost} wood`);
           if (barnsLost) losses.push(`${barnsLost} barn${barnsLost > 1 ? "s" : ""}`);
           if (soldiersLost) losses.push(`${soldiersLost} soldier${soldiersLost > 1 ? "s" : ""}`);
@@ -630,56 +793,57 @@
           update();
         }
 
+        // The turn's work, once the season has had its say.
+        //
+        // Item 7: this no longer *decides* the hours — end_turn() has already
+        // split the barn's calories, and the hours are what the VILLAGERS'
+        // share of them bought (see the eating block there). Soldiers and
+        // trainees ate their ration and go on eating it; they do no work.
+        // `hoursCapacity` is the size of that day, kept for techcheck().
         function seasons_effect() {
 
           if(seasonchecker == 1) {
-            working_hours = humans * 4;
+            hoursCapacity = working_hours;
           }
 
 //summer
           if (seasonchecker == 2) {
-            working_hours = humans * 4;
+            // The 50% longer day is now the calorie price, not a bonus bolted
+            // on: a summer hour costs less, so the same ration buys six hours
+            // where spring buys four (see calPerHour).
+            hoursCapacity = working_hours;
             updatelog("the day are longer in summer, each human gets 50% more time to work.");
-            working_hours = working_hours + (humans * 2);
             update();
         }
 //autumn
            if (seasonchecker == 3) {
             // the original code never reset work hours in autumn, so the
             // "season of harvest" was two turns with nothing to work with
-            working_hours = humans * 4;
+            hoursCapacity = working_hours;
             let regrown = territoryRegrowAutumn();
-            updatelog("It's autumn, the season of harvest! Your land has regrown " + regrown + " worth of timbermellows and wood, and you gather 100% more this season.", "good");
-            turnReportNote(`the land regrew ${regrown}`, "good");
+            updatelog("It's autumn, the season of harvest! Your land has regrown " + timbermellowsShown(regrown) + " worth of timbermellows and wood, and you gather 100% more this season.", "good");
+            turnReportNote(`the land regrew ${timbermellowsShown(regrown)}`, "good");
         }
 //winter
            if (seasonchecker == 4) {
-
+             // Frost: an hour costs half a ration where spring charged a
+             // quarter, so the same plate buys half the day it did in
+             // summer — two hours on bare rations, five on a full one. The
+             // price of the hour moves; the size of the plate does not.
              updatelog("Winter has arrived! You cannot grow timbermellows this season.", "bad");
+             hoursCapacity = working_hours;
              if (peoplecap < humans) {
              // T1: exposure takes at most two per winter turn, never the
              // whole overflow at once. Still scary, never a run-ender.
+             // Item 2: and never below the two-villager floor.
              const exposed = humans - peoplecap;
-             const froze = Math.min(exposed, 2);
-             humans = humans - froze;
-             
-           
-             updatelog(`${froze} died of exposure — build houses before winter.`);
-           
-             updatelog("the garlocks are eating the people who have died of exposure.");
-             
-             
-             if (timbermellow_count < humans) {
-               timbermellow_count = 0;
-               const starved = Math.min(2, Math.max(0, humans - 1));
-               humans = humans - starved;
-               
-               updatelog(`${starved} starved in the cold for want of timbermellows.`);
+             const froze = killVillagers(Math.min(exposed, 2));
 
-           
-            }
-           } 
-           working_hours = humans * 2;      
+
+             updatelog(`${froze} died of exposure — build houses before winter.`);
+
+             updatelog("the garlocks are eating the people who have died of exposure.");
+           }
          }
          update();
       }
@@ -692,7 +856,13 @@
         // T-fix: unlocks measure capacity (people × season hours), not the
         // leftover hours at click time. Spending all hours no longer locks
         // techs out.
-        const capacityNow = (typeof jobHoursPerVillager === "function" ? jobHoursPerVillager() : 4) * Math.max(0, humans);
+        //
+        // Item 7: `hoursCapacity` is the size of the day seasons_effect()
+        // just handed out — a village that ate well really does have more
+        // hours in hand, and the gate should see them. techcheck() runs
+        // after jobsRunAuto() has spent the day, so working_hours is the
+        // wrong number here.
+        const capacityNow = hoursCapacity;
 
         //stone axe tech
           if (capacityNow >= 25 && techlevel < 1) {
@@ -728,7 +898,17 @@
               mapmaking_unlocked = true;
             }
 
-            if (techHint && (stoneaxebt.style.display != "none" || foodbasketbt.style.display != "none" || farmingbt.style.display != "none" || mapmakingbt.style.display != "none")) {
+            // The work gang — Sếp's item 3. Its own flag, deliberately NOT
+            // techlevel: techlevel is the sequential counter stone axe and
+            // food basket share, and a third step here would push it past the
+            // basket's `techlevel < 2` for good.
+            if (capacityNow >= 35 && bulk_unlocked == false) {
+              updatelog("New technology unlocked: the work gang!", "good");
+              bulkbt.style.display = "block";
+              bulk_unlocked = true;
+            }
+
+            if (techHint && (stoneaxebt.style.display != "none" || foodbasketbt.style.display != "none" || farmingbt.style.display != "none" || mapmakingbt.style.display != "none" || bulkbt.style.display != "none")) {
               techHint.style.display = "none";
             }
           }
@@ -837,6 +1017,27 @@
           update();
         }
 
+        function bulk() {
+          if (wood < 25) {
+            updatelog("Not enough wood to organise the work gangs! You need at least 25 wood.");
+          }
+          if (working_hours < researchHours(10)) {
+            updatelog("Not enough work hours to organise the work gangs! You need at least " + researchHours(10) + " work hours.");
+          }
+          if (wood >= 25 && working_hours >= researchHours(10)) {
+            wood = wood - 25;
+            working_hours = working_hours - researchHours(10);
+            bulkmade = bulkmade + 1;
+            techmade = techmade + 1;
+            bulkbt.style.display = "none";
+            updatelog("The headman sets the day's work by the board, not by the shout. ×5 and ALL are yours.", "good");
+            if (typeof showMilestonePopup === "function") {
+              showMilestonePopup("A Day's Work at Once", "The village stops working hour by hour. Five hours in one press, or every hour left — and the headman keeps the tally.", "tech");
+            }
+          }
+          update();
+        }
+
          function end_turn() {
 // the log keeps its history now; each turn just gets a heading (see updatelog)
 
@@ -867,6 +1068,10 @@
               seasonchecker = 1;
               season = 1;
               document.getElementById("season").innerText = "spring";
+              // Item 4: the village has now lived through a winter. Houses —
+              // and the stone that builds them — are worth explaining from
+              // here on, and not one turn sooner.
+              if (!survivedFirstWinter) winterSurvived();
             }
 
             time_name.textContent = turngame;
@@ -883,21 +1088,37 @@
             if (storage_capacity < timbermellow_count) {
               const spoiled = timbermellow_count - storage_capacity;
               timbermellow_count = storage_capacity;
-              updatelog(`No room in the barns — the garlocks took ${spoiled} timbermellows that would not fit.`, "bad");
-              turnReportNote(`${spoiled} spoiled for want of barn space`, "bad");
+              updatelog(`No room in the barns — the garlocks took ${timbermellowsShown(spoiled)} timbermellows that would not fit.`, "bad");
+              turnReportNote(`${timbermellowsShown(spoiled)} spoiled for want of barn space`, "bad");
             }
 
             //fammen check
-            
-            if (timbermellow_count < mouthsToFeed()) {
-              
-              let timbermellow_needed = mouthsToFeed();
+            //
+            // Item 7: the barn counts calories, so the question is no longer
+            // "is there one timbermellow a head" but "is there a bare ration
+            // a head". Sếp's order at the end of the turn is: pay every mouth
+            // its 1000 calories first, then split what is left.
 
-              let timbermellow_deficit = timbermellow_needed - timbermellow_count;
+            if (timbermellow_count < foodNeededCalories()) {
 
-              //this is to kill the army first 
+              // Sếp's notes, item 2: three turns in a row short of food is a
+              // defeat on any difficulty. Counted here, acted on in
+              // afterTurnEnded() (js/main.js).
+              hungerStreak = hungerStreak + 1;
+              if (hungerStreak >= 3) {
+                updatelog("Three turns now with empty barns. The village cannot go on like this.", "bad");
+              }
+
+              // How many whole rations the barn is short. The barn may hold
+              // 2500 calories, which is not two rations but two and a half —
+              // the half ration still feeds somebody, so round up before
+              // deciding who it was that went without.
+              let timbermellow_deficit = Math.ceil((foodNeededCalories() - timbermellow_count) / MIN_CALORIES);
+
+              //this is to kill the army first
               // T-fix: soldiers starve proportionally, not all-or-nothing.
-              // A shortfall of 2 eats 2 soldiers, not 0 and not the whole guard.
+              // A shortfall of 2 rations eats 2 soldiers, not 0 and not the
+              // whole guard — and never more soldiers than rations missing.
               if (human_army > 0 && timbermellow_deficit > 0) {
                 const soldiersStarved = Math.min(human_army, timbermellow_deficit);
                 if (soldiersStarved > 0) {
@@ -909,37 +1130,70 @@
               //this is to check if you now have enough timbermellows to feed humans
               if (timbermellow_deficit > 0) {
                 timbermellow_count = 0;
-              
+
               // T1 casual: hunger is a setback, not a wipe. Small villages
               // lose one soul; larger ones lose at most two per turn, never
               // half the village at once.
-              //2 human case
+              // Item 2: and never the last two — one villager is a soft lock.
               if (humans <= 3) {
-                humans =  humans - 1;
-                updatelog("1 human starved to death due to lack of timbermellows.");
+                const died = killVillagers(1);
+                if (died > 0) updatelog("1 human starved to death due to lack of timbermellows.");
+                else updatelog("The village is down to its last two — there is nobody left to lose. Feed them.", "bad");
               //2 or greater case
               } else {
-                const starved = Math.min(2, humans - 1);
-                humans = humans - starved;
+                const starved = killVillagers(Math.min(2, humans - 1));
                 updatelog(`${starved} humans starved to death due to lack of timbermellows.`);
               }
               let starvednumber = humanholder - humans;
 
               if (starvednumber > 1) {
-              
-            updatelog("" + starvednumber + " humans have died.");   
+
+            updatelog("" + starvednumber + " humans have died.");
             }
 
-            
-            }    
+
+            }
           }
-        
-           //this removes timbermellows from the count 
-           if (timbermellow_count >= mouthsToFeed()) {
-           turnReportNote(`${mouthsToFeed()} eaten`, "");
-           timbermellow_count = timbermellow_count - mouthsToFeed();
+
+           //this removes timbermellows from the count — and, item 7, hands
+           // the villagers whatever they ate past their bare ration, which is
+           // what buys the turn's work hours.
+           let villagerCalories = 0;
+           if (timbermellow_count >= foodNeededCalories()) {
+           hungerStreak = 0;
+
+           // Every mouth — villager, soldier, trainee — eats its bare ration.
+           const rations = foodNeededCalories();
+           timbermellow_count = timbermellow_count - rations;
+           villagerCalories = humans * MIN_CALORIES;
+
+           // What is left is shared out among the VILLAGERS alone, up to the
+           // plate each one can manage. Soldiers and trainees ate their
+           // ration and that is all they get: they do not work, so feeding
+           // them more would be buying hours from nobody (see seasons_effect).
+           const cap = feastCap();
+           const extraPerVillager = Math.max(0, cap - MIN_CALORIES);
+           const extraRoom = extraPerVillager * humans;
+           const extra = Math.min(extraRoom, Math.max(0, timbermellow_count));
+           timbermellow_count = timbermellow_count - extra;
+           villagerCalories = villagerCalories + extra;
+
+           // A turn that ends with every villager fed to the brim — and no
+           // villager lost since the last one — counts toward a wider plate.
+           if (humans > 0 && extra >= extraRoom) {
+             barnFeastStreak = barnFeastStreak + 1;
+           } else {
+             barnFeastStreak = 0;
            }
-            
+
+           turnReportNote(`${timbermellowsShown(rations + extra)} eaten`, "");
+           }
+
+           // Item 7: the hours the village works are what its VILLAGERS'
+           // calories bought, at this season's price. `villagerCalories` is
+           // zero when the barn came up short, and the winter branch of
+           // seasons_effect() will floor the day at a bare two hours a head.
+           working_hours = Math.max(0, Math.floor(villagerCalories / calPerHour()));
             seasons_effect();
 
             // The land comes back a little every growing turn (js/territory.js).
@@ -995,8 +1249,11 @@
             timbermellow_count, humans, stonehouse, stone, peoplecap, human_army, working_hours,
             wood, barn, storage_capacity,
             stoneaxe_made, foodbasketmade, farming_made, farming_unlocked, mapmaking_made, mapmaking_unlocked,
+            bulk_unlocked, bulkmade,
             techlevel, techmade,
             seasonchecker, season, turngame,
+            survivedFirstWinter,
+            difficulty, hungerStreak, barnFeastStreak,
             garlocks_attacking, garlock_incomingattack_turn, garlock_attacked_turn, garlock_rage, garlock_strangth, garlock_defense,
             garlock_next_raid_turn,
             ages: ageGetState(),
@@ -1010,12 +1267,25 @@
           stone = saved.stone; peoplecap = saved.peoplecap; human_army = saved.human_army; working_hours = saved.working_hours;
           wood = saved.wood; barn = saved.barn;
           // T1 migration: older saves stored 5 per barn; recompute at 8.
-          storage_capacity = barn * (typeof BARN_CAPACITY !== "undefined" ? BARN_CAPACITY : 8);
+          // Item 7: and a barn's room is calories, whatever the save held.
+          storage_capacity = barnCapacity(barn);
           stoneaxe_made = saved.stoneaxe_made; foodbasketmade = saved.foodbasketmade;
           farming_made = saved.farming_made; farming_unlocked = saved.farming_unlocked;
           mapmaking_made = saved.mapmaking_made; mapmaking_unlocked = saved.mapmaking_unlocked;
+          bulk_unlocked = saved.bulk_unlocked !== undefined ? !!saved.bulk_unlocked : false;
+          bulkmade = saved.bulkmade || 0;
           techlevel = saved.techlevel; techmade = saved.techmade;
           seasonchecker = saved.seasonchecker; season = saved.season; turngame = saved.turngame;
+          // Item 4: an old save has no flag. A village past its first spring
+          // has plainly already lived a winter, so infer it from the turn.
+          survivedFirstWinter = saved.survivedFirstWinter !== undefined
+            ? !!saved.survivedFirstWinter
+            : (saved.turngame || 1) >= 9;
+          // Item 2: a save from before difficulty existed was played on
+          // Normal, and knows nothing of the streaks.
+          difficulty = saved.difficulty === "hard" ? "hard" : "normal";
+          hungerStreak = saved.hungerStreak || 0;
+          barnFeastStreak = saved.barnFeastStreak || 0;
           garlocks_attacking = saved.garlocks_attacking; garlock_incomingattack_turn = saved.garlock_incomingattack_turn;
           garlock_attacked_turn = saved.garlock_attacked_turn; garlock_rage = saved.garlock_rage;
           garlock_strangth = saved.garlock_strangth; garlock_defense = saved.garlock_defense;
@@ -1031,7 +1301,8 @@
           foodbasketbt.style.display = (techlevel >= 2 && foodbasketmade == 0) ? "block" : "none";
           farmingbt.style.display = (farming_unlocked && farming_made == 0) ? "block" : "none";
           mapmakingbt.style.display = (mapmaking_unlocked && mapmaking_made == 0) ? "block" : "none";
-          if (techHint && (techlevel >= 1 || farming_unlocked || mapmaking_unlocked)) techHint.style.display = "none";
+          bulkbt.style.display = (bulk_unlocked && bulkmade == 0) ? "block" : "none";
+          if (techHint && (techlevel >= 1 || farming_unlocked || mapmaking_unlocked || bulk_unlocked)) techHint.style.display = "none";
         }
 
  // Adds a line to the log. `kind` is optional: "good", "bad" or "turn" —
@@ -1046,8 +1317,19 @@
      element.className = "rw-delta";
      return;
    }
-   element.textContent = (delta > 0 ? "+" : "") + delta;
-   element.className = "rw-delta rw-delta--" + (delta > 0 ? "up" : "down");
+   // Item 7: a delta is measured in calories like everything else, but the
+   // store beside it is printed in timbermellows. Round toward zero so a
+   // small gain never shows as "+1" next to a store that did not move.
+   const shown = delta > 0
+     ? Math.floor(delta / CALORIES_PER_TIMBERMELLOW)
+     : Math.ceil(delta / CALORIES_PER_TIMBERMELLOW);
+   if (!shown) {
+     element.textContent = "";
+     element.className = "rw-delta";
+     return;
+   }
+   element.textContent = (shown > 0 ? "+" : "") + shown;
+   element.className = "rw-delta rw-delta--" + (shown > 0 ? "up" : "down");
  }
 
  function updatelog(info, kind) {
@@ -1066,7 +1348,10 @@
       }
 
          function update() {
-            text_timbermellow.textContent = timbermellow_count;
+            // Item 7: the stores count calories underneath, timbermellows on
+            // the screen. Every line below that shows food goes through
+            // timbermellowsShown() — never print the raw value.
+            text_timbermellow.textContent = timbermellowsShown(timbermellow_count);
 
             text_wood.textContent = wood;
 
@@ -1086,7 +1371,7 @@
 
             text_barn.textContent = barn;
 
-            text_storage.textContent = storage_capacity;
+            text_storage.textContent = timbermellowsShown(storage_capacity);
 
             //stone update
 
@@ -1098,10 +1383,10 @@
 
             text_timbermellow_needed.textContent = mouthsToFeed();
 
-            text_endturn_timbermellow_current.textContent = timbermellow_count;
+            text_endturn_timbermellow_current.textContent = timbermellowsShown(timbermellow_count);
 
             //current storage and people capacity update
-            text_storage_current.textContent = timbermellow_count;
+            text_storage_current.textContent = timbermellowsShown(timbermellow_count);
 
             text_peoplecap_current.textContent = humans;
 
@@ -1112,12 +1397,12 @@
             let season_name = document.getElementById("season").innerText.toLowerCase();
             document.getElementById("season").className = "season season--" + season_name;
 
-            //what is left on the land
+            //what is left on the land (calories under the name timbermellow)
             let food_on_land = territoryAvailable(territoryFoodTypes());
             let wood_on_land = territoryAvailable(["wood"]);
             let stone_on_land = territoryAvailable(["stone"]);
 
-            text_land_food.textContent = food_on_land;
+            text_land_food.textContent = timbermellowsShown(food_on_land);
 
             text_land_wood.textContent = wood_on_land;
 
@@ -1126,8 +1411,10 @@
             text_tiles.textContent = territoryClaimedCount();
 
             //grey out what the village can't do right now
+            // Item 7: the `_5x` gates below are hours, not food — five hours
+            // of a day is five hours whatever a timbermellow costs.
             btn_find_timbermellow.disabled = working_hours <= 0 || seasonchecker == 4 || food_on_land <= 0;
-            btn_timbermellow_5x.disabled = working_hours < 5 || seasonchecker == 4 || food_on_land < 5;
+            btn_timbermellow_5x.disabled = working_hours < 5 || seasonchecker == 4 || food_on_land < 5 * CALORIES_PER_TIMBERMELLOW;
             btn_wood.disabled = working_hours <= 0 || wood_on_land <= 0;
             btn_wood_5x.disabled = working_hours < 5 || wood_on_land <= 0;
             btn_stone.disabled = working_hours <= 0 || stone_on_land <= 0;
@@ -1135,10 +1422,10 @@
             if (btn_timbermellow_all) btn_timbermellow_all.disabled = working_hours <= 0 || seasonchecker == 4 || food_on_land <= 0 || timbermellow_count >= storage_capacity;
             if (btn_wood_all) btn_wood_all.disabled = working_hours <= 0 || wood_on_land <= 0;
             if (btn_stone_all) btn_stone_all.disabled = working_hours <= 0 || stone_on_land <= 0;
-            btn_human.disabled = working_hours <= 0 || timbermellow_count < 3;
-            btn_human_5x.disabled = working_hours < 5 || timbermellow_count < 15;
-            btn_soldier.disabled = humans < 2 || working_hours < 1;
-            btn_soldier_5x.disabled = humans < 5 || working_hours < 5;
+            btn_human.disabled = working_hours <= 0 || timbermellow_count < HUMAN_FOOD_COST;
+            btn_human_5x.disabled = working_hours < 5 || timbermellow_count < HUMAN_FOOD_COST * 5;
+            btn_soldier.disabled = humans < MIN_VILLAGERS + 1 || working_hours < 1;
+            btn_soldier_5x.disabled = humans < MIN_VILLAGERS + 5 || working_hours < 5;
             btn_barn.disabled = working_hours <= 0 || wood < 4;
             btn_house.disabled = working_hours <= 0 || stone < 2;
             if (btn_school) btn_school.disabled = working_hours < SCHOOL_WORK_HOURS || wood < SCHOOL_WOOD_COST || stone < SCHOOL_STONE_COST;

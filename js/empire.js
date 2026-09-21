@@ -42,6 +42,12 @@ function empirePopulation() {
 
 // What a turn does to the stores, before you touch a single button: what
 // the standing orders will bring in, and what the village will eat.
+//
+// Item 7: the barn counts calories, but this ledger is read by a player who
+// counts timbermellows — so the forecast is worked out in the shown unit
+// throughout (a villager's day at bare rations × what an hour brings back,
+// against one ration a head), and only `barnRoom` has to be divided down,
+// because that one is a difference of two calorie stores.
 function empireProduction() {
   const perVillager = jobHoursPerVillager();
   const assigned = {
@@ -65,7 +71,7 @@ function empireProduction() {
     hoursTotal: humans * perVillager,
     hoursCommitted: Math.min(jobAssignedTotal(), humans) * perVillager,
     hoursSpare: spare,
-    barnRoom: Math.max(0, storage_capacity - timbermellow_count),
+    barnRoom: timbermellowsShown(storage_capacity - timbermellow_count),
   };
 }
 
@@ -142,6 +148,15 @@ const EMPIRE_TECHS = [
     done: () => mapmaking_made > 0,
     open: () => mapmaking_unlocked,
   },
+  {
+    // Sếp's notes, item 3: the ×5/ALL buttons are a technology of their own
+    // in Act II — the work gang — not a reward for any old research.
+    id: "workgang", name: "The work gang", icon: "tech",
+    cost: "35 work hours", effect: "×5 and ALL: a whole day's work in one press.",
+    comesAt: 35,
+    done: () => bulkmade > 0,
+    open: () => bulk_unlocked,
+  },
 ];
 
 function empireTechOutlook() {
@@ -158,7 +173,10 @@ function empireTechOutlook() {
       waiting: state !== "locked" ? ""
         : !ageAtLeast("growth")
           ? "nobody has time to think yet — it comes with Act II"
-          : `arrives at ${tech.comesAt} work hours — you have ${humans * jobHoursPerVillager()}`,
+          // Item 7: the day is bought with calories now, so the size of it is
+          // hoursCapacity (what seasons_effect() handed out), not the season
+          // constant — a village fed past a bare ration has more hours.
+          : `arrives at ${tech.comesAt} work hours — you have ${typeof hoursCapacity === "number" ? hoursCapacity : humans * jobHoursPerVillager()}`,
     };
   });
 }
@@ -236,7 +254,7 @@ function empireRefresh() {
     row(`${icon("tiles")} Hexes held`, land.tiles),
     terrainLines,
     land.byTerrain.length > 7 ? row("other ground", `${land.byTerrain.slice(7).reduce((n, e) => n + e[1], 0)} hexes`) : "",
-    row(`${icon("timbermellow")} Food still on the land`, land.stores.timbermellow + (farming_made > 0 ? land.stores.grain : 0)),
+    row(`${icon("timbermellow")} Food still on the land`, timbermellowsShown(land.stores.timbermellow + (farming_made > 0 ? land.stores.grain : 0))),
     row(`${icon("wood")} Wood still standing`, land.stores.wood),
     row(`${icon("stone")} Stone still in the ground`, land.stores.stone),
     row(`${icon("house")} Houses · barns · schools · camps`, `${stonehouse} · ${barn} · ${school} · ${armycamp}`),
