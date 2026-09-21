@@ -1,0 +1,846 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ghi Chú V00.00.05</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400&display=swap">
+
+<style>
+/* ---------------------------------------------------------------------
+   Tokens — lấy từ chính css/style.css của game (parchment / leather /
+   gold / wax). Trang này phải trông như thuộc về dự án.
+   --------------------------------------------------------------------- */
+:root {
+  --ground:        #efe7d6;
+  --ground-deep:   #e4d9c2;
+  --surface:       #f8f3e7;
+  --surface-2:     #fdfaf2;
+  --ink:           #231a12;
+  --ink-2:         #544333;
+  --ink-3:         #7d6a55;
+  --rule:          #c9b99c;
+  --rule-soft:     #ddd0b6;
+  --leather:       #6b5138;
+  --gold:          #9c7415;
+  --gold-bright:   #c99e32;
+  --done:          #3f7430;
+  --done-bg:       #e3eddb;
+  --todo:          #a3301f;
+  --todo-bg:       #f5e0db;
+  --shift:         #9a6010;
+  --shift-bg:      #f7ead3;
+  --quote:         #7a6449;
+  --shadow:        0 1px 2px rgba(70, 50, 25, .10), 0 6px 18px rgba(70, 50, 25, .07);
+  --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #17110b;
+    --ground-deep: #1f1710;
+    --surface:     #221a12;
+    --surface-2:   #2a2016;
+    --ink:         #f0e5d2;
+    --ink-2:       #c9b697;
+    --ink-3:       #9c886c;
+    --rule:        #4a3b29;
+    --rule-soft:   #382c1e;
+    --leather:     #a98a63;
+    --gold:        #d9ae4a;
+    --gold-bright: #e8c46a;
+    --done:        #8fc47c;
+    --done-bg:     #22301c;
+    --todo:        #e8917c;
+    --todo-bg:     #3a201a;
+    --shift:       #e0b169;
+    --shift-bg:    #382a16;
+    --quote:       #b09a7c;
+    --shadow:      0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"] {
+  --ground:      #17110b;
+  --ground-deep: #1f1710;
+  --surface:     #221a12;
+  --surface-2:   #2a2016;
+  --ink:         #f0e5d2;
+  --ink-2:       #c9b697;
+  --ink-3:       #9c886c;
+  --rule:        #4a3b29;
+  --rule-soft:   #382c1e;
+  --leather:     #a98a63;
+  --gold:        #d9ae4a;
+  --gold-bright: #e8c46a;
+  --done:        #8fc47c;
+  --done-bg:     #22301c;
+  --todo:        #e8917c;
+  --todo-bg:     #3a201a;
+  --shift:       #e0b169;
+  --shift-bg:    #382a16;
+  --quote:       #b09a7c;
+  --shadow:      0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.3);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  background-image:
+    radial-gradient(ellipse at 18% 0%, rgba(201,158,50,.10), transparent 60%),
+    radial-gradient(ellipse at 85% 100%, rgba(107,81,56,.10), transparent 55%);
+  background-attachment: fixed;
+  color: var(--ink);
+  font-family: "Alegreya Sans", "Segoe UI", system-ui, sans-serif;
+  font-size: 16.5px;
+  line-height: 1.62;
+  padding-block: 0 4rem;
+}
+
+.wrap {
+  max-width: 780px;
+  margin: 0 auto;
+  padding-inline: 20px;
+}
+
+/* --- masthead -------------------------------------------------------- */
+.masthead {
+  border-bottom: 2px solid var(--leather);
+  padding-block: 2.6rem 1.4rem;
+  margin-bottom: 2rem;
+}
+.eyebrow {
+  font-family: "Cinzel", Georgia, serif;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin: 0 0 .7rem;
+}
+h1 {
+  font-family: "Cinzel", Georgia, serif;
+  font-weight: 700;
+  font-size: clamp(1.75rem, 5vw, 2.6rem);
+  line-height: 1.14;
+  letter-spacing: -.01em;
+  text-wrap: balance;
+  margin: 0 0 .6rem;
+}
+.standfirst {
+  font-size: 1.06rem;
+  color: var(--ink-2);
+  max-width: 62ch;
+  margin: 0;
+}
+.stamp {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem 1.2rem;
+  margin-top: 1.1rem;
+  font-size: .82rem;
+  color: var(--ink-3);
+}
+.stamp b { color: var(--ink-2); font-weight: 700; }
+
+/* --- sections -------------------------------------------------------- */
+section { margin-block: 2.6rem; }
+h2 {
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 1.02rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin: 0 0 .35rem;
+  padding-bottom: .45rem;
+  border-bottom: 1px solid var(--rule);
+}
+.lede { color: var(--ink-2); margin: .8rem 0 1.4rem; max-width: 68ch; }
+
+/* --- the seven ------------------------------------------------------- */
+.item {
+  display: grid;
+  grid-template-columns: 2.1rem 1fr;
+  gap: 0 1rem;
+  padding: 1.15rem 0 1.25rem;
+  border-bottom: 1px solid var(--rule-soft);
+  border-left: 3px solid var(--rule);
+  padding-left: 1rem;
+  margin-left: -1rem;
+}
+.item--todo  { border-left-color: var(--todo); }
+.item--shift { border-left-color: var(--shift); }
+.item--done  { border-left-color: var(--done); }
+.item:last-child { border-bottom: none; }
+
+.item__n {
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--ink-3);
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+.item__body { min-width: 0; }
+.item__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .5rem .8rem;
+  margin-bottom: .5rem;
+}
+.item__title {
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 1.02rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.pill {
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: .16rem .5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.pill--todo  { color: var(--todo);  background: var(--todo-bg); }
+.pill--shift { color: var(--shift); background: var(--shift-bg); }
+.pill--done  { color: var(--done);  background: var(--done-bg); }
+
+.said {
+  margin: 0 0 .7rem;
+  padding-left: .85rem;
+  border-left: 2px solid var(--rule);
+  color: var(--quote);
+  font-style: italic;
+}
+.now { margin: 0; color: var(--ink-2); }
+.now strong { color: var(--ink); font-weight: 700; }
+code, .path {
+  font-family: var(--mono);
+  font-size: .84em;
+  background: var(--ground-deep);
+  padding: .08em .34em;
+  border-radius: 3px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+/* --- found list ------------------------------------------------------ */
+.found { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: .85rem; }
+.found li {
+  padding-left: 1.35rem;
+  position: relative;
+  color: var(--ink-2);
+}
+.found li::before {
+  content: "";
+  position: absolute;
+  left: .2rem;
+  top: .62em;
+  width: .38rem;
+  height: .38rem;
+  background: var(--gold-bright);
+  transform: rotate(45deg);
+}
+.found b { color: var(--ink); }
+
+/* --- questions ------------------------------------------------------- */
+.qgroup { margin-top: 1.9rem; }
+.qgroup__head {
+  font-family: "Cinzel", Georgia, serif;
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin: 0 0 .9rem;
+}
+.q {
+  display: grid;
+  grid-template-columns: 2.1rem 1fr;
+  gap: 0 .9rem;
+  padding: .95rem 0 1.05rem;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.q:last-child { border-bottom: none; }
+.q__n {
+  font-family: var(--mono);
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--ink-3);
+  padding-top: .18rem;
+}
+.q__body { min-width: 0; }
+.q__ask { font-weight: 700; margin: 0 0 .3rem; text-wrap: pretty; }
+.q__why { margin: 0 0 .55rem; color: var(--ink-3); font-size: .9rem; }
+.q__opts {
+  margin: 0 0 .6rem;
+  padding-left: 1.1rem;
+  color: var(--ink-2);
+  font-size: .93rem;
+}
+.q__opts li { margin-bottom: .12rem; }
+
+textarea {
+  width: 100%;
+  min-height: 3.1rem;
+  resize: vertical;
+  font: inherit;
+  font-size: .94rem;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: .5rem .65rem;
+}
+textarea::placeholder { color: var(--ink-3); opacity: .75; }
+textarea:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 1px;
+  border-color: var(--gold);
+}
+
+/* --- answer bar ------------------------------------------------------ */
+.answerbar {
+  position: sticky;
+  bottom: 0;
+  margin-top: 2rem;
+  padding: .8rem 0 calc(.8rem + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, transparent, var(--ground) 32%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .7rem 1rem;
+}
+button {
+  font: inherit;
+  font-weight: 700;
+  font-size: .9rem;
+  color: var(--surface-2);
+  background: var(--leather);
+  border: 1px solid var(--leather);
+  border-radius: 4px;
+  padding: .5rem 1rem;
+  cursor: pointer;
+}
+button:hover { background: var(--ink-2); border-color: var(--ink-2); }
+button:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: 2px; }
+.ghost {
+  background: transparent;
+  color: var(--ink-2);
+  border-color: var(--rule);
+}
+.ghost:hover { background: var(--surface); border-color: var(--ink-3); }
+#saveState { font-size: .85rem; color: var(--ink-3); }
+#saveState.is-ok { color: var(--done); }
+
+footer {
+  margin-top: 3rem;
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--rule);
+  font-size: .86rem;
+  color: var(--ink-3);
+}
+
+@media (max-width: 460px) {
+  body { font-size: 16px; }
+  .item, .q { grid-template-columns: 1.6rem 1fr; gap: 0 .6rem; }
+  .item { padding-left: .7rem; margin-left: -.7rem; }
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <p class="eyebrow">bottom up · ghi chú cho Sếp</p>
+    <h1>Bảy điều trong PDF, và mười lăm câu hỏi</h1>
+    <p class="standfirst">
+      Tôi đã đọc <em>“This is for questions and what not.pdf”</em> và đối chiếu từng
+      dòng với code hiện tại. Dưới đây là bảy điều Sếp dặn — cái nào đã có, cái nào
+      chưa, cái nào lệch — rồi tới những chỗ tôi tự thấy còn thiếu, và cuối cùng là
+      những câu tôi cần Sếp trả lời để làm cho xong.
+    </p>
+    <div class="stamp">
+      <span>Bản dựng: <b>v00.00.05</b> · commit <b>8e844f4</b></span>
+      <span>Đọc PDF: <b>2 trang, 7 mục</b></span>
+      <span>Trạng thái code: <b>0/7 xong</b> · 4 lệch · 3 chưa làm</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>Phần A · Bảy điều Sếp dặn</h2>
+    <p class="lede">
+      Đây là bảy mục trong PDF, theo đúng thứ tự Sếp viết. “Hiện tại” là những gì
+      code đang thật sự làm, kèm chỗ để Sếp tra nếu muốn.
+    </p>
+
+    <article class="item item--todo">
+      <div class="item__n">1</div>
+      <div class="item__body">
+        <div class="item__head">
+          <h3 class="item__title">Đưa nhật ký lượt sang trái cục lượt</h3>
+          <span class="pill pill--todo">Chưa làm</span>
+        </div>
+        <p class="said">“have the game log on the left of the turn bubble”</p>
+        <p class="now">
+          Bảng <strong>“Turn N — what happened”</strong> hiện nằm <em>phía trên</em> đồng hồ,
+          không phải bên trái. Nó ở trong khối <span class="path">.rw-bottomright</span>
+          (dán góc dưới phải, xếp cột, canh phải), nên nó luôn trồi lên trên
+          <span class="path">.rw-clock</span>. Muốn sang trái thì phải tách nó ra khỏi
+          cột đó và cho vào một cột riêng bên trái cục lượt.
+        </p>
+      </div>
+    </article>
+
+    <article class="item item--todo">
+      <div class="item__n">2</div>
+      <div class="item__body">
+        <div class="item__head">
+          <h3 class="item__title">Không cho người chơi tụt xuống dưới 2 người</h3>
+          <span class="pill pill--todo">Chưa làm</span>
+        </div>
+        <p class="said">“make sure the player can’t go under 2 people this soft locks you”</p>
+        <p class="now">
+          Đúng như Sếp nói, chỗ này vẫn còn hở. Ba đường chết người đều không có sàn:
+          chết rét (<span class="path">game.js:667</span>, mất tối đa 2), chết đói
+          (<span class="path">game.js:919</span>, làng nhỏ mất 1), và binh lính chết đói
+          trước (<span class="path">game.js:899</span>). Chỉ có <em>huấn luyện</em> lính là
+          bị chặn khi dưới 2 người (<span class="path">game.js:398</span>). Màn thua hiện
+          chỉ bật khi <code>humans ≤ 0</code> <em>và</em> <code>human_army ≤ 0</code>
+          (<span class="path">main.js:669</span>) — nên tụt xuống còn 1 người vẫn vào được,
+          và đó chính là chỗ kẹt cứng.
+        </p>
+      </div>
+    </article>
+
+    <article class="item item--shift">
+      <div class="item__n">3</div>
+      <div class="item__body">
+        <div class="item__head">
+          <h3 class="item__title">Giấu hết nút ×5, để dành cho tech</h3>
+          <span class="pill pill--shift">Lệch</span>
+        </div>
+        <p class="said">“hide all 5X buttons they are for when you get some tech”</p>
+        <p class="now">
+          Nút ×5 (và cả <strong>ALL</strong>) đã được giấu lúc mới vào — nhưng chúng mở ra
+          theo <strong>số người</strong>, không theo tech:
+          <span class="path">ages.js:137</span> mở khi <code>humans ≥ 3</code>. Ý Sếp là
+          chúng phải đi kèm một tech, để lúc được cho thì người chơi thấy vui.
+          Phần “đặt số lần bấm một phát” thì chưa có gì cả.
+        </p>
+      </div>
+    </article>
+
+    <article class="item item--shift">
+      <div class="item__n">4</div>
+      <div class="item__body">
+        <div class="item__head">
+          <h3 class="item__title">Giấu đá và nhà — cũng là tech</h3>
+          <span class="pill pill--shift">Lệch</span>
+        </div>
+        <p class="said">“hide stone and house’s they will also be a tech … it should appear after the first winter happens”</p>
+        <p class="now">
+          Đá và nhà đã bị giấu, nhưng mở theo điều kiện khác: đá mở khi
+          <code>humans ≥ 3</code> (<span class="path">ages.js:143</span>), nhà mở khi
+          <code>stone ≥ 2</code> (<span class="path">ages.js:157</span>) — tức là nhà mở
+          <em>trước</em> mùa đông đầu tiên, ngược với ý Sếp. Và chưa có sàn
+          <code>peoplecap</code>: hiện là <code>stonehouse × 3</code>, khởi đầu 1 nhà nên
+          chỉ được 3 người (<span class="path">game.js:11</span>).
+        </p>
+      </div>
+    </article>
+
+    <article class="item item--todo">
+      <div class="item__n">5</div>
+      <div class="item__body">
+        <div class="item__head">
+          <h3 class="item__title">Thu nhỏ bảng tài nguyên</h3>
+          <span class="pill pill--todo">Chưa làm</span>
+        </div>
+        <p class="said">“shrink the resources tab a good bit”</p>
+        <p class="now">
+          Bảng <strong>“Stores &amp; Dominion”</strong> vẫn nguyên: rộng cố định
+          <strong>250px</strong> (<span class="path">style.css</span>, <code>.rw-readout</code>),
+          chín dòng cộng một dòng kẻ — giờ công, timbermellow, gỗ, đá, dân, lính, chỗ barn,
+          mái nhà, đất. Chưa cắt gì.
+        </p>
+      </div>
+    </article>
+
+    <article class="item item--shift">
+      <div class="item__n">6</div>
+      <div class="item__body">
+        <div class="item__head">
+          <h3 class="item__title">Tech mở gỗ, kích hoạt ở 3 người</h3>
+          <span class="pill pill--shift">Lệch</span>
+        </div>
+        <p class="said">“add a tech for wood triggers with 3 people and lets the player gather wood … wood and barns need to be made hidden”</p>
+        <p class="now">
+          Gỗ đang mở theo <strong>số timbermellow đã hái</strong> chứ không theo số người:
+          <code>ageFoodGathered ≥ 6</code> (<span class="path">ages.js:114</span>). Barn lại
+          là một mục riêng, mở khi <code>wood ≥ 4</code> (<span class="path">ages.js:119</span>).
+          Ý Sếp là <em>một</em> tech duy nhất ở mốc 3 người, mở cả gỗ lẫn barn cùng lúc.
+        </p>
+      </div>
+    </article>
+
+    <article class="item item--todo">
+      <div class="item__n">7</div>
+      <div class="item__body">
+        <div class="item__head">
+          <h3 class="item__title">Đổi thức ăn sang calories</h3>
+          <span class="pill pill--todo">Chưa làm — mục lớn nhất</span>
+        </div>
+        <p class="said">“I want all food sources to be converted to calories.”</p>
+        <p class="now">
+          Chưa có hệ calories nào trong code. Thức ăn hiện là một <strong>con số đếm</strong>
+          — <code>timbermellow_count</code> — mỗi người ăn 1 mỗi lượt
+          (<span class="path">game.js:183</span>), và <strong>giờ công không liên quan gì tới
+          thức ăn</strong>: chúng theo mùa, <code>humans × 4</code> (hè 6, đông 2)
+          (<span class="path">professions.js:294</span>). Con số Sếp đưa — 1000 cal cho 4 giờ
+          công, tối đa 2500 cal cho 10 giờ, 250 cal mỗi giờ công — đảo ngược chuyện đó:
+          <em>cho ăn nhiều thì được nhiều giờ làm hơn</em>. Đây là thay đổi lớn nhất trong
+          bảy mục, và nó chạm vào <strong>13 file</strong>.
+        </p>
+      </div>
+    </article>
+  </section>
+
+  <section>
+    <h2>Phần B · Ngoài PDF, tôi thấy còn mấy chỗ</h2>
+    <p class="lede">
+      Không phải câu hỏi — chỉ là những thứ tôi phát hiện khi đọc code, Sếp nên biết
+      trước khi quyết.
+    </p>
+    <ul class="found">
+      <li>
+        <b>Mục 7 sẽ phá mấy cửa tech hiện tại.</b> Bốn tech (rìu đá 25, farming 40,
+        giỏ thức ăn 50, bản đồ 60) đều mở theo <code>capacityNow = giờ-mỗi-người × số-người</code>
+        (<span class="path">game.js:695</span>). Nếu giờ công trở thành hàm của thức ăn thì
+        bốn cái cửa đó đổi nghĩa hoàn toàn — phải tính lại.
+      </li>
+      <li>
+        <b>Save cũ sẽ không đọc được.</b> <code>timbermellow_count</code> nằm thẳng trong
+        save (<span class="path">game.js:1010</span>) và cả trong <span class="path">data/map.json</span>
+        (90 timbermellow khởi đầu). Đổi sang calo thì hoặc là viết chuyển đổi, hoặc là
+        cho phép bỏ save cũ.
+      </li>
+      <li>
+        <b>PDF đòi ít thông tin hơn, code lại đang nhiều hơn.</b> Sếp viết “I want the player
+        to be greeted with as little info as possible” — nhưng bản này đang có sẵn bảng
+        Objectives, chip “Next:”, thanh tiến trình Act, colonist bar, alerts, letters, chip
+        giờ chưa dùng. Đó là những thứ đi ngược lại ý đó.
+      </li>
+      <li>
+        <b>README lệch số liệu.</b> Dòng 483 viết “Twelve villages share the island” nhưng
+        <span class="path">data/map.json</span> đặt <code>villageCount: 42</code>, và world
+        thật sinh đúng 42. Sửa một dòng là xong — chỉ cần Sếp biết.
+      </li>
+      <li>
+        <b>Sếp đã có ý “set an amount”.</b> Mục 3 nói tương lai muốn người chơi tự đặt số
+        lần bấm. Tôi cần biết làm luôn hay để sau, vì nó đổi cả bảng Gather chứ không chỉ
+        thêm một nút.
+      </li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Phần C · Mười lăm câu hỏi</h2>
+    <p class="lede">
+      Sếp trả lời thẳng vào ô dưới mỗi câu cũng được — chữ sẽ được giữ lại trong chính
+      trình duyệt này. Hoặc Sếp trả lời trong chat, cách nào cũng xong. Nếu chỉ trả lời
+      được vài câu, xin chọn <b>1, 3, 6, 10 và 11</b> — năm câu đó gỡ được nhiều việc nhất.
+    </p>
+
+    <div class="qgroup">
+      <p class="qgroup__head">Thứ tự và phạm vi</p>
+
+      <div class="q">
+        <div class="q__n">01</div>
+        <div class="q__body">
+          <p class="q__ask">Bảy mục này làm cùng lúc, hay theo thứ tự Sếp muốn?</p>
+          <p class="q__why">Mục 7 (calo) lớn gấp nhiều lần sáu mục kia và chạm 13 file. Sáu mục còn lại làm gọn trong một lượt.</p>
+          <textarea id="a01" data-q="01" placeholder="Ví dụ: làm 1–6 trước cho sạch, rồi hãy đụng vào calo…"></textarea>
+        </div>
+      </div>
+
+      <div class="q">
+        <div class="q__n">02</div>
+        <div class="q__body">
+          <p class="q__ask">Sếp muốn giữ hay bỏ những thứ đã build cho Act I?</p>
+          <p class="q__why">PDF nói “lets go back to the start”. Bản này đang có raids, vassals, bảng Objectives, thanh Act, colonist bar. Giấu đi cho Act I sạch, hay cứ để nguyên và chỉ sửa bảy mục?</p>
+          <ul class="q__opts">
+            <li>Giấu hết, Act I quay về đúng “hai nút” như thiết kế gốc</li>
+            <li>Giữ nguyên, chỉ sửa bảy mục trong PDF</li>
+            <li>Giấu một phần — Sếp chỉ rõ cái nào</li>
+          </ul>
+          <textarea id="a02" data-q="02" placeholder="Ý Sếp…"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="qgroup">
+      <p class="qgroup__head">Mục 1 và 2 — nhật ký, và sàn 2 người</p>
+
+      <div class="q">
+        <div class="q__n">03</div>
+        <div class="q__body">
+          <p class="q__ask">“Turn bubble” là cục đồng hồ + End Turn ở góc dưới phải, đúng không?</p>
+          <p class="q__why">Tôi hiểu là vậy, nhưng muốn chắc. Và nhật ký nằm ngang bên trái nó, hay thành một cột dọc?</p>
+          <textarea id="a03" data-q="03" placeholder="Đúng / không, và nằm thế nào…"></textarea>
+        </div>
+      </div>
+
+      <div class="q">
+        <div class="q__n">04</div>
+        <div class="q__body">
+          <p class="q__ask">Sàn 2 người là sàn cứng tuyệt đối, hay chỉ là “đói rét không bao giờ giết người cuối”?</p>
+          <p class="q__why">Hai cách hiểu này cho ra hai trò chơi khác nhau.</p>
+          <ul class="q__opts">
+            <li>Sàn cứng: không đường nào đẩy dân xuống dưới 2, kể cả đói hay rét</li>
+            <li>Mềm: chết đói/rét dừng lại ở 2 người, nhưng vẫn thua nếu để làng kẹt (hết food, không làm được gì)</li>
+          </ul>
+          <textarea id="a04" data-q="04" placeholder="Ý Sếp…"></textarea>
+        </div>
+      </div>
+
+      <div class="q">
+        <div class="q__n">05</div>
+        <div class="q__body">
+          <p class="q__ask">Nếu có sàn 2 người thì khi nào mới thua?</p>
+          <p class="q__why">Hiện chỉ thua khi hết sạch người và lính. Có sàn rồi thì phải có cách thua khác, nếu không thì không bao giờ thua được.</p>
+          <textarea id="a05" data-q="05" placeholder="Thua khi…"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="qgroup">
+      <p class="qgroup__head">Mục 3, 4, 5, 6 — giấu gì, mở khi nào</p>
+
+      <div class="q">
+        <div class="q__n">06</div>
+        <div class="q__body">
+          <p class="q__ask">Nút ×5 đi kèm tech nào, và tech đó mở ở đâu?</p>
+          <p class="q__why">Hiện nó mở ở 3 người, không phải ở tech. Sếp muốn nó là tech riêng, hay gắn vào một tech có sẵn (rìu đá? giỏ thức ăn?).</p>
+          <textarea id="a06" data-q="06" placeholder="Tech đó là…"></textarea>
+        </div>
+      </div>
+
+      <div class="q">
+        <div class="q__n">07</div>
+        <div class="q__body">
+          <p class="q__ask">“Đặt số lần bấm một phát” — làm luôn bây giờ, hay để sau?</p>
+          <p class="q__why">Nó đổi cả bảng Gather (thêm ô nhập số), không chỉ thêm một nút. Làm luôn thì tôi gộp vào mục 3.</p>
+          <ul class="q__opts">
+            <li>Làm luôn cùng mục 3</li>
+            <li>Để sau, giờ chỉ cần ×5 đúng như PDF</li>
+          </ul>
+          <textarea id="a07" data-q="07" placeholder="Ý Sếp…"></textarea>
+        </div>
+      </div>
+
+      <div class="q">
+        <div class="q__n">08</div>
+        <div class="q__body">
+          <p class="q__ask">“Sau mùa đông đầu tiên” — là lúc mùa đông <em>bắt đầu</em>, hay lúc nó <em>kết thúc</em>?</p>
+          <p class="q__why">Một năm có 8 lượt, mỗi mùa 2 lượt. Đông năm nhất là lượt 7–8. Mở ở lượt 7 thì người chơi chưa kịp thấy rét; mở ở lượt 9 thì họ đã sống sót.</p>
+          <textarea id="a08" data-q="08" placeholder="Lượt…"></textarea>
+        </div>
+      </div>
+
+      <div class="q">
+        <div class="q__n">09</div>
+        <div class="q__body">
+          <p class="q__ask">Sàn <code>peoplecap</code> khoảng 6 người — áp dụng luôn từ đầu, hay chỉ trong mùa đông đầu?</p>
+          <p class="q__why">Sếp viết “a floor for peoplecap of maybe 6 … to keep the player from gaining or losing too much the first winter”. Nếu áp luôn từ đầu thì việc xây nhà mất hết áp lực ở giai đoạn sau.</p>
+          <ul class="q__opts">
+            <li>Chỉ mùa đông đầu tiên</li>
+            <li>Cả game, nhà chỉ cộng thêm trên mức 6</li>
+          </ul>
+          <textarea id="a09" data-q="09" placeholder="Ý Sếp…"></textarea>
+        </div>
+      </div>
+
+      <div class="q">
+        <div class="q__n">10</div>
+        <div class="q__body">
+          <p class="q__ask">Thu nhỏ bảng tài nguyên — bỏ hẳn dòng nào, hay chỉ thu nhỏ chữ và bề ngang?</p>
+          <p class="q__why">Đang có 9 dòng: giờ công · timbermellow · gỗ · đá · dân · lính · chỗ barn · mái nhà · đất. Bỏ dòng nào cũng được, nhưng phải biết bỏ cái nào để không giấu mất thứ người chơi cần.</p>
+          <textarea id="a10" data-q="10" placeholder="Bỏ…, giữ…"></textarea>
+        </div>
+      </div>
+
+      <div class="q">
+        <div class="q__n">11</div>
+        <div class="q__body">
+          <p class="q__ask">“3 people” ở mục 6 là 3 dân thường, hay tính cả lính và người đang học nghề?</p>
+          <p class="q__why">Trong code, “dân” và “người ăn” là hai con số khác nhau — lính và học viên cũng ăn nhưng không hái gỗ được.</p>
+          <textarea id="a11" data-q="11" placeholder="Tính là…"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="qgroup">
+      <p class="qgroup__head">Mục 7 — calories</p>
+
+      <div class="q">
+        <div class="q__n">12</div>
+        <div class="q__body">
+          <p class="q__ask">Cho ăn nhiều = nhiều giờ làm hơn — đây có phải là ý Sếp?</p>
+          <p class="q__why">Đây là chỗ tôi muốn chắc nhất. 1000 cal cho 4 giờ, tối đa 2500 cal cho 10 giờ, tức là thức ăn trở thành một cái núm để mua giờ công. Hiện giờ công chỉ theo mùa và không dính gì tới thức ăn. Nếu đúng ý Sếp thì tôi làm; nếu Sếp chỉ muốn đổi <em>đơn vị đo</em> mà giữ nguyên luật cũ thì khác hẳn.</p>
+          <textarea id="a12" data-q="12" placeholder="Đúng là… / Không, ý tôi là…"></textarea>
+        </div>
+      </div>
+
+      <div class="q">
+        <div class="q__n">13</div>
+        <div class="q__body">
+          <p class="q__ask">Người chơi nhìn thấy gì — calo, hay vẫn là “timbermellow”?</p>
+          <p class="q__why">Sếp viết nó “will stay behind the scene for now until the start of the timbermellow famine”. Vậy lúc đầu hiện số gì?</p>
+          <ul class="q__opts">
+            <li>Vẫn hiện “timbermellow”, calo ẩn hoàn toàn tới famine</li>
+            <li>Hiện calo từ đầu, chỉ là không giải thích gì</li>
+            <li>Ẩn cả hai, tới famine mới hiện calo</li>
+          </ul>
+          <textarea id="a13" data-q="13" placeholder="Ý Sếp…"></textarea>
+        </div>
+      </div>
+
+      <div class="q">
+        <div class="q__n">14</div>
+        <div class="q__body">
+          <p class="q__ask">Mốc “10 lượt không mất người nào” đếm từ đầu game hay từ lúc famine bắt đầu? Và trần cuối cùng là bao nhiêu?</p>
+          <p class="q__why">Sếp viết cứ 10 lượt thì mức ăn mỗi người tăng 250, làm được 2 lần, rồi nhảy lên 25 lượt, “keep that trend till it hits the cap” — nhưng chưa nói cap là gì.</p>
+          <textarea id="a14" data-q="14" placeholder="Đếm từ… · cap là…"></textarea>
+        </div>
+      </div>
+
+      <div class="q">
+        <div class="q__n">15</div>
+        <div class="q__body">
+          <p class="q__ask">Đổi sang calo thì save cũ xử lý sao?</p>
+          <p class="q__why">Save hiện lưu số timbermellow thẳng, và <span class="path">data/map.json</span> cũng ghi 90 timbermellow khởi đầu. Hoặc tôi viết chuyển đổi (×1000), hoặc bỏ save cũ — nhanh hơn nhưng người chơi đang dở sẽ mất làng.</p>
+          <ul class="q__opts">
+            <li>Viết chuyển đổi, giữ save cũ</li>
+            <li>Bỏ save cũ, cứ làm mới</li>
+          </ul>
+          <textarea id="a15" data-q="15" placeholder="Ý Sếp…"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="answerbar">
+      <button id="copyBtn" type="button">Sao chép tất cả câu trả lời</button>
+      <button id="clearBtn" class="ghost" type="button">Xoá hết</button>
+      <span id="saveState">Chữ tự được giữ trong trình duyệt này.</span>
+    </div>
+  </section>
+
+  <footer>
+    Soạn từ <span class="path">This is for questions and what not.pdf</span>, đối chiếu với
+    bản dựng <b>v00.00.05</b> (commit <span class="path">8e844f4</span>). Mọi con số “hiện tại”
+    đều lấy từ code đang chạy, kèm số dòng để Sếp tự kiểm.
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  var KEY = "bottomup-v000005-answers";
+  var fields = Array.prototype.slice.call(document.querySelectorAll("textarea[data-q]"));
+  var state = document.getElementById("saveState");
+
+  // --- restore -------------------------------------------------------
+  var saved = {};
+  try {
+    saved = JSON.parse(localStorage.getItem(KEY) || "{}") || {};
+  } catch (e) { saved = {}; }
+
+  fields.forEach(function (el) {
+    var v = saved[el.getAttribute("data-q")];
+    if (typeof v === "string" && v) el.value = v;
+  });
+
+  // --- save on input -------------------------------------------------
+  function persist() {
+    var out = {};
+    fields.forEach(function (el) {
+      var v = el.value.trim();
+      if (v) out[el.getAttribute("data-q")] = el.value;
+    });
+    try {
+      localStorage.setItem(KEY, JSON.stringify(out));
+    } catch (e) {
+      state.textContent = "Không lưu được vào trình duyệt này — Sếp cứ gõ, rồi bấm sao chép.";
+    }
+  }
+
+  var timer = null;
+  fields.forEach(function (el) {
+    el.addEventListener("input", function () {
+      clearTimeout(timer);
+      timer = setTimeout(persist, 400);
+    });
+  });
+
+  // --- copy ----------------------------------------------------------
+  function buildText() {
+    var lines = [];
+    fields.forEach(function (el) {
+      var v = el.value.trim();
+      if (!v) return;
+      lines.push("Câu " + el.getAttribute("data-q") + ": " + v);
+    });
+    return lines.join("\n\n");
+  }
+
+  function flash(msg, ok) {
+    state.textContent = msg;
+    state.classList.toggle("is-ok", !!ok);
+  }
+
+  document.getElementById("copyBtn").addEventListener("click", function () {
+    var text = buildText();
+    if (!text) { flash("Chưa có câu trả lời nào để sao chép.", false); return; }
+    function done() { flash("Đã sao chép — dán vào chat là xong.", true); }
+    function fallback() {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.top = "-1000px";
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      if (ok) done();
+      else flash("Trình duyệt chặn sao chép — Sếp bôi đen rồi tự copy nhé.", false);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else {
+      fallback();
+    }
+  });
+
+  document.getElementById("clearBtn").addEventListener("click", function () {
+    fields.forEach(function (el) { el.value = ""; });
+    try { localStorage.removeItem(KEY); } catch (e) {}
+    flash("Đã xoá hết.", false);
+  });
+})();
+</script>
+</body>
+</html>
